@@ -1,0 +1,63 @@
+{
+    "workbench.startupEditor": "none",
+    "git.confirmSync": false,
+    "explorer.confirmDelete": false,
+    "vim.easymotion": true,
+    "vim.incsearch": true,
+    "vim.useSystemClipboard": true,
+    "vim.useCtrlKeys": true,
+    "vim.hlsearch": true,
+    "vim.leader": "<space>",
+    "vim.handleKeys": {
+        "<C-a>": false,
+        "<C-c>": false,
+        "<C-v>": false,
+        "<C-x>": false,
+        "<C-p>": false,
+        "<C-w>": false,
+        "<C-f>": false,
+        "<C-b>": false, // close side bar
+    },
+    "editor.formatOnSave": true,
+    "editor.tabCompletion": "on",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+    "editor.rulers": [
+        80
+    ],
+    "[python]": {
+        "editor.formatOnPaste": true,
+        "editor.formatOnSaveMode": "file",
+        "editor.formatOnSave": true
+    },
+    "liveServer.settings.CustomBrowser": "firefox",
+    "yaml.schemas": {
+        "https://taskfile.dev/schema.json": [
+            "**/taskfile.yaml",
+            "**/taskfile.*.yaml",
+            "file:///home/user/code/zapod/tasks/taskfile.projects.yml",
+            "file:///home/user/code/zapod/tasks/taskfile.docker.yml",
+            "file:///home/user/code/gobot/tasks/osdeps.taskfile.yml"
+        ]
+    },
+    "glsl-canvas.recordWidth": 640,
+    "glsl-canvas.recordHeight": 640,
+    "glsl-canvas.recordDuration": 6,
+    "glsl-canvas.antialias": true,
+    "glsl-canvas.uniforms": {
+        "u_colormix": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+        },
+    },
+    "yaml.schemas": {
+        "https://taskfile.dev/schema.json": [
+            "**/taskfile.yaml",
+            "**/taskfile.*.yaml",
+            "file:///home/user/code/zapod/tasks/taskfile.projects.yml",
+            "file:///home/user/code/zapod/tasks/taskfile.docker.yml"
+        ]
+    },
+}
