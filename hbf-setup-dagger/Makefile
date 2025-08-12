@@ -6,7 +6,7 @@ CACHE_DIR := $(HOME)/.cache/dagger
 SOCKET_PATH := $(CACHE_DIR)/engine.sock
 SERVICE_FILE := $(SERVICE_DIR)/dagger-engine.service
 
-.PHONY: all install service start stop status logs uninstall
+.PHONY: all install service start stop status logs uninstall test cache-test
 
 all: install service start
 
@@ -72,3 +72,18 @@ uninstall: stop
 	@echo ">> Removing dagger binary..."
 	rm -f $(DAGGER_BIN)
 	@echo ">> Persistent cache is at $(CACHE_DIR) — remove manually if desired."
+
+test:
+	@echo ">> Testing dagger engine with a simple pipeline..."
+	@echo ">> Running 'dagger core container from --address alpine:latest image-ref' to test engine..."
+	$(DAGGER_BIN) core container from --address alpine:latest image-ref
+
+cache-test:
+	@echo ">> Testing dagger engine cache effectiveness..."
+	@echo ">> First run - should pull image and cache it:"
+	time $(DAGGER_BIN) core container from --address alpine:latest image-ref
+	@echo ""
+	@echo ">> Second run - should use cache (much faster):"
+	time $(DAGGER_BIN) core container from --address alpine:latest image-ref
+	@echo ""
+	@echo ">> Cache test complete. Second run should be significantly faster if cache is working."

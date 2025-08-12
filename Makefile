@@ -1,6 +1,6 @@
 # Top-level Makefile for HBF project
 
-.PHONY: dagger-all dagger-install dagger-service dagger-start dagger-stop dagger-status dagger-logs dagger-uninstall help
+.PHONY: dagger-all dagger-install dagger-service dagger-start dagger-stop dagger-status dagger-logs dagger-uninstall dagger-test dagger-cache-test help
 
 # Default target
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "  dagger-stop       - Stop dagger-engine service"
 	@echo "  dagger-status     - Show dagger-engine service status"
 	@echo "  dagger-logs       - Follow dagger-engine service logs"
+	@echo "  dagger-test       - Test dagger engine by pulling alpine image (warms up engine)"
+	@echo "  dagger-cache-test - Test dagger cache effectiveness by running same operation twice"
 	@echo "  dagger-uninstall  - Uninstall dagger engine and remove service"
 
 # Dagger Engine Management targets
@@ -38,6 +40,12 @@ dagger-status:
 
 dagger-logs:
 	@$(MAKE) -C hbf-setup-dagger logs
+
+dagger-test:
+	@$(MAKE) -C hbf-setup-dagger test
+
+dagger-cache-test:
+	@$(MAKE) -C hbf-setup-dagger cache-test
 
 dagger-uninstall:
 	@$(MAKE) -C hbf-setup-dagger uninstall
