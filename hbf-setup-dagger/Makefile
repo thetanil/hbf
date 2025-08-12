@@ -76,14 +76,14 @@ uninstall: stop
 test:
 	@echo ">> Testing dagger engine with a simple pipeline..."
 	@echo ">> Running 'dagger core container from --address alpine:latest image-ref' to test engine..."
-	$(DAGGER_BIN) core container from --address alpine:latest image-ref
+	DAGGER_NO_NAG=1 $(DAGGER_BIN) core container from --address alpine:latest image-ref
 
 cache-test:
 	@echo ">> Testing dagger engine cache effectiveness..."
 	@echo ">> First run - should pull image and cache it:"
-	time $(DAGGER_BIN) core container from --address alpine:latest image-ref
+	DAGGER_NO_NAG=1 time $(DAGGER_BIN) core container from --address alpine:latest image-ref
 	@echo ""
 	@echo ">> Second run - should use cache (much faster):"
-	time $(DAGGER_BIN) core container from --address alpine:latest image-ref
+	DAGGER_NO_NAG=1 time $(DAGGER_BIN) core container from --address alpine:latest image-ref
 	@echo ""
 	@echo ">> Cache test complete. Second run should be significantly faster if cache is working."
