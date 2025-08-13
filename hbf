@@ -20,46 +20,39 @@ fi
 
 # Main function
 hbf_main() {
+    # Path to the dagger script
+    local dagger_script="$(dirname "$0")/scripts/dagger.sh"
+    
     case "$1" in
         dagger-all)
-            echo "Running: make dagger-all"
-            make dagger-all
+            "$dagger_script" all
             ;;
         dagger-install)
-            echo "Running: make dagger-install"
-            make dagger-install
+            "$dagger_script" install
             ;;
         dagger-service)
-            echo "Running: make dagger-service"
-            make dagger-service
+            "$dagger_script" service
             ;;
         dagger-start)
-            echo "Running: make dagger-start"
-            make dagger-start
+            "$dagger_script" start
             ;;
         dagger-stop)
-            echo "Running: make dagger-stop"
-            make dagger-stop
+            "$dagger_script" stop
             ;;
         dagger-status)
-            echo "Running: make dagger-status"
-            make dagger-status
+            "$dagger_script" status
             ;;
         dagger-logs)
-            echo "Running: make dagger-logs"
-            make dagger-logs
+            "$dagger_script" logs
             ;;
         dagger-test)
-            echo "Running: make dagger-test"
-            make dagger-test
+            "$dagger_script" test
             ;;
         dagger-cache-test)
-            echo "Running: make dagger-cache-test"
-            make dagger-cache-test
+            "$dagger_script" cache-test
             ;;
         dagger-uninstall)
-            echo "Running: make dagger-uninstall"
-            make dagger-uninstall
+            "$dagger_script" uninstall
             ;;
         help|--help|-h)
             echo "HBF - Dagger project management"
