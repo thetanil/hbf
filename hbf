@@ -1,0 +1,103 @@
+#!/bin/bash
+
+# HBF - Dagger project management script
+# Bash script with automatic completion support
+
+# Define available commands based on Makefile targets
+COMMANDS="dagger-all dagger-install dagger-service dagger-start dagger-stop dagger-status dagger-logs dagger-test dagger-cache-test dagger-uninstall help"
+
+# Auto-register completion when script is sourced or executed
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]] || [[ "${COMP_WORDS}" ]]; then
+    # We're being sourced or called for completion
+    _hbf_completion() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        COMPREPLY=( $(compgen -W "${COMMANDS}" -- "${cur}") )
+    }
+    complete -F _hbf_completion "${BASH_SOURCE[0]##*/}"
+    complete -F _hbf_completion hbf
+    return 2>/dev/null || exit 0
+fi
+
+# Main function
+hbf_main() {
+    case "$1" in
+        dagger-all)
+            echo "Running: make dagger-all"
+            make dagger-all
+            ;;
+        dagger-install)
+            echo "Running: make dagger-install"
+            make dagger-install
+            ;;
+        dagger-service)
+            echo "Running: make dagger-service"
+            make dagger-service
+            ;;
+        dagger-start)
+            echo "Running: make dagger-start"
+            make dagger-start
+            ;;
+        dagger-stop)
+            echo "Running: make dagger-stop"
+            make dagger-stop
+            ;;
+        dagger-status)
+            echo "Running: make dagger-status"
+            make dagger-status
+            ;;
+        dagger-logs)
+            echo "Running: make dagger-logs"
+            make dagger-logs
+            ;;
+        dagger-test)
+            echo "Running: make dagger-test"
+            make dagger-test
+            ;;
+        dagger-cache-test)
+            echo "Running: make dagger-cache-test"
+            make dagger-cache-test
+            ;;
+        dagger-uninstall)
+            echo "Running: make dagger-uninstall"
+            make dagger-uninstall
+            ;;
+        help|--help|-h)
+            echo "HBF - Dagger project management"
+            echo ""
+            echo "Usage: $0 <command>"
+            echo ""
+            echo "Available commands:"
+            echo "  dagger-all        - Install, create service, and start dagger engine"
+            echo "  dagger-install    - Install dagger CLI"
+            echo "  dagger-service    - Create systemd service for dagger engine"
+            echo "  dagger-start      - Enable and start dagger-engine service"
+            echo "  dagger-stop       - Stop dagger-engine service"
+            echo "  dagger-status     - Show dagger-engine service status"
+            echo "  dagger-logs       - Follow dagger-engine service logs"
+            echo "  dagger-test       - Test dagger engine by pulling alpine image"
+            echo "  dagger-cache-test - Test dagger cache effectiveness"
+            echo "  dagger-uninstall  - Uninstall dagger engine and remove service"
+            echo "  help              - Show this help message"
+            ;;
+        --complete)
+            # Used by bash completion
+            echo "$COMMANDS"
+            ;;
+        "")
+            echo "Error: No command specified"
+            echo "Run '$0 help' for usage information"
+            $0 help
+            exit 1
+            ;;
+        *)
+            echo "Error: Unknown command '$1'"
+            echo "Run '$0 help' for available commands"
+            exit 1
+            ;;
+    esac
+}
+
+# Execute main function when script is run directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    hbf_main "$@"
+fi
