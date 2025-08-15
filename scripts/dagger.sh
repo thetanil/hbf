@@ -8,7 +8,7 @@ set -u  # Exit on undefined variables
 
 # Define paths
 readonly DAGGER_BIN="${HOME}/.local/bin/dagger"
-readonly SERVICE_DIR="${HOME}/.config/systemd/user"
+readonly SERVICE_DIR="/etc/systemd/system"
 readonly CACHE_DIR="${HOME}/.cache/dagger"
 readonly SOCKET_PATH="${CACHE_DIR}/engine.sock"
 readonly SERVICE_FILE="${SERVICE_DIR}/dagger-engine.service"
@@ -100,34 +100,34 @@ install_dagger() {
 create_service() {
     log_info "Creating systemd service..."
     
-    # Create directories
-    safe_mkdir "$SERVICE_DIR"
+    # Create cache directory (service dir needs sudo)
     safe_mkdir "$CACHE_DIR"
     
-    # Create service file
-    cat > "$SERVICE_FILE" << EOF
+    # Create service file (requires sudo)
+    sudo tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
-Description=Persistent Dagger Engine (Rootless)
-After=network.target
+Description=Persistent Dagger Engine (Docker Container)
+After=docker.service
+Requires=docker.service
 
 [Service]
-ExecStart=$DAGGER_BIN engine --unix $SOCKET_PATH --cache-dir $CACHE_DIR
+Type=simple
+ExecStartPre=-/usr/bin/docker stop dagger-engine
+ExecStartPre=-/usr/bin/docker rm dagger-engine
+ExecStart=/usr/bin/docker run --rm \\
+    --name dagger-engine \\
+    --privileged \\
+    -v $CACHE_DIR:/var/lib/dagger \\
+    -v $HOME/.config/dagger:/etc/dagger \\
+    -p 127.0.0.1:8080:8080 \\
+    registry.dagger.io/engine:v0.18.14
+ExecStop=/usr/bin/docker stop dagger-engine
 Restart=on-failure
-RestartSec=5s
+RestartSec=10s
 StartLimitIntervalSec=60
 StartLimitBurst=3
 StandardOutput=journal
 StandardError=journal
-
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=full
-ProtectHome=read-only
-PrivateTmp=true
-ProtectKernelModules=true
-ProtectKernelTunables=true
-ProtectControlGroups=true
-CapabilityBoundingSet=
 
 [Install]
 WantedBy=default.target
@@ -139,7 +139,7 @@ EOF
     fi
     
     # Reload systemd
-    if ! systemctl --user daemon-reload; then
+    if ! sudo systemctl daemon-reload; then
         log_error "Failed to reload systemd daemon"
         return 1
     fi
@@ -151,7 +151,7 @@ EOF
 start_service() {
     log_info "Enabling and starting dagger-engine..."
     
-    if ! systemctl --user enable --now dagger-engine; then
+    if ! sudo systemctl enable --now dagger-engine; then
         log_error "Failed to enable and start dagger-engine service"
         return 1
     fi
@@ -163,7 +163,7 @@ start_service() {
 stop_service() {
     log_info "Stopping dagger-engine..."
     
-    if ! systemctl --user stop dagger-engine; then
+    if ! sudo systemctl stop dagger-engine; then
         log_error "Failed to stop dagger-engine service"
         return 1
     fi
@@ -173,12 +173,12 @@ stop_service() {
 
 # Show service status
 show_status() {
-    systemctl --user status dagger-engine
+    systemctl status dagger-engine
 }
 
 # Show service logs
 show_logs() {
-    journalctl --user -u dagger-engine -f
+    journalctl -u dagger-engine -f
 }
 
 # Uninstall dagger
@@ -186,22 +186,22 @@ uninstall_dagger() {
     log_info "Uninstalling dagger..."
     
     # Stop service first
-    if systemctl --user is-active --quiet dagger-engine; then
+    if systemctl is-active --quiet dagger-engine; then
         stop_service
     fi
     
     # Disable and remove service
-    if systemctl --user is-enabled --quiet dagger-engine; then
+    if systemctl is-enabled --quiet dagger-engine; then
         log_info "Removing service..."
-        systemctl --user disable dagger-engine || log_warn "Failed to disable service"
+        sudo systemctl disable dagger-engine || log_warn "Failed to disable service"
     fi
     
     if [ -f "$SERVICE_FILE" ]; then
-        rm -f "$SERVICE_FILE" || log_warn "Failed to remove service file"
+        sudo rm -f "$SERVICE_FILE" || log_warn "Failed to remove service file"
     fi
     
     # Reload systemd
-    systemctl --user daemon-reload || log_warn "Failed to reload systemd daemon"
+    sudo systemctl daemon-reload || log_warn "Failed to reload systemd daemon"
     
     # Remove binary
     if [ -f "$DAGGER_BIN" ]; then
@@ -222,10 +222,23 @@ test_engine() {
         return 1
     fi
     
+    # Check if systemd service is running
+    if ! systemctl is-active --quiet dagger-engine; then
+        log_info "Dagger engine service is not running. Starting it now..."
+        if ! start_service; then
+            log_error "Failed to start dagger engine service"
+            return 1
+        fi
+        # Wait for the Docker container to fully start
+        log_info "Waiting for engine to be ready..."
+        sleep 10
+    fi
+    
     log_info "Running 'dagger core container from --address alpine:latest image-ref' to test engine..."
     
-    # Set environment to suppress nag messages
+    # Set environment to connect to persistent engine and suppress nag messages
     export DAGGER_NO_NAG=1
+    export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine
     
     if ! "$DAGGER_BIN" core container from --address alpine:latest image-ref; then
         log_error "Dagger engine test failed"

@@ -160,3 +160,10 @@ license=
 
 
 https://github.com/kpenfound/hello-monorepo
+
+## i need to just write some tasks
+
+just check out a repo, which is not the best idea since it's already here and 
+will also be checked out by gh native action in ci
+
+

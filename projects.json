@@ -1,0 +1,10 @@
+{
+    "projA": {
+        "repo": "https://github.com/dagger/dagger.git",
+        "ref": "196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5"
+    },
+    "projB": {
+        "repo": "https://github.com/example/repoB.git",
+        "ref": "tags/v0.0.1"
+    }
+}
