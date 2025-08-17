@@ -102,3 +102,49 @@ func (m *Hbf) LoadProjects(ctx context.Context, projectsFile *dagger.File) (stri
 
 	return result, nil
 }
+
+// CheckoutRepos clones all repositories from projects.json to .work directory
+func (m *Hbf) CheckoutRepos(ctx context.Context, projectsFile *dagger.File, gitToken *dagger.Secret) (string, error) {
+	// Read and parse projects.json
+	content, err := projectsFile.Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to read projects file: %w", err)
+	}
+
+	var config Config
+	if err := json.Unmarshal([]byte(content), &config); err != nil {
+		return "", fmt.Errorf("failed to parse projects JSON: %w", err)
+	}
+
+	var result string
+	
+	// Process each project
+	for name, project := range config {
+		result += fmt.Sprintf("Processing project: %s\n", name)
+		
+		// Create working directory path
+		workDir := fmt.Sprintf(".work/%s", name)
+		
+		// Clone or update repository with auth token
+		gitOpts := dagger.GitOpts{
+			KeepGitDir: true,
+		}
+		
+		if gitToken != nil {
+			gitOpts.HTTPAuthToken = gitToken
+		}
+		
+		repoDir := dag.Git(project.Repo, gitOpts).Ref(project.Ref).Tree()
+		
+		// Export to host filesystem
+		_, err := repoDir.Export(ctx, workDir)
+		if err != nil {
+			result += fmt.Sprintf("  ❌ Failed to checkout %s: %v\n", project.Repo, err)
+			continue
+		}
+		
+		result += fmt.Sprintf("  ✅ Checked out %s@%s to %s\n", project.Repo, project.Ref, workDir)
+	}
+
+	return result, nil
+}
