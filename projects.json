@@ -6,5 +6,10 @@
     "projB": {
         "repo": "https://github.com/example/repoB.git",
         "ref": "tags/v0.0.1"
+    },
+    "projB-docs": {
+        "repo": "https://github.com/example/repoB-docs.git",
+        "HbfType": "hugo",
+        "ref": "tags/v0.0.1"
     }
 }

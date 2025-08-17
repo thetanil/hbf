@@ -18,11 +18,13 @@ import (
 	"context"
 	"dagger/hbf/internal/dagger"
 	"encoding/json"
+	"fmt"
 )
 
 type Project struct {
-	Repo string `json:"repo"`
-	Ref  string `json:"ref"`
+	Repo    string `json:"repo"`
+	HbfType string `json:"HbfType,omitempty"`
+	Ref     string `json:"ref"`
 }
 
 type Config map[string]Project
@@ -56,6 +58,11 @@ func (m *Hbf) InitProjects(ctx context.Context) (*dagger.Directory, error) {
 			Repo: "https://github.com/example/repoB.git",
 			Ref:  "tags/v0.0.1",
 		},
+		"projB-docs": Project{
+			Repo:    "https://github.com/example/repoB-docs.git",
+			HbfType: "hugo",
+			Ref:     "tags/v0.0.1",
+		},
 	}
 
 	data, err := json.MarshalIndent(initial, "", "    ")
@@ -66,4 +73,32 @@ func (m *Hbf) InitProjects(ctx context.Context) (*dagger.Directory, error) {
 	// Create a directory with the file content and return it
 	// The caller can then export this directory to wherever they want
 	return dag.Directory().WithNewFile("projects.json", string(data)), nil
+}
+
+// LoadProjects reads and parses a projects.json file
+func (m *Hbf) LoadProjects(ctx context.Context, projectsFile *dagger.File) (string, error) {
+	// Read the file content
+	content, err := projectsFile.Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to read projects file: %w", err)
+	}
+
+	// Parse the JSON
+	var config Config
+	if err := json.Unmarshal([]byte(content), &config); err != nil {
+		return "", fmt.Errorf("failed to parse projects JSON: %w", err)
+	}
+
+	// Return formatted output for verification
+	var result string
+	for name, project := range config {
+		hbfType := project.HbfType
+		if hbfType == "" {
+			hbfType = "default"
+		}
+		result += fmt.Sprintf("Project: %s, Repo: %s, Type: %s, Ref: %s\n", 
+			name, project.Repo, hbfType, project.Ref)
+	}
+
+	return result, nil
 }
