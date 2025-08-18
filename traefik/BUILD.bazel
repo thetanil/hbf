@@ -1,0 +1,8 @@
+sh_binary(
+    name = "traefik_server",
+    srcs = ["start_traefik.sh"],
+    data = [
+        "traefik.yml",
+    ],
+    visibility = ["//visibility:public"],
+)

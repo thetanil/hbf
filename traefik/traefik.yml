@@ -1,0 +1,22 @@
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":8090"
+  websecure:
+    address: ":8443"
+
+providers:
+  file:
+    filename: /tmp/traefik-dynamic.yml
+    watch: true
+
+log:
+  level: INFO
+
+# Disable default entrypoints
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
