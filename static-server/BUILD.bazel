@@ -1,0 +1,10 @@
+sh_binary(
+    name = "static_server",
+    srcs = ["start_server.sh"],
+    data = [
+        "index.html",
+        "style.css",
+        "register_with_traefik.sh",
+    ],
+    visibility = ["//visibility:public"],
+)

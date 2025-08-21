@@ -1,5 +1,46 @@
 # HBF - Bazel Build Framework
 
+## rework
+
+make a repo for repos with otterdog
+make a repo for secrets with pass
+just start building a local pipeline
+static web site
+publish to mastadon
+render a https://pypi.org/project/mitsuba/ image
+lint python
+generate 2d isometric art for game with 3d rotoscoping from 
+pytests
+tests in jupyter
+publish to docker cluster
+
+
+
+
+each tiny service has it's own docker compose which works together with the
+others
+
+tiny builds into tiny containers live deployed with ibazel
+
+bring in common-ui
+
+bazel build //my_service:my_service_binary
+docker build -t my_service:latest .
+docker save my_service:latest | docker compose -f docker-compose.yml load
+docker compose up -d --no-deps my_service
+
+and use
+
+################################################################################
+# Did you know iBazel can invoke programs like Gazelle, buildozer, and         #
+# other BUILD file generators for you automatically based on bazel output?     #
+# Documentation at: https://github.com/bazelbuild/bazel-watcher#output-runner  #
+################################################################################
+
+to run the docker commands which are output from the bazel service bin build
+
+## old
+
 A system of Bazel builds with external repos and interdependencies, featuring ibazel integration for development workflows.
 
 ## Quick Start

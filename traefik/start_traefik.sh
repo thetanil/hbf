@@ -21,26 +21,14 @@ if [[ ! -f "$TRAEFIK_BINARY" ]]; then
     echo "Traefik downloaded successfully"
 fi
 
-# Create a basic dynamic config if it doesn't exist
-DYNAMIC_CONFIG="/tmp/traefik-dynamic.yml"
-if [[ ! -f "$DYNAMIC_CONFIG" ]]; then
-    cat > "$DYNAMIC_CONFIG" << EOF
-http:
-  routers:
-    api:
-      rule: "PathPrefix(\`/api\`) || PathPrefix(\`/dashboard\`)"
-      service: "api@internal"
-  
-  services: {}
-EOF
-fi
+# Dynamic config will be managed by services that register with Traefik
 
 echo "Starting Traefik server..."
-echo "Dashboard will be available at: http://localhost:8090/dashboard/"
-echo "API will be available at: http://localhost:8090/api/"
+echo "Dashboard will be available at: http://localhost:9080/dashboard/"
+echo "API will be available at: http://localhost:9080/api/"
 
 # Make traefik binary executable
 chmod +x "$TRAEFIK_BINARY"
 
-# Start traefik with explicit entrypoints only
-exec "$TRAEFIK_BINARY" --configfile="$TRAEFIK_CONFIG" --entrypoints.web.address=:8090 --entrypoints.websecure.address=:8443
+# Start traefik using only config file
+exec "$TRAEFIK_BINARY" --configfile="$TRAEFIK_CONFIG"

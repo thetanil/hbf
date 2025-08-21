@@ -1,12 +1,12 @@
+entryPoints:
+  web:
+    address: ":9080"
+
 api:
   dashboard: true
   insecure: true
 
-entryPoints:
-  web:
-    address: ":8090"
-  websecure:
-    address: ":8443"
+ping: {}
 
 providers:
   file:
@@ -16,7 +16,6 @@ providers:
 log:
   level: INFO
 
-# Disable default entrypoints
 global:
   checkNewVersion: false
   sendAnonymousUsage: false
