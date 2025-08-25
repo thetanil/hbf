@@ -1,5 +1,56 @@
 # HBF - Bazel Build Framework
 
+## something to build....
+
+an integrated platform for audio and graphics which is at a top level cpp
+statically compiled cross platform single file executable which has no external
+dependencies (even glibc). the application will have a gui made of several layers.
+
+primary language is incorrect
+    - the prefered language is C99 or C89
+    - C++ required for imgui, so a top level cpp build will be needed
+    - bazel, init.db and nvim delivered as resources, extracted and called externally
+    - sdl2 with opengl, audio, and ttf statically linked in
+    - sqlite3 statically linked in
+audio sequencing and synthesis should use sdl2 audio
+    - stk libs might be made available
+i will build this all with bazel 
+    - scripted builds of cmake calls as bazel packages is fine
+    - do not change the build system of the dependant projects
+    - they should be mostly bazel library packages which cache well
+
+write a markdown specification. this is a technical document for the developer
+to understand the design. do not use code fences. include hierarchy of tasks to
+plan to implement, and order them to minize dependencies and make smaller steps
+
+
+- opengl surface for shaders
+- an imgui layer for UI elements
+- a neovim layer for live editing of elements in the application
+
+sdl2 opengl
+nvim overlay with transparency using sdl_ttf for fonts
+sqlite3 for doc storage, message queuing, cache
+- starlark
+    - Deterministic evaluation. Executing the same code twice will give the same results.
+    - Hermetic execution. Execution cannot access the file system, network, system clock. It is safe to execute untrusted code.
+    - Parallel evaluation. Modules can be loaded in parallel. To guarantee a thread-safe execution, shared data becomes immutable.
+- maybe embed lua
+- maybe embed python with module support (no starlark maybe, provide own api)
+
+for matt:
+editor with live reload shaders
+gif
+
+for docs:
+clickable md which has testable md cells
+extract to code file
+
+for game use case
+imgui text, just do it, with buttons
+md renders html not as ui
+
+
 ## rework
 
 make a repo for repos with otterdog
