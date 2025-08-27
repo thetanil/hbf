@@ -1,0 +1,8 @@
+.git
+.gitignore
+.devcontainer
+node_modules
+bazel-*
+.vscode
+*.log
+tmp/

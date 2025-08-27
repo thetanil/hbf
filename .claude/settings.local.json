@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:daggerverse.dev)",
+      "Bash(dagger call checkout-repos:*)",
+      "Bash(mkdir:*)",
+      "Bash(cmake:*)",
+      "Bash(make:*)",
+      "Read(//tmp/**)",
+      "Read(//tmp/**)",
+      "Bash(tar:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "/tmp/SDL2-2.30.9/build",
+      "/tmp"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+    "name": "HBF Development Environment",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "features": {},
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go",
+                "bazelbuild.vscode-bazel"
+            ],
+            "settings": {
+                "go.toolsManagement.checkForUpdates": "local",
+                "go.useLanguageServer": true,
+                "go.gopath": "/home/vscode/go",
+                "go.goroot": "/usr/local/go",
+                "bazel.executable": "/home/vscode/.bazel/bin/bazel"
+            }
+        }
+    },
+    "forwardPorts": [],
+    "postCreateCommand": "go mod tidy",
+    "remoteUser": "vscode",
+    "workspaceFolder": "/workspace",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
+}
