@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "input",
+    srcs = ["handler.go"],
+    importpath = "hbf/internal/input",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/log"],
+)

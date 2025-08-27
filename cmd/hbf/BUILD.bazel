@@ -12,17 +12,11 @@ go_library(
     srcs = ["main.go"],
     importpath = "hbf/cmd/hbf",
     visibility = ["//visibility:private"],
-)
-
-load("@rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
-
-nogo(
-    name = "nogo",
-    visibility = ["//visibility:public"],
     deps = [
-        a
-        for a in TOOLS_NOGO
-        # Filter out shadow as it triggers on err and is very noisy.
-        if a != "@org_golang_x_tools//go/analysis/passes/shadow:go_default_library"
+        "//internal/input",
+        "//internal/log",
+        "//internal/nvim",
+        "//internal/render",
+        "//internal/ui",
     ],
 )

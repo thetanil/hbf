@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "errors",
+    srcs = ["errors.go"],
+    importpath = "hbf/internal/errors",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/log"],
+)

@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "nvim",
+    srcs = ["client.go"],
+    importpath = "hbf/internal/nvim",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/log"],
+)
+
+go_test(
+    name = "nvim_test",
+    srcs = ["client_test.go"],
+    embed = [":nvim"],
+)

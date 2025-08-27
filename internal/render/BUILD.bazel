@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "render",
+    srcs = ["renderer.go"],
+    importpath = "hbf/internal/render",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/log"],
+)

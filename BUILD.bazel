@@ -1,3 +1,16 @@
+load("@rules_go//go:def.bzl", "go_test")
 load("@gazelle//:def.bzl", "gazelle")
 
 gazelle(name = "gazelle")
+
+go_test(
+    name = "hbf_test",
+    srcs = ["integration_test.go"],
+    deps = [
+        "//internal/input",
+        "//internal/log",
+        "//internal/nvim",
+        "//internal/render",
+        "//internal/ui",
+    ],
+)

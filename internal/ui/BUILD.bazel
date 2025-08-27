@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "ui",
+    srcs = ["state.go"],
+    importpath = "hbf/internal/ui",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/log"],
+)
