@@ -10,6 +10,14 @@ RUN apt-get update && apt-get install -y \
     sudo \
     wget \
     unzip \
+    # raylib go dependencies
+    libgl1-mesa-dev \
+    libxi-dev \
+    libxcursor-dev \
+    libxrandr-dev \
+    libxinerama-dev \
+    libwayland-dev \
+    libxkbcommon-dev \
     # python3 \
     # python3-pip \
     # Raylib dependencies

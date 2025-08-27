@@ -1,0 +1,25 @@
+module(name = "hbf", version = "0.1.0")
+
+# Core deps
+bazel_dep(name = "rules_go", version = "0.53.0")
+bazel_dep(name = "gazelle", version = "0.45.0")
+
+# --- Go toolchains ---
+go_toolchains = use_extension("@rules_go//go:extensions.bzl", "go_register_toolchains")
+go_toolchains.go_register_toolchains(version = "1.25.0")
+
+go_platforms = use_extension("@rules_go//go:extensions.bzl", "go_register_platforms")
+go_platforms.go_register_platforms()
+
+# --- Gazelle build generator ---
+gazelle_ext = use_extension("@gazelle//:extensions.bzl", "gazelle")
+# DO NOT call use_repo with "gazelle" — already provided by bazel_dep
+
+# --- Gazelle Go deps support ---
+# go_deps_ext = use_extension("@gazelle//:extensions.bzl", "go_deps")
+# use_repo(go_deps_ext, "go_deps")
+
+# https://github.com/bazel-contrib/rules_go/blob/master/docs/go/core/bzlmod.md
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(go_deps)

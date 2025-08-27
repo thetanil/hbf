@@ -9,7 +9,8 @@
         "vscode": {
             "extensions": [
                 "golang.go",
-                "bazelbuild.vscode-bazel"
+                "bazelbuild.vscode-bazel",
+                "Anthropic.claude-code",
             ],
             "settings": {
                 "go.toolsManagement.checkForUpdates": "local",
