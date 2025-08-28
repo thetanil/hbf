@@ -5,7 +5,11 @@ go_library(
     srcs = ["client.go"],
     importpath = "hbf/internal/nvim",
     visibility = ["//:__subpackages__"],
-    deps = ["//internal/log"],
+    deps = [
+        "//internal/errors",
+        "//internal/log",
+        "@com_github_neovim_go_client//nvim",
+    ],
 )
 
 go_test(

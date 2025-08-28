@@ -13,10 +13,12 @@ go_library(
     importpath = "hbf/cmd/hbf",
     visibility = ["//visibility:private"],
     deps = [
+        "//internal/errors",
         "//internal/input",
         "//internal/log",
         "//internal/nvim",
         "//internal/render",
         "//internal/ui",
+        "@com_github_gen2brain_raylib_go_raylib//:raylib",
     ],
 )

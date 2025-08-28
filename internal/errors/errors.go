@@ -26,3 +26,8 @@ func WrapError(err error, context string) error {
 	}
 	return fmt.Errorf("%s: %w", context, err)
 }
+
+// New creates a new error with the given message
+func New(message string) error {
+	return fmt.Errorf(message)
+}

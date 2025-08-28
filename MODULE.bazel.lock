@@ -151,7 +151,8 @@
         "bzlTransitiveDigest": "Fm+QI6r8OR+6d5Yp3Zqpspb51+5ow83wd1TanUjPQ0U=",
         "usagesDigest": "hIMopiSRkQAG5JPJUfA6/KPj4+DrXoV4DQGX23hdQf4=",
         "recordedFileInputs": {
-          "@@//go.mod": "7ed4935350c7a11a1356e66b481dfae6fabd66586dd4bafd95238917054cddd3",
+          "@@//go.mod": "02b43434ba2347f4bd0a80229b699fe8a5a232f91ef13e611a06a07e31a8d9b4",
+          "@@//go.sum": "e075f15a5967d9f0658a73850076dca033739e288b991894a3f029125351d215",
           "@@gazelle+//go.mod": "e915e3f980bea175c80cc30fa7433e69f1251a9ce03046579d7b24588a93e75f",
           "@@gazelle+//go.sum": "afb3c20626470bff206a91f35b0994f514f7a05ca44d9105f5ccb84e0d3ca197",
           "@@rules_go+//go.mod": "a7143f329c2a3e0b983ce74a96c0c25b0d0c59d236d75f7e1b069aadd988d55e",
@@ -160,6 +161,71 @@
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
+          "com_github_gen2brain_raylib_go_raylib": {
+            "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
+            "attributes": {
+              "importpath": "github.com/gen2brain/raylib-go/raylib",
+              "build_directives": [],
+              "build_file_generation": "auto",
+              "patches": [],
+              "patch_args": [],
+              "sum": "h1:1rdc10WvvYjtj7qijHnV9T38/WuvlT6IIL+PaZ6cNA8=",
+              "replace": "",
+              "version": "v0.55.1"
+            }
+          },
+          "com_github_neovim_go_client": {
+            "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
+            "attributes": {
+              "importpath": "github.com/neovim/go-client",
+              "build_directives": [],
+              "build_file_generation": "auto",
+              "patches": [],
+              "patch_args": [],
+              "sum": "h1:kl3PgYgbnBfvaIoGYi3ojyXH0ouY6dJY/rYUCssZKqI=",
+              "replace": "",
+              "version": "v1.2.1"
+            }
+          },
+          "com_github_ebitengine_purego": {
+            "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
+            "attributes": {
+              "importpath": "github.com/ebitengine/purego",
+              "build_directives": [],
+              "build_file_generation": "auto",
+              "patches": [],
+              "patch_args": [],
+              "sum": "h1:6/55d26lG3o9VCZX8lping+bZcmShseiqlh2bnUDiPA=",
+              "replace": "",
+              "version": "v0.7.1"
+            }
+          },
+          "org_golang_x_exp": {
+            "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
+            "attributes": {
+              "importpath": "golang.org/x/exp",
+              "build_directives": [],
+              "build_file_generation": "auto",
+              "patches": [],
+              "patch_args": [],
+              "sum": "h1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=",
+              "replace": "",
+              "version": "v0.0.0-20240506185415-9bf2ced13842"
+            }
+          },
+          "org_golang_x_sys": {
+            "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
+            "attributes": {
+              "importpath": "golang.org/x/sys",
+              "build_directives": [],
+              "build_file_generation": "auto",
+              "patches": [],
+              "patch_args": [],
+              "sum": "h1:Od9JTbYCk261bKm4M/mw7AklTlFYIa0bIp9BgSm1S8Y=",
+              "replace": "",
+              "version": "v0.20.0"
+            }
+          },
           "com_github_gogo_protobuf": {
             "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
             "attributes": {
@@ -225,19 +291,6 @@
               "sum": "h1:4nGaVu0QrbjT/AK2PRLuQfQuh6DJve+pELhqTdAj3x0=",
               "replace": "",
               "version": "v0.0.0-20210405180319-a5a99cb37ef4"
-            }
-          },
-          "org_golang_x_sys": {
-            "repoRuleId": "@@gazelle+//internal:go_repository.bzl%go_repository",
-            "attributes": {
-              "importpath": "golang.org/x/sys",
-              "build_directives": [],
-              "build_file_generation": "auto",
-              "patches": [],
-              "patch_args": [],
-              "sum": "h1:CM0HF96J0hcLAwsHPJZjfdNzs0gftsLfgKt57wWHJ0o=",
-              "replace": "",
-              "version": "v0.12.0"
             }
           },
           "org_golang_x_text": {
@@ -402,12 +455,16 @@
             "repoRuleId": "@@gazelle+//internal/bzlmod:go_deps.bzl%_go_repository_config",
             "attributes": {
               "importpaths": {
+                "com_github_gen2brain_raylib_go_raylib": "github.com/gen2brain/raylib-go/raylib",
+                "com_github_neovim_go_client": "github.com/neovim/go-client",
+                "com_github_ebitengine_purego": "github.com/ebitengine/purego",
+                "org_golang_x_exp": "golang.org/x/exp",
+                "org_golang_x_sys": "golang.org/x/sys",
                 "com_github_gogo_protobuf": "github.com/gogo/protobuf",
                 "com_github_golang_mock": "github.com/golang/mock",
                 "com_github_golang_protobuf": "github.com/golang/protobuf",
                 "org_golang_google_protobuf": "google.golang.org/protobuf",
                 "org_golang_x_net": "golang.org/x/net",
-                "org_golang_x_sys": "golang.org/x/sys",
                 "org_golang_x_text": "golang.org/x/text",
                 "org_golang_google_genproto": "google.golang.org/genproto",
                 "org_golang_google_grpc": "google.golang.org/grpc",
@@ -432,7 +489,10 @@
           }
         },
         "moduleExtensionMetadata": {
-          "explicitRootModuleDirectDeps": [],
+          "explicitRootModuleDirectDeps": [
+            "com_github_gen2brain_raylib_go_raylib",
+            "com_github_neovim_go_client"
+          ],
           "explicitRootModuleDirectDevDeps": [],
           "useAllRepos": "NO",
           "reproducible": false

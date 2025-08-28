@@ -10,25 +10,20 @@ RUN apt-get update && apt-get install -y \
     sudo \
     wget \
     unzip \
-    # raylib go dependencies
+    # raylib go dependencies - complete set
     libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    libglfw3-dev \
     libxi-dev \
     libxcursor-dev \
     libxrandr-dev \
     libxinerama-dev \
     libwayland-dev \
     libxkbcommon-dev \
-    # python3 \
-    # python3-pip \
-    # Raylib dependencies
-    # libasound2-dev \
-    # mesa-common-dev \
-    # libx11-dev \
-    # libxrandr-dev \
-    # libxi-dev \
-    # xorg-dev \
-    # libgl1-mesa-dev \
-    # libglu1-mesa-dev \
+    libx11-dev \
+    xorg-dev \
+    libasound2-dev \
+    mesa-common-dev \
     # Neovim dependencies
     neovim \
     && rm -rf /var/lib/apt/lists/*
