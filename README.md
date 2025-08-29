@@ -1,169 +1,76 @@
-# hbf
+we are on the raylib-vendored branch, where we will attempt to get raylib-go
+working with bazel as the build system. we have the following plan:
 
-need taskfile for a watcher. skip makefile. cli with what then? pocketci?
+🔹 High-Level Goal
 
-no - locked to github
-yes - right model. it's a tool for any repo
-yes - the tool should be able to build itself
+Use Bazel to build:
 
-https://github.com/franela/pocketci
+A vendored cc_library for raylib, including its bundled copy of glad.c.
 
+A vendored cc_library for GLFW (built from source).
 
+Vendored X11-related libraries (xcb, x11, xrandr, xinerama, xi, xkbcommon, etc.) — enough for GLFW to work on any Linux with X11 runtime.
 
-https://github.com/playgroundtech/dagger-go-example-app/blob/main/README.md
+A go_binary that depends on raylib via cgo, linking against those vendored cc targets.
 
-playgroundtech/dagger-go-example-app
+Output: a single portable ELF executable that works on Debian/Arch as long as the system has X11 running (i.e. user has a desktop environment).
 
-Description: A CLI-style example Go app that fetches a random dad joke, with
-workflows using Dagger, GoReleaser, and GitHub Actions. Offers both PR
-(“pull-request”) and release pipelines, callable via go run ./ci/dagger.go
---local pull-request. GitHub
+🔹 Build Flow Overview
 
-Organization: Has ci/dagger.go, a defined flowchart for Dagger pipelines, and
-clear separation between test and release tasks.
+Workspace setup
 
-Why it qualifies as CLI-ready: Concrete command-line argument workflow
-integration and polished automation.
+Bazel WORKSPACE defines:
 
-project init
-repo link <url> 
+rules_go (for Go + cgo support).
 
-checkout repo i guess, but i will run it from a repo root i hope
+rules_cc (for C/C++ builds).
 
-point to reach is that hbf can build itself as a go app?
-no no, you check this out and it builds any repo with dagger
+http_archive or local_repository for vendored raylib + glfw source.
 
-hbf project dag
-hbf repo list
-hbf repo edit
-hbf repo add
-hbf svc list
-hbf svc add
-hbf tool add <url> <tooltype>
-hbf <tooltype>
-hbf build
-hbf test
-hbf release
+Vendored Sources
 
-repo links url to fs:/home/user/asdf
-svc links repo to deployment (long running fn, service registration)
-tool links repo to dagger support utils
-https://github.com/kpenfound/hello-monorepo
+Place sources under third_party/:
 
-## cli v2
+third_party/raylib/
 
-INI-like config:
+third_party/glfw/
 
-```ini
-[section1]
-var1=value1
-var2=value2
+(Optionally) vendored X11 protocol headers if you want zero external dev packages.
 
-[section2]
-var1=foo
-var2=bar
-```
+Include glad.c (raylib already bundles its GLAD fork).
 
-shell function to parse it
+Bazel Build Targets
 
-```sh
-parse_ini() {
-    section=""
-    while IFS= read -r line; do
-        case $line in
-            \[*\]) section="${line#[}"; section="${section%]}";;
-            ""|\#*) continue;;
-            *=*)
-                key="${line%%=*}"
-                val="${line#*=}"
-                key="$(echo "$key" | tr -d '[:space:]')"
-                val="$(echo "$val" | sed 's/^ *//; s/ *$//')"
-                eval "${section}_${key}=\$val"
-                ;;
-        esac
-    done < "$1"
-}
-```
+cc_library(name="glfw", ...) — compile GLFW sources.
 
-the main hbf script will have a function to expand templates into commands
-hbf has available based on the config ini file
+cc_library(name="raylib", deps=[":glfw"], ...) — compile raylib C sources, include glad.
 
-```sh
-expand_template() {
-    eval "echo \"$1\""
-}
-expand_template "Hello, \$section2_var1 from \$section2_var2"
-```
+cc_library(name="raylib_shim", deps=[":raylib"], ...) — tiny shim for cgo.
 
-main script ./hbf uses this case switch style command line processing, but it
-should also generate some command dynamically based on the parsed ini content.
+go_library(name="raylib_go", cdeps=[":raylib_shim"]) — wraps shim.
 
-```sh
-# Main function
-hbf_main() {
-    # Path to the dagger script
-    local dagger_script="$(dirname "$0")/scripts/dagger.sh"
-    
-    case "$1" in
-        dagger-all)
-            "$dagger_script" all
-            ;;
-        dagger-install)
-            "$dagger_script" install
-```
+go_binary(name="mygame", deps=[":raylib_go"]) — your Go code.
 
-cli completion is always available via ./hbf --complete and the COMMANDS
-variable also needs to be updated given the commands generated based on the ini
-config. 
+C Build Flags
 
-```sh
-# Define available commands based on Makefile targets
-COMMANDS="dagger-all dagger-install dagger-service dagger-start dagger-stop dagger-status dagger-logs dagger-test dagger-cache-test dagger-uninstall help"
+For raylib:
 
-# Auto-register completion when script is sourced or executed
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]] || [[ "${COMP_WORDS}" ]]; then
-    # We're being sourced or called for completion
-    _hbf_completion() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        COMPREPLY=( $(compgen -W "${COMMANDS}" -- "${cur}") )
-    }
-    complete -F _hbf_completion "${BASH_SOURCE[0]##*/}"
-    complete -F _hbf_completion hbf
-    return 2>/dev/null || exit 0
-fi
-```
+-DPLATFORM_DESKTOP -DGRAPHICS_API_OPENGL_33
 
-templates will be go modules which are run like:
-```sh
-go run ./{project_name}/dagger.go --local pull-request
-or what about python
-dagger run 
-```
+For GLFW:
 
-types in ini file identify the project type
-project name is what identifies the section
+Disable wayland unless you want it.
 
-[libglib]
-type=lib
-active=false
-latest_tag=
-path=<type>/libglib
-repo_url=
-publish=
-version=
+Enable X11 support (-D_GLFW_X11).
 
-[syft]
-type=tool
-version=1.3.5
-dl_url=
-license=
+For both: -fPIC -O2.
 
+Linker Flags
 
-https://github.com/kpenfound/hello-monorepo
+Must vendor & link these libs statically (or build them as cc targets):
 
-## i need to just write some tasks
+-lm -ldl -lpthread
 
-just check out a repo, which is not the best idea since it's already here and 
-will also be checked out by gh native action in ci
+-lx11 -lxrandr -lxi -lxcursor -lxinerama -lXxf86vm
 
-
+These can be satisfied by vendoring X11 source packages (e.g., from xorg/libX11
