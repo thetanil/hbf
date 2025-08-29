@@ -1,0 +1,6 @@
+# Enable CGO for raylib
+build --define=CGO_ENABLED=1
+
+# Basic raylib settings
+build --copt="-DPLATFORM_DESKTOP"
+build --copt="-DGRAPHICS_API_OPENGL_33"
