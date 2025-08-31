@@ -1,0 +1,15 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Expose SDL2 as a cc_library for easy consumption
+cc_library(
+    name = "sdl2",
+    deps = ["@sdl2//:sdl2"],
+    visibility = ["//visibility:public"],
+)
+
+# Alias for convenience
+alias(
+    name = "SDL2",
+    actual = ":sdl2",
+    visibility = ["//visibility:public"],
+)

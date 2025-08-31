@@ -1,0 +1,18 @@
+module(name = "sdl2_bazel")
+
+bazel_dep(name = "rules_foreign_cc", version = "0.11.1")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "platforms", version = "0.0.11")
+
+# SDL2 source archive
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "sdl2",
+    build_file = "//third_party:sdl2.BUILD",
+    sha256 = "dd35e05644ae527848d02433bec24dd0ea65db59faecf1a0e5d1880c533dac2c",
+    strip_prefix = "SDL-release-2.32.8",
+    urls = [
+        "https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.8.tar.gz",
+    ],
+)
