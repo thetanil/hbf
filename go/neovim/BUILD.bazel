@@ -21,7 +21,6 @@ go_binary(
     embed = [":neovim_lib"],
     goos = "linux",
     goarch = "amd64",
-    pure = "off",
     visibility = ["//visibility:public"],
 )
 

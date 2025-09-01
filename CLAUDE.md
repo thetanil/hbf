@@ -146,7 +146,7 @@ The `go/neovim` project creates an embedded Neovim wrapper specifically for Linu
 
 ### Key Features:
 - **Linux-only support** - Uses `+build linux` constraint, no Windows compatibility
-- **No purego** - Uses `pure = "off"` in Bazel for full system integration
+- **No purego dependency** - Does not use https://pkg.go.dev/github.com/ebitengine/purego
 - **Latest Neovim 0.11.3** - Embeds the latest stable release
 - **x86_64 architecture** - Targets Linux amd64 systems exclusively
 

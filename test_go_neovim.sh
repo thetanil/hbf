@@ -17,9 +17,10 @@ echo "Embedded Go wrapper: $(du -h bazel-bin/go/neovim/neovim_/neovim | cut -f1)
 echo "Note: Neovim binary (~11MB) is downloaded automatically by Bazel"
 
 echo -e "\n4. Build info:"
-echo "Target: Linux x86_64 only (no Windows, no purego)"
+echo "Target: Linux x86_64 only (no Windows compatibility)"
 echo "Go constraints: +build linux"
-echo "Bazel GOOS: linux, GOARCH: amd64, pure: off"
+echo "Bazel GOOS: linux, GOARCH: amd64"
+echo "Dependencies: Does not use github.com/ebitengine/purego"
 
 echo -e "\nTo use the Go Neovim wrapper interactively:"
 echo "bazel run //go/neovim:neovim -- [nvim-options] [files...]"
