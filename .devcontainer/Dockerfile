@@ -1,4 +1,17 @@
-FROM node:20
+FROM ubuntu:22.04 AS base_image
+
+RUN --mount=source=bazel/oci/install_packages.sh,target=/mnt/install_packages.sh,type=bind \
+ /mnt/install_packages.sh
+
+FROM base_image AS downloader
+
+ARG TARGETARCH BAZEL_VERSION=8.3.1
+
+WORKDIR /var/bazel
+RUN --mount=source=bazel/oci/install_bazel.sh,target=/mnt/install_bazel.sh,type=bind \
+ /mnt/install_bazel.sh
+
+FROM node:20 AS node_base
 
 ARG TZ
 ENV TZ="$TZ"
@@ -26,6 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nano \
     vim \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy Bazel binary from downloader stage
+COPY --from=downloader /var/bazel/bazel /usr/local/bin/bazel
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
@@ -62,11 +78,11 @@ ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
 # Set the default shell to zsh rather than sh
-ENV SHELL=/bin/zsh
+ENV SHELL=/bin/bash
 
 # Set the default editor and visual
-ENV EDITOR=nano
-ENV VISUAL=nano
+ENV EDITOR=vim
+ENV VISUAL=vim
 
 # Default powerline10k theme
 ARG ZSH_IN_DOCKER_VERSION=1.2.0
