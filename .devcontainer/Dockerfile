@@ -17,8 +17,20 @@ ARG TZ
 ENV TZ="$TZ"
 
 ARG CLAUDE_CODE_VERSION=latest
+ARG GO_VERSION=1.21.5
 
-# Install basic development tools and iptables/ipset
+# Install Go
+RUN wget -O go.tar.gz "https://golang.org/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture | sed 's/arm64/arm64/' | sed 's/amd64/amd64/').tar.gz" && \
+    tar -C /usr/local -xzf go.tar.gz && \
+    rm go.tar.gz
+
+# Set Go environment variables
+ENV PATH=$PATH:/usr/local/go/bin
+ENV GOPATH=/home/node/go
+ENV GOBIN=$GOPATH/bin
+ENV PATH=$PATH:$GOBIN
+
+# Install basic development tools, GUI libraries for Wails, and other dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     less \
     git \
@@ -38,6 +50,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     nano \
     vim \
+    build-essential \
+    pkg-config \
+    libgtk-3-dev \
+    libwebkit2gtk-4.0-dev \
+    libnss3-dev \
+    libatk-bridge2.0-dev \
+    libdrm2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy Bazel binary from downloader stage
@@ -58,9 +83,9 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 # Set `DEVCONTAINER` environment variable to help with orientation
 ENV DEVCONTAINER=true
 
-# Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/node/.claude && \
-    chown -R node:node /workspace /home/node/.claude
+# Create workspace, config, and Go directories and set permissions
+RUN mkdir -p /workspace /home/node/.claude /home/node/go/bin /home/node/go/src /home/node/go/pkg && \
+    chown -R node:node /workspace /home/node/.claude /home/node/go
 
 WORKDIR /workspace
 
@@ -97,6 +122,8 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
+# Install Wails CLI (must be after USER node)
+RUN go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
 # Copy and set up firewall script
 # COPY init-firewall.sh /usr/local/bin/
@@ -104,4 +131,4 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 # RUN chmod +x /usr/local/bin/init-firewall.sh && \
 #     echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
 #     chmod 0440 /etc/sudoers.d/node-firewall
-USER node
+# USER node
