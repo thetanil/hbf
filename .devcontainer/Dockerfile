@@ -1,15 +1,15 @@
 FROM ubuntu:22.04 AS base_image
 
-RUN --mount=source=bazel/oci/install_packages.sh,target=/mnt/install_packages.sh,type=bind \
- /mnt/install_packages.sh
+RUN --mount=source=.devcontainer/bazel/oci/install_packages.sh,target=/mnt/install_packages.sh,type=bind \
+    /mnt/install_packages.sh
 
 FROM base_image AS downloader
 
 ARG TARGETARCH BAZEL_VERSION=8.3.1
 
 WORKDIR /var/bazel
-RUN --mount=source=bazel/oci/install_bazel.sh,target=/mnt/install_bazel.sh,type=bind \
- /mnt/install_bazel.sh
+RUN --mount=source=.devcontainer/bazel/oci/install_bazel.sh,target=/mnt/install_bazel.sh,type=bind \
+    /mnt/install_bazel.sh
 
 FROM node:20 AS node_base
 
