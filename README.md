@@ -106,3 +106,6 @@ checklist for the developer) so that they can follow it in sequence without
 needing to figure out the integration order?
 
 claude is running inside a devcontainer with `claude --dangerously-skip-permissions`
+
+wails dev -tags webkit2_41
+wails build -tags webkit2_41

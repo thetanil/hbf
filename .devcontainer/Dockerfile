@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     libgtk-3-dev \
-    libwebkit2gtk-4.0-dev \
+    libwebkit2gtk-4.1-dev \
     libnss3-dev \
     libatk-bridge2.0-dev \
     libdrm2 \
@@ -63,7 +63,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libxss1 \
     libasound2 \
+    libsoup-3.0-dev \
+    dbus-x11 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /usr/local/bin/npm /usr/bin/npm
 
 # Copy Bazel binary from downloader stage
 COPY --from=downloader /var/bazel/bazel /usr/local/bin/bazel
@@ -122,6 +126,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
+ENV DISPLAY=:1
 # Install Wails CLI (must be after USER node)
 RUN go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
