@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { TerminalManager } from "./terminal.js";
 
 // Initialize terminal
 const terminal = new Terminal({
@@ -30,11 +31,26 @@ window.addEventListener("resize", () => {
   fitAddon.fit();
 });
 
-// Test Wails connection
-window.go.main.App.TestConnection().then((result) => {
-  terminal.write("Wails connection test: " + result + "\r\n");
+// Initialize terminal manager
+const terminalManager = new TerminalManager(terminal);
+
+// Auto-connect when page loads
+window.addEventListener('load', async () => {
+  terminal.write("HBF Terminal - Connecting to backend...\r\n");
+  
+  try {
+    const connected = await terminalManager.connect();
+    if (connected) {
+      terminal.write("Terminal connected successfully! You can now run commands.\r\n");
+    } else {
+      terminal.write("Failed to connect to terminal backend.\r\n");
+    }
+  } catch (error) {
+    terminal.write(`Connection error: ${error.message}\r\n`);
+  }
 });
 
-// Basic terminal test
-terminal.write("Terminal initialized successfully\r\n");
-terminal.write("Ready for Phase 2 implementation\r\n");
+// Handle app shutdown
+window.addEventListener('beforeunload', () => {
+  terminalManager.disconnect();
+});

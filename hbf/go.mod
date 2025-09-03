@@ -4,7 +4,10 @@ go 1.22.0
 
 toolchain go1.24.6
 
-require github.com/wailsapp/wails/v2 v2.10.2
+require (
+	github.com/creack/pty v1.1.24
+	github.com/wailsapp/wails/v2 v2.10.2
+)
 
 require (
 	github.com/bep/debounce v1.2.1 // indirect

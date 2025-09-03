@@ -64,7 +64,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxss1 \
     libasound2 \
     libsoup-3.0-dev \
+    libglib2.0-dev \
+    libgdk-pixbuf2.0-dev \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libgtk2.0-dev \
+    libappindicator3-dev \
+    libxfixes3 \
+    libxinerama1 \
+    libxrandr2 \
+    libxcursor1 \
+    libxi6 \
+    libxext6 \
+    libx11-6 \
     dbus-x11 \
+    xvfb \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/local/bin/npm /usr/bin/npm
