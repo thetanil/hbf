@@ -3,6 +3,8 @@
 
 export function GetTerminalOutput():Promise<Record<string, any>>;
 
+export function GetWebSocketURL():Promise<string>;
+
 export function Greet(arg1:string):Promise<string>;
 
 export function IsTerminalRunning():Promise<boolean>;

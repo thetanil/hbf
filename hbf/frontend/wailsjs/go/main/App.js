@@ -6,6 +6,10 @@ export function GetTerminalOutput() {
   return window['go']['main']['App']['GetTerminalOutput']();
 }
 
+export function GetWebSocketURL() {
+  return window['go']['main']['App']['GetWebSocketURL']();
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // App struct
@@ -33,10 +34,14 @@ func (a *App) domReady(ctx context.Context) {
 // shutdown is called when the application is about to quit,
 // or when Ctrl-C is pressed in CLI mode
 func (a *App) shutdown(ctx context.Context) {
-	// Stop terminal if running
-	if a.terminalManager.IsRunning() {
+	// Force stop terminal and clean up all resources
+	if a.terminalManager != nil {
+		// Always call StopShell to ensure cleanup
 		a.terminalManager.StopShell()
 	}
+
+	// Give time for cleanup to complete
+	time.Sleep(10 * time.Millisecond)
 }
 
 // Greet returns a greeting for the given name
@@ -58,7 +63,7 @@ func (a *App) StartTerminal() map[string]interface{} {
 			"error":   err.Error(),
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"success": true,
 		"message": "Terminal started successfully",
@@ -74,7 +79,7 @@ func (a *App) SendTerminalInput(input string) map[string]interface{} {
 			"error":   err.Error(),
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"success": true,
 	}
@@ -90,7 +95,7 @@ func (a *App) GetTerminalOutput() map[string]interface{} {
 			"output":  "",
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"success": true,
 		"output":  output,
@@ -106,7 +111,7 @@ func (a *App) ResizeTerminal(cols, rows int) map[string]interface{} {
 			"error":   err.Error(),
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"success": true,
 	}
@@ -126,9 +131,14 @@ func (a *App) StopTerminal() map[string]interface{} {
 			"error":   err.Error(),
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"success": true,
 		"message": "Terminal stopped successfully",
 	}
+}
+
+// GetWebSocketURL returns the WebSocket URL for frontend connection
+func (a *App) GetWebSocketURL() string {
+	return a.terminalManager.GetWebSocketURL()
 }

@@ -34,19 +34,24 @@ window.addEventListener("resize", () => {
 // Initialize terminal manager
 const terminalManager = new TerminalManager(terminal);
 
-// Auto-connect when page loads
+// Auto-connect when page loads (WebSocket-based)
 window.addEventListener('load', async () => {
-  terminal.write("HBF Terminal - Connecting to backend...\r\n");
+  terminal.write("HBF Terminal - Connecting via WebSocket...\r\n");
   
   try {
     const connected = await terminalManager.connect();
     if (connected) {
-      terminal.write("Terminal connected successfully! You can now run commands.\r\n");
+      terminal.write("WebSocket terminal connected successfully! You can now run commands.\r\n");
+      
+      // Simple resize after connection
+      setTimeout(() => {
+        fitAddon.fit();
+      }, 100);
     } else {
-      terminal.write("Failed to connect to terminal backend.\r\n");
+      terminal.write("Failed to connect to terminal backend via WebSocket.\r\n");
     }
   } catch (error) {
-    terminal.write(`Connection error: ${error.message}\r\n`);
+    terminal.write(`WebSocket connection error: ${error.message}\r\n`);
   }
 });
 
