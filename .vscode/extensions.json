@@ -1,7 +1,6 @@
 {
     "recommendations": [
         "redhat.vscode-yaml",
-        "task.vscode-task",
-        "golang.go"
+        "dnut.rewrap-revived",
     ]
 }
