@@ -59,11 +59,16 @@ jobs:
         # Manual trigger specific settings
         RENOVATE_FORCE: ${{ github.event.inputs.forceUpdate == 'true' && '{"schedule":true}' || 'null' }}
         RENOVATE_DRY_RUN: ${{ github.event.inputs.dryRun }}
-        # Increase dependency lookup
+        # Increase dependency lookup and ignore lookup failures for git overrides
         RENOVATE_SCHEDULE_AUTOMERGE: 'false'
         RENOVATE_TIMEZONE: 'UTC'
-        # Explicitly scan for all Bazel dependencies
+        # Handle git_override dependencies
+        RENOVATE_IGNORE_DEPS: ''
+        RENOVATE_IGNORE_UNSTABLE: 'false'
+        # Enhanced Bazel configuration
         RENOVATE_BAZEL_DEPS_ENABLED: 'true'
+        # Ignore lookup failures for git overrides (expected behavior)
+        RENOVATE_SUPPRESS_NOTIFICATIONS: '["packageLookupFailure"]'
         # Custom settings for manual runs
         RENOVATE_RECREATE_CLOSED: 'true'
         RENOVATE_REBASE_STALE_PRS: 'true'

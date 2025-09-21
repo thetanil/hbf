@@ -12,14 +12,31 @@
             "MODULE\\.bazel$"
         ]
     },
+    "customManagers": [
+        {
+            "customType": "regex",
+            "fileMatch": [
+                "MODULE\\.bazel$"
+            ],
+            "matchStrings": [
+                "git_override\\s*\\(\\s*module_name\\s*=\\s*\"(?<depName>[^\"]+)\"[^)]*tag\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+            ],
+            "datasourceTemplate": "github-tags",
+            "depNameTemplate": "thetanil/hbf-{{depName}}",
+            "versioningTemplate": "semver"
+        }
+    ],
     "packageRules": [
         {
             "matchManagers": [
-                "bazel-module"
+                "bazel-module",
+                "regex"
             ],
             "matchPackageNames": [
                 "hbf_examplecpp",
-                "hbf_examplepy"
+                "hbf_examplepy",
+                "thetanil/hbf-examplecpp",
+                "thetanil/hbf-examplepy"
             ],
             "separateMinorPatch": false,
             "groupName": "HBF Demo Components",
@@ -32,7 +49,8 @@
             "addLabels": [
                 "dependencies",
                 "hbf-component"
-            ]
+            ],
+            "ignoreUnstable": false
         },
         {
             "matchManagers": [
