@@ -33,3 +33,4 @@ go.work.sum
 # .vscode/
 assets/
 hbf/hbf
+__pycache__

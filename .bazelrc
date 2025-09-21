@@ -1,0 +1,18 @@
+# Build configuration for HBF demo
+build --enable_bzlmod
+
+# Python configuration
+build --python_top=@python_3_11//:bin/python
+
+# Test configuration
+test --test_output=errors
+test --test_verbose_timeout_warnings
+
+# Performance optimizations
+build --jobs=auto
+build --local_resources=memory=2048
+build --local_resources=cpu=4
+
+# Debugging options (uncomment as needed)
+# build --verbose_failures
+# build --sandbox_debug

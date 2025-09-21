@@ -1,0 +1,88 @@
+name: Manual Component Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component name to update'
+        required: true
+        type: choice
+        options:
+          - hbf_examplecpp
+          - hbf_examplepy
+      version:
+        description: 'New version'
+        required: true
+        type: string
+      create_pr:
+        description: 'Create pull request'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  update-component:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
+    
+    - name: Update MODULE.bazel
+      run: |
+        COMPONENT="${{ github.event.inputs.component }}"
+        VERSION="${{ github.event.inputs.version }}"
+        
+        echo "Updating $COMPONENT to $VERSION"
+        
+        # Update the MODULE.bazel file
+        sed -i "s/bazel_dep(name = \"$COMPONENT\", version = \"[^\"]*\")/bazel_dep(name = \"$COMPONENT\", version = \"$VERSION\")/" MODULE.bazel
+        
+        echo "Updated MODULE.bazel:"
+        grep "$COMPONENT" MODULE.bazel
+        
+        # Validate the change
+        if ! grep -q "bazel_dep(name = \"$COMPONENT\", version = \"$VERSION\")" MODULE.bazel; then
+          echo "ERROR: Failed to update $COMPONENT to $VERSION"
+          exit 1
+        fi
+    
+    - name: Validate Bazel configuration
+      run: |
+        # Check if the MODULE.bazel file is still valid
+        if command -v bazel &> /dev/null; then
+          bazel query --enable_bzlmod @${{ github.event.inputs.component }}//... || echo "Warning: Component not yet available in registry"
+        fi
+    
+    - name: Create Pull Request
+      if: ${{ github.event.inputs.create_pr == 'true' }}
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
+        commit-message: "chore(deps): update ${{ github.event.inputs.component }} to ${{ github.event.inputs.version }}"
+        title: "chore(deps): update ${{ github.event.inputs.component }} to ${{ github.event.inputs.version }}"
+        body: |
+          ## Manual Component Update
+          
+          **Component**: ${{ github.event.inputs.component }}
+          **Version**: ${{ github.event.inputs.version }}
+          
+          This PR was created manually for testing dependency update scenarios.
+          
+          ### Validation Checklist
+          - [ ] Integration tests pass
+          - [ ] Component builds successfully  
+          - [ ] No breaking changes introduced
+          - [ ] Dependencies are in correct order
+          
+          ### Demo Notes
+          This update demonstrates HBF's dependency validation capabilities.
+          The CI pipeline will validate integration compatibility before allowing merge.
+        branch: manual-update-${{ github.event.inputs.component }}-${{ github.event.inputs.version }}
+        delete-branch: true
+        labels: |
+          dependencies
+          hbf-component
+          manual-update

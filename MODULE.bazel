@@ -1,0 +1,31 @@
+module(
+    name = "hbf",
+    version = "1.0.0",
+    compatibility_level = 1,
+)
+
+# Core build dependencies
+bazel_dep(name = "rules_cc", version = "0.2.8")
+bazel_dep(name = "rules_python", version = "1.6.1")
+bazel_dep(name = "pybind11_bazel", version = "2.13.6")
+
+# Demo components - reference GitHub repositories
+bazel_dep(name = "hbf_examplecpp", version = "1.0.0")
+bazel_dep(name = "hbf_examplepy", version = "1.0.0")
+
+# Git repository overrides for demo components
+git_override(
+    module_name = "hbf_examplecpp",
+    remote = "https://github.com/thetanil/hbf-examplecpp.git",
+    tag = "v1.0.0",
+)
+
+git_override(
+    module_name = "hbf_examplepy",
+    remote = "https://github.com/thetanil/hbf-examplepy.git",
+    tag = "v1.0.0",
+)
+
+# Python toolchain configuration
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11")

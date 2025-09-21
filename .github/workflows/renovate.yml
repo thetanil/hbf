@@ -1,0 +1,45 @@
+name: Renovate
+
+on:
+  schedule:
+    # Run every 4 hours for demo responsiveness
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - info
+          - debug
+          - trace
+
+env:
+  # Use GitHub App token or PAT with repo scope
+  RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+  LOG_LEVEL: ${{ github.event.inputs.logLevel || 'info' }}
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Self-hosted Renovate
+      uses: renovatebot/github-action@v39.2.4
+      with:
+        configurationFile: .github/renovate.json
+        token: ${{ secrets.RENOVATE_TOKEN }}
+        renovate-version: '37.59.8'
+      env:
+        LOG_LEVEL: ${{ env.LOG_LEVEL }}
+        RENOVATE_REPOSITORIES: ${{ github.repository }}
+        # Force Renovate to create PRs immediately for demo purposes
+        RENOVATE_REQUIRE_CONFIG: 'optional'
+        RENOVATE_ONBOARDING: 'false'
+        # Enable Bazel support
+        RENOVATE_ENABLE_MANAGERS: 'bazel-module'
