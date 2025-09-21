@@ -1,0 +1,46 @@
+name: Renovate Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - info
+          - debug
+          - trace
+
+jobs:
+  renovate-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Debug token availability
+      run: |
+        echo "GITHUB_TOKEN available: ${{ secrets.GITHUB_TOKEN != '' }}"
+        echo "RENOVATE_TOKEN available: ${{ secrets.RENOVATE_TOKEN != '' }}"
+        if [ "${{ secrets.RENOVATE_TOKEN }}" != "" ]; then
+          echo "Using RENOVATE_TOKEN"
+          echo "TOKEN_TYPE=renovate" >> $GITHUB_ENV
+        else
+          echo "Using GITHUB_TOKEN fallback"
+          echo "TOKEN_TYPE=github" >> $GITHUB_ENV
+        fi
+    
+    - name: Test Renovate with simple config
+      uses: renovatebot/github-action@v40.3.6
+      with:
+        configurationFile: .github/renovate-simple.json
+        token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
+        renovate-version: '38.112.0'
+      env:
+        LOG_LEVEL: ${{ github.event.inputs.logLevel || 'debug' }}
+        RENOVATE_REPOSITORIES: ${{ github.repository }}
+        RENOVATE_REQUIRE_CONFIG: 'optional'
+        RENOVATE_ONBOARDING: 'false'

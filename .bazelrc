@@ -1,9 +1,6 @@
 # Build configuration for HBF demo
 build --enable_bzlmod
 
-# Python configuration
-build --python_top=@python_3_11//:bin/python
-
 # Test configuration
 test --test_output=errors
 test --test_verbose_timeout_warnings

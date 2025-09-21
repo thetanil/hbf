@@ -17,13 +17,16 @@ on:
           - trace
 
 env:
-  # Use GitHub App token or PAT with repo scope, fallback to GITHUB_TOKEN
-  RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
   LOG_LEVEL: ${{ github.event.inputs.logLevel || 'info' }}
 
 jobs:
   renovate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      issues: write
     
     steps:
     - name: Checkout
@@ -33,7 +36,7 @@ jobs:
       uses: renovatebot/github-action@v40.3.6
       with:
         configurationFile: .github/renovate.json
-        token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         renovate-version: '38.112.0'
       env:
         LOG_LEVEL: ${{ env.LOG_LEVEL }}
