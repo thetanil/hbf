@@ -19,10 +19,10 @@
                 "MODULE\\.bazel$"
             ],
             "matchStrings": [
-                "git_override\\s*\\(\\s*module_name\\s*=\\s*\"(?<depName>[^\"]+)\"[^)]*tag\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+                "git_override\\s*\\([\\s\\S]*?module_name\\s*=\\s*\"(?<depName>hbf_[^\"]+)\"[\\s\\S]*?remote\\s*=\\s*\"https://github\\.com/thetanil/(?<repo>[^\"]+)\\.git\"[\\s\\S]*?tag\\s*=\\s*\"(?<currentValue>[^\"]+)\"[\\s\\S]*?\\)"
             ],
             "datasourceTemplate": "github-tags",
-            "depNameTemplate": "thetanil/hbf-{{depName}}",
+            "depNameTemplate": "thetanil/{{repo}}",
             "versioningTemplate": "semver"
         }
     ],

@@ -69,30 +69,12 @@ jobs:
         RENOVATE_BAZEL_DEPS_ENABLED: 'true'
         # Ignore lookup failures for git overrides (expected behavior)
         RENOVATE_SUPPRESS_NOTIFICATIONS: '["packageLookupFailure"]'
+        # Additional debugging for custom managers
+        RENOVATE_LOG_CONTEXT: 'true'
+        RENOVATE_REGEX_MANAGER_ENABLED: 'true'
         # Custom settings for manual runs
         RENOVATE_RECREATE_CLOSED: 'true'
         RENOVATE_REBASE_STALE_PRS: 'true'
-    
-    - name: Trigger Component Update Event
-      if: github.event.inputs.dryRun != 'true'
-      run: |
-        echo "Triggering component-update repository dispatch event..."
-        curl -X POST \
-          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          -H "User-Agent: manual-renovate-trigger" \
-          "https://api.github.com/repos/${{ github.repository }}/dispatches" \
-          -d '{
-            "event_type": "component-update",
-            "client_payload": {
-              "component": "manual-trigger",
-              "version": "renovate-scan",
-              "repository": "${{ github.repository }}",
-              "trigger_type": "manual",
-              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-              "actor": "${{ github.actor }}"
-            }
-          }'
     
     - name: Summary
       run: |
