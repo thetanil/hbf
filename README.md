@@ -1,10 +1,10 @@
-# HBF - Distributed Monolith Integration System
+# HBF - Harmonious Build Federator
 
-HBF (Harmonizing Build Federation) is a distributed monolith system that enables
-multiple organizations to collaboratively develop and integrate software
-components while maintaining both public and private dependencies. Built with
-Bazel and designed for multi-party development, HBF provides reproducible
-builds, compliance metadata, and flexible integration patterns.
+hbf is a distributed monolith system that enables multiple organizations to
+collaboratively develop and integrate software components while maintaining both
+public and private dependencies. Built with Bazel and designed for multi-party
+development, HBF provides reproducible builds, compliance metadata, and flexible
+integration patterns.
 
 ## System Overview
 
