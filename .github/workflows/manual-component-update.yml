@@ -49,12 +49,16 @@ jobs:
           exit 1
         fi
     
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.15.0
+      with:
+        bazelisk-cache: true
+        repository-cache: true
+    
     - name: Validate Bazel configuration
       run: |
         # Check if the MODULE.bazel file is still valid
-        if command -v bazel &> /dev/null; then
-          bazel query --enable_bzlmod @${{ github.event.inputs.component }}//... || echo "Warning: Component not yet available in registry"
-        fi
+        bazel query --enable_bzlmod @${{ github.event.inputs.component }}//... || echo "Warning: Component not yet available in registry"
     
     - name: Create Pull Request
       if: ${{ github.event.inputs.create_pr == 'true' }}

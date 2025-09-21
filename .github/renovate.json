@@ -1,17 +1,14 @@
 {
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-        "config:base"
-    ],
-    "enabledManagers": [
-        "bazel-module"
-    ],
-    "bazel-module": {
-        "enabled": true,
-        "fileMatch": [
-            "MODULE\\.bazel$"
-        ]
-    },
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "platform": "github",
+  "enabledManagers": ["bazel-module"],
+  "bazel-module": {
+    "enabled": true,
+    "fileMatch": ["MODULE\\.bazel$"]
+  },
     "packageRules": [
         {
             "matchManagers": [
@@ -65,7 +62,7 @@
     "dependencyDashboard": true,
     "dependencyDashboardTitle": "🤖 HBF Dependency Dashboard",
     "assignees": [
-        "@thetanil"
+        "thetanil"
     ],
     "reviewers": [
         "thetanil"
