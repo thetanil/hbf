@@ -323,16 +323,211 @@ jobs:
         echo "- Dependencies: ✅ Compatible" >> $GITHUB_STEP_SUMMARY
 ```
 
-### Step 9: Create Component Update Workflow
+### Step 9: Create Renovate Configuration
 
-Create `.github/workflows/component-update.yml`:
+Create `.github/renovate.json`:
+
+```json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "enabledManagers": ["bazel-module"],
+  "bazel-module": {
+    "enabled": true,
+    "fileMatch": ["MODULE\\.bazel$"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["bazel-module"],
+      "matchPackageNames": ["hbf_examplecpp", "hbf_examplepy"],
+      "separateMinorPatch": false,
+      "groupName": "HBF Demo Components",
+      "schedule": ["at any time"],
+      "prCreation": "immediate",
+      "automerge": false,
+      "reviewersFromCodeOwners": true,
+      "addLabels": ["dependencies", "hbf-component"]
+    },
+    {
+      "matchManagers": ["bazel-module"],
+      "matchPackageNames": ["rules_cc", "rules_python", "pybind11_bazel"],
+      "groupName": "Bazel Rules",
+      "schedule": ["before 6am on monday"],
+      "automerge": false,
+      "addLabels": ["dependencies", "bazel-rules"]
+    }
+  ],
+  "prConcurrentLimit": 2,
+  "prHourlyLimit": 4,
+  "branchPrefix": "renovate/",
+  "commitMessagePrefix": "chore(deps): ",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{newVersion}}",
+  "semanticCommits": "enabled",
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🤖 HBF Dependency Dashboard",
+  "assignees": ["@thetanil"],
+  "reviewers": ["thetanil"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "addLabels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on sunday"]
+  }
+}
+```
+
+Create `.github/renovate.json5` (alternative format with comments):
+
+```json5
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:base"],
+  
+  // Enable Bazel module manager for MODULE.bazel files
+  "enabledManagers": ["bazel-module"],
+  "bazel-module": {
+    "enabled": true,
+    "fileMatch": ["MODULE\\.bazel$"]
+  },
+  
+  "packageRules": [
+    {
+      // HBF demo components - immediate updates for demo purposes
+      "matchManagers": ["bazel-module"],
+      "matchPackageNames": ["hbf_examplecpp", "hbf_examplepy"],
+      "separateMinorPatch": false,
+      "groupName": "HBF Demo Components",
+      "schedule": ["at any time"],
+      "prCreation": "immediate",
+      "automerge": false, // Never automerge - we want to demonstrate the failure/recovery
+      "reviewersFromCodeOwners": true,
+      "addLabels": ["dependencies", "hbf-component"],
+      "prBodyTemplate": `
+## HBF Component Update
+
+**Component**: {{depName}}
+**Version**: {{currentVersion}} → {{newVersion}}
+
+This PR updates an HBF demo component. Integration tests will validate compatibility.
+
+### Validation Checklist
+- [ ] Integration tests pass
+- [ ] Component builds successfully
+- [ ] No breaking changes introduced
+- [ ] Dependencies are in correct order
+
+### Demo Notes
+This update is part of the HBF dependency management demonstration.
+      `
+    },
+    {
+      // Bazel rules - weekly updates
+      "matchManagers": ["bazel-module"],
+      "matchPackageNames": ["rules_cc", "rules_python", "pybind11_bazel"],
+      "groupName": "Bazel Rules",
+      "schedule": ["before 6am on monday"],
+      "automerge": false,
+      "addLabels": ["dependencies", "bazel-rules"]
+    }
+  ],
+  
+  // Limit concurrent PRs to avoid overwhelming CI
+  "prConcurrentLimit": 2,
+  "prHourlyLimit": 4,
+  
+  // Branch and commit configuration
+  "branchPrefix": "renovate/",
+  "commitMessagePrefix": "chore(deps): ",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{newVersion}}",
+  "semanticCommits": "enabled",
+  
+  // Dashboard and notifications
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🤖 HBF Dependency Dashboard",
+  "assignees": ["@thetanil"],
+  "reviewers": ["thetanil"],
+  
+  // Security and maintenance
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "addLabels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on sunday"]
+  }
+}
+```
+```
+
+### Step 10: Create Renovate Workflow
+
+Create `.github/workflows/renovate.yml`:
 
 ```yaml
-name: Component Update Handler
+name: Renovate
 
 on:
-  repository_dispatch:
-    types: [component-update]
+  schedule:
+    # Run every 4 hours for demo responsiveness
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - info
+          - debug
+          - trace
+
+env:
+  # Use GitHub App token or PAT with repo scope
+  RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+  LOG_LEVEL: ${{ github.event.inputs.logLevel || 'info' }}
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Self-hosted Renovate
+      uses: renovatebot/github-action@v39.2.4
+      with:
+        configurationFile: .github/renovate.json
+        token: ${{ secrets.RENOVATE_TOKEN }}
+        renovate-version: '37.59.8'
+      env:
+        LOG_LEVEL: ${{ env.LOG_LEVEL }}
+        RENOVATE_REPOSITORIES: ${{ github.repository }}
+        # Force Renovate to create PRs immediately for demo purposes
+        RENOVATE_REQUIRE_CONFIG: 'optional'
+        RENOVATE_ONBOARDING: 'false'
+        # Enable Bazel support
+        RENOVATE_ENABLE_MANAGERS: 'bazel-module'
+```
+
+### Step 11: Create Manual Component Update Workflow (Fallback)
+
+Create `.github/workflows/manual-component-update.yml`:
+
+```yaml
+name: Manual Component Update
+
+on:
   workflow_dispatch:
     inputs:
       component:
@@ -346,6 +541,11 @@ on:
         description: 'New version'
         required: true
         type: string
+      create_pr:
+        description: 'Create pull request'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   update-component:
@@ -355,12 +555,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
     
     - name: Update MODULE.bazel
       run: |
-        COMPONENT="${{ github.event.inputs.component || github.event.client_payload.component }}"
-        VERSION="${{ github.event.inputs.version || github.event.client_payload.version }}"
+        COMPONENT="${{ github.event.inputs.component }}"
+        VERSION="${{ github.event.inputs.version }}"
         
         echo "Updating $COMPONENT to $VERSION"
         
@@ -369,26 +569,52 @@ jobs:
         
         echo "Updated MODULE.bazel:"
         grep "$COMPONENT" MODULE.bazel
+        
+        # Validate the change
+        if ! grep -q "bazel_dep(name = \"$COMPONENT\", version = \"$VERSION\")" MODULE.bazel; then
+          echo "ERROR: Failed to update $COMPONENT to $VERSION"
+          exit 1
+        fi
+    
+    - name: Validate Bazel configuration
+      run: |
+        # Check if the MODULE.bazel file is still valid
+        if command -v bazel &> /dev/null; then
+          bazel query --enable_bzlmod @${{ github.event.inputs.component }}//... || echo "Warning: Component not yet available in registry"
+        fi
     
     - name: Create Pull Request
+      if: ${{ github.event.inputs.create_pr == 'true' }}
       uses: peter-evans/create-pull-request@v5
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        commit-message: "Update ${{ github.event.inputs.component || github.event.client_payload.component }} to ${{ github.event.inputs.version || github.event.client_payload.version }}"
-        title: "Update ${{ github.event.inputs.component || github.event.client_payload.component }} to ${{ github.event.inputs.version || github.event.client_payload.version }}"
+        token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
+        commit-message: "chore(deps): update ${{ github.event.inputs.component }} to ${{ github.event.inputs.version }}"
+        title: "chore(deps): update ${{ github.event.inputs.component }} to ${{ github.event.inputs.version }}"
         body: |
-          Automated update of component dependency.
+          ## Manual Component Update
           
-          **Component**: ${{ github.event.inputs.component || github.event.client_payload.component }}
-          **Version**: ${{ github.event.inputs.version || github.event.client_payload.version }}
+          **Component**: ${{ github.event.inputs.component }}
+          **Version**: ${{ github.event.inputs.version }}
           
-          This PR was created automatically in response to a component update.
-          Please review the integration tests before merging.
-        branch: update-${{ github.event.inputs.component || github.event.client_payload.component }}-${{ github.event.inputs.version || github.event.client_payload.version }}
+          This PR was created manually for testing dependency update scenarios.
+          
+          ### Validation Checklist
+          - [ ] Integration tests pass
+          - [ ] Component builds successfully  
+          - [ ] No breaking changes introduced
+          - [ ] Dependencies are in correct order
+          
+          ### Demo Notes
+          This update demonstrates HBF's dependency validation capabilities.
+          The CI pipeline will validate integration compatibility before allowing merge.
+        branch: manual-update-${{ github.event.inputs.component }}-${{ github.event.inputs.version }}
         delete-branch: true
-```
+        labels: |
+          dependencies
+          hbf-component
+          manual-update
 
-### Step 10: Create Root BUILD.bazel
+### Step 12: Create Root BUILD.bazel
 
 Update or create the root `BUILD.bazel`:
 
@@ -421,7 +647,7 @@ filegroup(
 )
 ```
 
-### Step 11: Create .bazelrc Configuration
+### Step 13: Create .bazelrc Configuration
 
 Create or update `.bazelrc`:
 
@@ -472,11 +698,29 @@ bazel test //demo:integration_test_v11 --test_output=all || echo "Expected failu
 cd .github/workflows
 yamllint *.yml  # If yamllint is available
 
-# Test repository dispatch (requires GitHub CLI)
-# gh workflow run component-update.yml --field component=hbf_examplecpp --field version=1.0.0
+# Test manual component update workflow (requires GitHub CLI and RENOVATE_TOKEN)
+# gh workflow run manual-component-update.yml --field component=hbf_examplecpp --field version=1.0.0
 ```
 
-### Step 13: Prepare for v1.1.0 Updates
+#### Setup Renovate Token
+
+1. **Create GitHub Personal Access Token (PAT)**:
+   - Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Create new token with `repo` scope
+   - Copy the token value
+
+2. **Add token to repository secrets**:
+   - Go to repository Settings → Secrets and variables → Actions
+   - Create new repository secret named `RENOVATE_TOKEN`
+   - Paste the PAT value
+
+3. **Test Renovate workflow**:
+```bash
+# Trigger Renovate manually to test configuration
+gh workflow run renovate.yml --field logLevel=debug
+```
+
+### Step 14: Prepare for v1.1.0 Updates
 
 When ready to test the dependency update scenario:
 
@@ -510,9 +754,19 @@ bazel_dep(name = "hbf_examplepy", version = "1.1.0")
 - [ ] GitHub workflows are configured and valid
 - [ ] CI/CD pipeline validates integration correctly
 - [ ] GCD test exists but is marked manual (will fail until v1.1.0)
-- [ ] Component update workflow can create dependency update PRs
+- [ ] Renovate configuration is valid and token is set
+- [ ] Renovate can create dependency update PRs
+- [ ] Manual component update workflow works as fallback
 - [ ] All Bazel targets build successfully
 - [ ] Documentation is complete and accurate
+
+### Renovate-Specific Validation
+- [ ] `.github/renovate.json` configuration is valid
+- [ ] `RENOVATE_TOKEN` secret is configured with repo scope
+- [ ] Renovate workflow runs without errors
+- [ ] Bazel module manager is enabled and working
+- [ ] Component updates create separate PRs with proper labels
+- [ ] Dependency dashboard is accessible and informative
 
 ## Next Steps
 

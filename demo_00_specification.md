@@ -497,13 +497,13 @@ bazel test //...  # Should pass - Python can access new C++ function directly
 
 3. **Publish Python component v1.1.0**
    - Tag release in hbf-examplepy repository
-   - This triggers Dependabot to create PR in meta-repo
+   - This triggers Renovate to create PR in meta-repo
 
 #### Step 3: Demonstrate Integration Failure
 
-1. **Dependabot creates PR in meta-repo** to update Python component:
+1. **Renovate creates PR in meta-repo** to update Python component:
 ```bazel
-# META-REPO MODULE.bazel - Dependabot PR
+# META-REPO MODULE.bazel - Renovate PR
 bazel_dep(name = "hbf_examplecpp", version = "1.0.0")  # Still old version!
 bazel_dep(name = "hbf_examplepy", version = "1.1.0")   # New version with gcd dependency
 ```
@@ -528,7 +528,7 @@ Integration test failed: missing dependency hbf_examplecpp v1.1.0
 #### Step 4: Demonstrate Recovery Process
 
 1. **First, integrate C++ component v1.1.0**:
-   - Dependabot should create separate PR for C++ update
+   - Renovate should create separate PR for C++ update
    - Or manually create PR updating C++ dependency:
 
 ```bazel
@@ -583,7 +583,7 @@ This scenario demonstrates:
 1. **Dependency Ordering Matters**: Components must be integrated in dependency order
 2. **Integration Validation Works**: The system correctly rejects invalid dependency combinations
 3. **Recovery is Possible**: Failed integrations can be recovered through proper sequencing
-4. **Automated Protection**: Dependabot + CI prevents breaking changes from reaching production
+4. **Automated Protection**: Renovate + CI prevents breaking changes from reaching production
 5. **Clear Failure Messages**: Developers get actionable error messages to resolve issues
 
 ### Additional Demo Scenarios
@@ -633,7 +633,7 @@ The demo will be considered successful when:
 - [ ] System reaches consistent working state
 
 #### Process Validation
-- [ ] Dependabot creates appropriate PRs for version updates
+- [ ] Renovate creates appropriate PRs for version updates
 - [ ] CI/CD pipeline correctly validates dependency compatibility
 - [ ] Merge queue prevents invalid states from being committed
 - [ ] Recovery path is clear and documented

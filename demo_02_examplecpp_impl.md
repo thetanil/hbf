@@ -478,33 +478,40 @@ jobs:
           echo "clang-format not available, skipping format check"
         fi
 
-  notify-integration:
+  trigger-renovate:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     
     steps:
-    - name: Notify HBF meta-repo of new version
+    - name: Trigger Renovate update in meta-repo
       run: |
         VERSION="${{ github.event.release.tag_name }}"
-        echo "Notifying meta-repo of new version: $VERSION"
+        echo "Triggering Renovate update for new version: $VERSION"
         
         # Extract version number (remove 'v' prefix if present)
         VERSION_NUMBER="${VERSION#v}"
         
-        curl -X POST \
-          -H "Authorization: token ${{ secrets.META_REPO_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/thetanil/hbf/dispatches \
-          -d '{
-            "event_type": "component-update",
-            "client_payload": {
-              "component": "hbf_examplecpp",
-              "version": "'$VERSION_NUMBER'",
-              "repository": "thetanil/hbf-examplecpp",
-              "release_url": "${{ github.event.release.html_url }}"
-            }
-          }'
+        # Create a release note that Renovate will pick up
+        echo "Component hbf_examplecpp updated to version $VERSION_NUMBER"
+        echo "Release URL: ${{ github.event.release.html_url }}"
+        
+        # Optional: Force Renovate run in meta-repo (if RENOVATE_WEBHOOK_SECRET is configured)
+        if [ -n "${{ secrets.RENOVATE_WEBHOOK_SECRET }}" ]; then
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.META_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/thetanil/hbf/dispatches" \
+            -d '{
+              "event_type": "renovate-trigger",
+              "client_payload": {
+                "component": "hbf_examplecpp",
+                "version": "'$VERSION_NUMBER'",
+                "repository": "thetanil/hbf-examplecpp",
+                "release_url": "${{ github.event.release.html_url }}"
+              }
+            }'
+        fi
 ```
 
 ### Step 14: Test the v1.0.0 Implementation
