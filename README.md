@@ -1,94 +1,265 @@
-# hbf
+# HBF - Distributed Monolith Integration System
 
-this is hbf, which is an repository to host software integrations with the
-following qualities.
+HBF (Harmonizing Build Federation) is a distributed monolith system that enables
+multiple organizations to collaboratively develop and integrate software
+components while maintaining both public and private dependencies. Built with
+Bazel and designed for multi-party development, HBF provides reproducible
+builds, compliance metadata, and flexible integration patterns.
 
-- distributed (multiple repository) monolith (single file distribution)
-- built with bazel
-- uses bzlmod and NOT WORKSPACE (bazel default since version 6)
-- as much as possible, the "pipeline" is pushed down to bazel
-- should build locally without any github features
-- targets github workflows to build component repos
+## System Overview
 
-## responsibilities
+HBF implements a **meta-repository pattern** where:
+- A central integration repository coordinates dependency versions across all
+  components
+- Individual component repositories develop independently using Bazel modules
+  (bzlmod)
+- Public components remain universally accessible
+- Private components are integrated through wrapper repositories without
+  exposing internal details
+- Single-file distributions are produced with full compliance metadata
 
-### hbf is a meta repo
+## Architecture
 
-hbf must not contain any code, depencies or tooling required to build a target.
-it provides git and bazel (via eclipse-score/devcontainer) in the development
-environment as well as the CI container (atm, these are the same). a target can
-be built by calling bazel, and the resulting bazel module is rendered as a
-release in github. 
+### Core Principles
 
-### component repos
+1. **Distributed Development, Centralized Integration**: Components develop
+   independently but integrate through a central meta-repository with pinned
+   dependency versions
+2. **Public/Private Separation**: Public builds work without private
+   dependencies; private integrations use wrapper repositories
+3. **Bazel-First**: Built on Bazel with bzlmod for reproducible, hermetic builds
+4. **Compliance-Ready**: Every release includes SBOMs, license metadata, and
+   safety-critical documentation
+5. **Multi-Party Friendly**: Supports collaboration across organizations without
+   exposing private details
 
-#### may contain
+### Component Architecture
 
-- sources to compile (cmake, rust, cpp, python)
-- binary deps (libraries)
-- bazel toochains
-- private to other organization, and still work for you (skip missing, optional
-  deps)
+HBF uses a **wrapper repository pattern** to handle multi-party integration:
 
-#### must contain
+```bazel
+# Public META-REPO MODULE.bazel
+bazel_dep(name = "public_component_a", version = "1.0.0")
+bazel_dep(name = "public_component_b", version = "2.0.0")
 
-- a bazel module in bzlmod format
+# Party B's WRAPPER MODULE.bazel
+bazel_dep(name = "hbf_public", version = "1.0.0")  # Import public build
+bazel_dep(name = "private_b", version = "2.0.0", dev_dependency = True)
 
-component composition is the responsibility of a module, not any CI workflow.
-a component may insert itself into the meta repo by adding itself to the hbf 
-bazel configuration. doing so enables
+# Party C's WRAPPER MODULE.bazel  
+bazel_dep(name = "hbf_public", version = "1.0.0")  # Import public build
+bazel_dep(name = "private_b", version = "2.0.0", dev_dependency = True)
+bazel_dep(name = "private_c", version = "3.0.0", dev_dependency = True)
+```
 
-- the component repo can request an integration build
-- the component repo can utilize the integration checker (signal poller)
+This pattern ensures:
+- Public repository stays minimal and stable
+- Private dependency details never leak to other parties
+- Each party controls their own private ecosystem
+- Integration churn in the public repository is minimized
 
-## public/private extension
+## Component Repository Requirements
 
-here we introduce the concept of public vs private builds.
+### Minimum Structure
 
-it must be possible that different consumers of the hbf build can add components
-which are not published publicly. and the public build still functions in the
-case where an optional dependency is not available in the public space 
+```
+component-repo/
+├── MODULE.bazel              # Required: Bazel module definition
+├── BUILD.bazel               # Required: Root build file
+├── WORKSPACE.bazel           # Optional: Empty for bzlmod compatibility
+├── src/                      # Component source code
+├── LICENSE                   # Required: SPDX license identifier
+├── README.md                 # Required: Component documentation
+└── .github/workflows/        # Optional: CI/CD workflows
+    └── integration-request.yml
+```
 
-it would be great if the gh action which builds the public release would also
-work for private github organizations which include private content, and
-requested integration builds work in the public hbf repo, and also the private
-organizations hbf repo
+### MODULE.bazel Requirements
 
-- produce a binary which includes private content but not publish it publicy
-- produce a binary which does not include private content in public builds
+- Semantic versioning (e.g., `version = "1.2.3"`)
+- Explicit declaration of all public dependencies
+- Private dependencies marked as `dev_dependency = True`
+- Full bzlmod compatibility (no WORKSPACE dependencies)
 
-## multi-party integratability guarantees (draft, unclear, future)
+### Integration Process
 
-To add to the complexity, it must be possible that party A can have a
-private-org which can consume dependencies from Party B & C public org, if all
-3 of them successfully integrate into the public-org
+Components request integration builds via:
 
-the deliverable for a third party integration is a GH PAT which allows Party A
-to git pull a private repo from Party B of which the PUBLIC-ORG can integrate
-both, but privately without the other on one side (Party B publicly integrates,
-Party A only privately)?? this
+1. **Repository Dispatch Events** - Automated from component CI
+2. **Workflow Dispatch** - Manual triggers via GitHub API  
+3. **Bot-driven PRs** - Dependency version bumps to meta-repo
 
-## merge queue
+### Validation Requirements
 
-no code is merged into the meta-repo. it is possible that the integration build
-passes for two conflicting changes in components. there needs to be a concept of
-a merge queue which is distributed across all of the components. as we have the
-additional complexity of private components which may not be available in the
-public integration, there is no way to do this at the component level. therefore
-a concept of modular branch aware merge queue is needed at the point of public
-and private integrations (hbf in public gh-org is subset of that in private-org)
+Before acceptance, components must pass:
 
-## example-diamond problem
+1. **Bazel Build Success** - Builds in isolation
+2. **Compliance Check** - LICENSE files, SPDX identifiers
+3. **Version Consistency** - MODULE.bazel matches git tags
+4. **Integration Tests** - No breakage in meta-repo CI
+5. **Security Scan** - No high-severity vulnerabilities
+6. **Wrapper Compatibility** - Works with private extension pattern
 
+## Build System
 
-## repos
+### Integration Repository (Meta-Repo)
 
-hbf is the *integration repository* and it knows how to call bazel build. 
+The meta-repository serves as the single source of truth for compatible
+component versions:
 
-component repos are pulled in via bazel itself. these can be any repo which is
-available over http with oauth.
+- Contains lockfile specifying pinned versions of all components
+- Runs CI across all integrated components
+- Only advances versions after successful integration testing
+- Produces single-file distributions with compliance metadata
 
+### Merge Queue Strategy
 
-## comparison
+Uses **meta-repository with pinned dependencies** (see
+`adr_integrate-meta-repo-pinned.md`):
 
-https://chatgpt.com/s/t_68ce96dcffbc8191bcc2c944e76e626f
+- Bot-driven PRs propose dependency updates
+- CI validates compatibility across all components
+- Only compatible version combinations are merged
+- Provides "last known good state" across the entire system
+
+### Artifact Format
+
+Releases follow a **Bazel package format** (see
+`adr_artifact-format-metadata.md`):
+
+- **Primary**: `.tar.gz` archive with MODULE.bazel for Bazel consumers
+- **Secondary**: Optional container images for non-Bazel workflows
+- **Versioning**: Semantic versioning with git tag matching
+- **Metadata**: SBOM, license info, SCA reports, MISRA compliance, ISO 26262
+  evidence
+
+## GitHub Integration
+
+### Build Triggers
+
+Integration builds are triggered via:
+- **Workflow Dispatch** - Manual triggers
+- **Repository Dispatch** - Component-initiated builds
+- **GitHub Checks API** - Status reporting back to components
+
+### Multi-Organization Support
+
+- Public builds work across organizations
+- Private integrations use wrapper repositories with GitHub PATs
+- Build results communicated via GitHub Checks API
+
+## Development Environment
+
+### DevContainer Setup
+
+Uses `ghcr.io/eclipse-score/devcontainer:latest` providing:
+- Up-to-date Git with LFS support
+- Python 3 and pip3
+- Standard Linux development tools
+- Bazel (via eclipse-score configuration)
+
+### Local Development
+
+```bash
+# Clone and enter devcontainer
+git clone https://github.com/thetanil/hbf.git
+cd hbf
+# Open in VS Code with devcontainer extension
+
+# Build all components
+bazel build //...
+
+# Run integration tests  
+bazel test //...
+```
+
+## Getting Started
+
+### For Component Developers
+
+1. Structure your repository according to [Component
+   Requirements](#component-repository-requirements)
+2. Ensure your `MODULE.bazel` follows bzlmod conventions
+3. Add integration workflow to request builds from HBF meta-repo
+4. Submit PR to add your component to the integration lockfile
+
+### For Private Integrations
+
+1. Create a wrapper repository importing the public HBF build
+2. Add your private dependencies as `dev_dependency = True` overrides
+3. Use configuration flags to conditionally enable private features
+4. Maintain your private CI/CD independent of public integration
+
+### For Consumers
+
+```bazel
+# In your MODULE.bazel
+bazel_dep(name = "hbf", version = "1.2.3")
+
+# Or via http_archive
+http_archive(
+    name = "hbf",
+    urls = ["https://github.com/thetanil/hbf/releases/download/v1.2.3/hbf-1.2.3.tar.gz"],
+    sha256 = "...",
+)
+```
+
+## Documentation
+
+- [`qna.md`](qna.md) - Complete Q&A covering all implementation decisions
+- [`spec_optional-multi-party-deps.md`](spec_optional-multi-party-deps.md) -
+  Multi-party dependency specification
+- [`adr_integrate-meta-repo-pinned.md`](adr_integrate-meta-repo-pinned.md) -
+  Integration strategy ADR
+- [`adr_artifact-format-metadata.md`](adr_artifact-format-metadata.md) -
+  Artifact format specification
+
+## Roadmap
+
+### MVP (Public Components Only)
+- Meta-repository with dependency pinning
+- Basic integration CI/CD
+- Public component validation
+- Single-file distribution generation
+
+### Phase 2 (Private Integration)
+- Wrapper repository patterns
+- Multi-party GitHub integration
+- Private dependency handling
+- Enhanced security scanning
+
+### Phase 3 (Advanced Features)
+- Distributed merge queue coordination
+- Advanced compliance reporting
+- Cross-organization access control
+- Tool qualification for safety-critical applications
+
+## Key Design Decisions
+
+### Hard vs Soft Dependencies
+
+HBF introduces the concept of:
+- **Hard Dependencies**: In MODULE.bazel, fail the build if not present
+- **Soft Dependencies**: Optional dependencies that don't break builds when
+  missing
+
+### Component Discovery
+
+HBF does not automatically discover or register components globally. Instead:
+- Components add themselves through their owning party's bazel MODULE wrapper
+  configuration
+- The public repo stays lean and universal
+- Each party controls its own private ecosystem without exposing details
+
+### Multi-Party Integration
+
+The system supports complex scenarios where:
+- Party A builds only public dependencies
+- Party B builds with public + private_b 
+- Party C builds with public + private_b + private_c
+
+All parties can collaborate without exposing private details to others.
+
+## License
+
+[License details from LICENSE file]
