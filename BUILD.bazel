@@ -5,12 +5,7 @@ package(default_visibility = ["//visibility:public"])
 # Re-export demo targets for easy access
 alias(
     name = "integration_test",
-    actual = "//demo:integration_test",
-)
-
-alias(
-    name = "demo_usage",
-    actual = "//demo:demo_usage",
+    actual = "//demo:cpp_integration_test",
 )
 
 # Filegroup for documentation
@@ -20,7 +15,5 @@ filegroup(
         "README.md",
         "demo_00_specification.md",
         "demo_01_hbf_impl.md",
-        "//demo:demo_usage.py",
-        "//demo:integration_test.py",
     ],
 )
