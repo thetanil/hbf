@@ -2,18 +2,11 @@ load("@rules_cc//cc:defs.bzl", "cc_test")
 
 # Simple test to verify C++ component integration
 cc_test(
-    name = "cpp_integration_test",
+    name = "integration_test",
     size = "small",
     srcs = ["cpp_integration_test.cc"],
     visibility = ["//visibility:public"],
     deps = [
         "@hbf_examplecpp//src:math_operations",
     ],
-)
-
-# Alias for easier access
-test_suite(
-    name = "integration_test",
-    tests = [":cpp_integration_test"],
-    visibility = ["//visibility:public"],
 )

@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 # Re-export demo targets for easy access
 test_suite(
     name = "integration_test",
-    tests = ["//demo:cpp_integration_test"],
+    tests = ["//demo:integration_test"],
 )
 
 # Filegroup for documentation
