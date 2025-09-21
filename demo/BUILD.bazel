@@ -10,3 +10,10 @@ cc_test(
         "@hbf_examplecpp//src:math_operations",
     ],
 )
+
+# Alias for easier access
+test_suite(
+    name = "integration_test",
+    tests = [":cpp_integration_test"],
+    visibility = ["//visibility:public"],
+)
