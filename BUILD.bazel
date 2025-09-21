@@ -3,9 +3,9 @@
 package(default_visibility = ["//visibility:public"])
 
 # Re-export demo targets for easy access
-alias(
+test_suite(
     name = "integration_test",
-    actual = "//demo:cpp_integration_test",
+    tests = ["//demo:cpp_integration_test"],
 )
 
 # Filegroup for documentation
