@@ -32,9 +32,6 @@ jobs:
     - name: Run integration tests v1.0.0
       run: bazel test //demo:integration_test
     
-    - name: Run demo usage
-      run: bazel run //demo:demo_usage
-    
     - name: Test GCD functionality (v1.1.0) - Optional
       run: |
         # This will pass only when both components are at v1.1.0
