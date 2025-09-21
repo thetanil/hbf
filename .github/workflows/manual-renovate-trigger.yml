@@ -1,0 +1,107 @@
+name: Manual Renovate Trigger
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Renovate log level'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - info
+          - debug
+          - trace
+      dryRun:
+        description: 'Run in dry-run mode (no PRs created)'
+        required: false
+        default: false
+        type: boolean
+      forceUpdate:
+        description: 'Force update all dependencies'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  LOG_LEVEL: ${{ github.event.inputs.logLevel || 'info' }}
+
+jobs:
+  trigger-renovate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      issues: write
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history for better branch management
+        fetch-depth: 0
+    
+    - name: Manual Renovate Run
+      uses: renovatebot/github-action@v40.3.6
+      with:
+        configurationFile: .github/renovate.json
+        token: ${{ secrets.GITHUB_TOKEN }}
+        renovate-version: '38.112.0'
+      env:
+        LOG_LEVEL: ${{ env.LOG_LEVEL }}
+        RENOVATE_REPOSITORIES: ${{ github.repository }}
+        # Force Renovate to create PRs immediately
+        RENOVATE_REQUIRE_CONFIG: 'optional'
+        RENOVATE_ONBOARDING: 'false'
+        # Enable Bazel support specifically
+        RENOVATE_ENABLE_MANAGERS: 'bazel-module'
+        # Manual trigger specific settings
+        RENOVATE_FORCE: ${{ github.event.inputs.forceUpdate == 'true' && '{"schedule":true}' || 'null' }}
+        RENOVATE_DRY_RUN: ${{ github.event.inputs.dryRun }}
+        # Increase dependency lookup
+        RENOVATE_SCHEDULE_AUTOMERGE: 'false'
+        RENOVATE_TIMEZONE: 'UTC'
+        # Explicitly scan for all Bazel dependencies
+        RENOVATE_BAZEL_DEPS_ENABLED: 'true'
+        # Custom settings for manual runs
+        RENOVATE_RECREATE_CLOSED: 'true'
+        RENOVATE_REBASE_STALE_PRS: 'true'
+    
+    - name: Trigger Component Update Event
+      if: github.event.inputs.dryRun != 'true'
+      run: |
+        echo "Triggering component-update repository dispatch event..."
+        curl -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "User-Agent: manual-renovate-trigger" \
+          "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+          -d '{
+            "event_type": "component-update",
+            "client_payload": {
+              "component": "manual-trigger",
+              "version": "renovate-scan",
+              "repository": "${{ github.repository }}",
+              "trigger_type": "manual",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "actor": "${{ github.actor }}"
+            }
+          }'
+    
+    - name: Summary
+      run: |
+        echo "## Manual Renovate Trigger Complete 🔄" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+        echo "- Log Level: ${{ env.LOG_LEVEL }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Dry Run: ${{ github.event.inputs.dryRun }}" >> $GITHUB_STEP_SUMMARY  
+        echo "- Force Update: ${{ github.event.inputs.forceUpdate }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+        echo "- Check for new Pull Requests created by Renovate" >> $GITHUB_STEP_SUMMARY
+        echo "- Review dependency updates in MODULE.bazel" >> $GITHUB_STEP_SUMMARY
+        echo "- Monitor Integration CI for test results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Triggered at:** $(date -u)" >> $GITHUB_STEP_SUMMARY

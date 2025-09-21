@@ -1,29 +1,48 @@
 #include "math_operations.h"
+#include <cassert>
+#include <cmath>
 #include <iostream>
 
+namespace {
+// Helper function to compare floating point numbers with epsilon tolerance
+bool isApproximatelyEqual(double a, double b, double epsilon = 1e-9) {
+  return std::abs(a - b) < epsilon;
+}
+} // anonymous namespace
+
 int main() {
-  std::cout << "Testing HBF C++ Component Integration" << std::endl;
+  std::cout << "Testing HBF C++ Component Integration\n";
+  std::cout << "=====================================\n";
 
   // Test basic operations using the hbf_math namespace
-  int result_add = hbf_math::add(10, 20);
-  std::cout << "hbf_math::add(10, 20) = " << result_add << std::endl;
+  // Using appropriate types to match the library signatures
 
-  int result_multiply = hbf_math::multiply(4, 7);
-  std::cout << "hbf_math::multiply(4, 7) = " << result_multiply << std::endl;
+  // Test addition
+  const int add_result = hbf_math::add(10, 20);
+  std::cout << "hbf_math::add(10, 20) = " << add_result << '\n';
+  assert(add_result == 30);
 
-  int result_factorial = hbf_math::factorial(5);
-  std::cout << "hbf_math::factorial(5) = " << result_factorial << std::endl;
+  // Test multiplication
+  const int multiply_result = hbf_math::multiply(4, 7);
+  std::cout << "hbf_math::multiply(4, 7) = " << multiply_result << '\n';
+  assert(multiply_result == 28);
 
-  double result_power = hbf_math::power(2.0, 8);
-  std::cout << "hbf_math::power(2.0, 8) = " << result_power << std::endl;
+  // Test factorial - use proper type to avoid conversion warnings
+  const auto factorial_result = hbf_math::factorial(5);
+  std::cout << "hbf_math::factorial(5) = " << factorial_result << '\n';
+  assert(factorial_result == 120);
 
-  // Verify results
-  if (result_add == 30 && result_multiply == 28 && result_factorial == 120 &&
-      result_power == 256.0) {
-    std::cout << "✅ All C++ component integration tests passed!" << std::endl;
-    return 0;
-  } else {
-    std::cout << "❌ C++ component integration tests failed!" << std::endl;
-    return 1;
-  }
+  // Test power function
+  const double power_result = hbf_math::power(2.0, 8);
+  std::cout << "hbf_math::power(2.0, 8) = " << power_result << '\n';
+  assert(isApproximatelyEqual(power_result, 256.0));
+
+  // All tests passed
+  std::cout << "\n✅ All C++ component integration tests passed!\n";
+  std::cout << "   - Addition: PASS\n";
+  std::cout << "   - Multiplication: PASS\n";
+  std::cout << "   - Factorial: PASS\n";
+  std::cout << "   - Power: PASS\n";
+
+  return 0;
 }
