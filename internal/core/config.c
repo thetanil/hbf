@@ -43,29 +43,41 @@ int hbf_config_parse(hbf_config_t *config, int argc, char *argv[])
 		if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
 			hbf_config_print_usage(argv[0]);
 			return 1;
-		} else if (strcmp(argv[i], "--port") == 0) {
+		}
+		if (strcmp(argv[i], "--port") == 0) {
+			char *endptr;
+			long port_long;
+
 			if (i + 1 >= argc) {
 				fprintf(stderr, "Error: --port requires an argument\n");
 				return -1;
 			}
-			config->port = atoi(argv[++i]);
-			if (config->port <= 0 || config->port > 65535) {
-				fprintf(stderr, "Error: Invalid port number: %d\n", config->port);
+			i++;
+			port_long = strtol(argv[i], &endptr, 10);
+			if (endptr == argv[i] || *endptr != '\0' || port_long <= 0 ||
+			    port_long > 65535) {
+				fprintf(stderr, "Error: Invalid port number: %s\n", argv[i]);
 				return -1;
 			}
-		} else if (strcmp(argv[i], "--log_level") == 0) {
+			config->port = (int)port_long;
+			continue;
+		}
+		if (strcmp(argv[i], "--log_level") == 0) {
 			if (i + 1 >= argc) {
 				fprintf(stderr, "Error: --log_level requires an argument\n");
 				return -1;
 			}
 			config->log_level = hbf_log_parse_level(argv[++i]);
-		} else if (strcmp(argv[i], "--dev") == 0) {
-			config->dev_mode = true;
-		} else {
-			fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
-			hbf_config_print_usage(argv[0]);
-			return -1;
+			continue;
 		}
+		if (strcmp(argv[i], "--dev") == 0) {
+			config->dev_mode = true;
+			continue;
+		}
+
+		fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
+		hbf_config_print_usage(argv[0]);
+		return -1;
 	}
 
 	return 0;

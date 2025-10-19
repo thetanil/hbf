@@ -39,7 +39,9 @@ WARNINGS=0
 
 for file in $C_FILES; do
     echo "Checking $file..."
-    OUTPUT=$($CLANG_TIDY "$file" -- -std=c99 -I. -D_POSIX_C_SOURCE=200809L 2>&1 || true)
+    # Add CivetWeb include path from Bazel's external repository
+    CIVETWEB_INCLUDE=$(bazel info output_base 2>/dev/null)/external/+_repo_rules+civetweb/include
+    OUTPUT=$($CLANG_TIDY "$file" -- -std=c99 -I. -I"$CIVETWEB_INCLUDE" -D_POSIX_C_SOURCE=200809L 2>&1 || true)
 
     if echo "$OUTPUT" | grep -q "error:"; then
         echo -e "${RED}✗ $file has errors${NC}"

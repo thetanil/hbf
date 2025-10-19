@@ -29,6 +29,14 @@ cc_test(
     linkstatic = 1,
 )
 
+cc_test(
+    name = "config_test",
+    srcs = ["config_test.c"],
+    deps = [":config"],
+    copts = ["-Wno-cast-qual"],  # Test code needs to cast string literals
+    linkstatic = 1,
+)
+
 cc_binary(
     name = "hbf",
     srcs = ["main.c"],

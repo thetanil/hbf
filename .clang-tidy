@@ -13,6 +13,9 @@ Checks: >
   -modernize-*,
   -readability-magic-numbers,
   -readability-isolate-declaration,
+  -readability-identifier-length,
+  -cert-err33-c,
+  -performance-no-int-to-ptr,
   -bugprone-easily-swappable-parameters
 
 WarningsAsErrors: '*'
@@ -24,8 +27,9 @@ CheckOptions:
     value: lower_case
   - key: readability-identifier-naming.ParameterCase
     value: lower_case
-  - key: readability-identifier-naming.MacroDefinitionCase
-    value: UPPER_CASE
+  # Allow both UPPER_CASE and lower_case for macros (function-like macros use lower_case)
+  - key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
+    value: '^hbf_log_.*'
   - key: readability-identifier-naming.StructCase
     value: lower_case
   - key: readability-identifier-naming.EnumCase

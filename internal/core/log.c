@@ -65,11 +65,14 @@ hbf_log_level_t hbf_log_parse_level(const char *level_str)
 
 	if (strcmp(level_str, "debug") == 0) {
 		return HBF_LOG_DEBUG;
-	} else if (strcmp(level_str, "info") == 0) {
+	}
+	if (strcmp(level_str, "info") == 0) {
 		return HBF_LOG_INFO;
-	} else if (strcmp(level_str, "warn") == 0) {
+	}
+	if (strcmp(level_str, "warn") == 0) {
 		return HBF_LOG_WARN;
-	} else if (strcmp(level_str, "error") == 0) {
+	}
+	if (strcmp(level_str, "error") == 0) {
 		return HBF_LOG_ERROR;
 	}
 
