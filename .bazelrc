@@ -1,8 +1,60 @@
-# Build configuration for HBF demo
-build --enable_bzlmod
+# HBF Bazel configuration
+# Enforces C99 compliance, warnings as errors, and optimization settings
+
+# Enable bzlmod
+common --enable_bzlmod
+
+# Build configuration
+build --cxxopt=-std=c++17
+build --host_cxxopt=-std=c++17
+
+# C99 strict compilation with all warnings as errors
+build --conlyopt=-std=c99
+build --conlyopt=-Wall
+build --conlyopt=-Wextra
+build --conlyopt=-Werror
+build --conlyopt=-Wpedantic
+build --conlyopt=-Wconversion
+build --conlyopt=-Wdouble-promotion
+build --conlyopt=-Wshadow
+build --conlyopt=-Wformat=2
+build --conlyopt=-Wstrict-prototypes
+build --conlyopt=-Wold-style-definition
+build --conlyopt=-Wmissing-prototypes
+build --conlyopt=-Wmissing-declarations
+build --conlyopt=-Wcast-qual
+build --conlyopt=-Wwrite-strings
+build --conlyopt=-Wcast-align
+build --conlyopt=-Wundef
+build --conlyopt=-Wswitch-enum
+build --conlyopt=-Wswitch-default
+build --conlyopt=-Wbad-function-cast
+
+# Optimization and binary size reduction
+build --conlyopt=-O2
+build --conlyopt=-fdata-sections
+build --conlyopt=-ffunction-sections
+
+# Static linking (will be fully configured with musl toolchain in later phases)
+build --linkopt=-Wl,--gc-sections
+
+# Platform-specific settings
+build:linux --copt=-D_GNU_SOURCE
+
+# Development mode
+build:dev --compilation_mode=dbg
+build:dev --conlyopt=-O0
+build:dev --conlyopt=-g
+
+# Release mode
+build:release --compilation_mode=opt
+build:release --conlyopt=-O3
+build:release --linkopt=-s
+build:release --strip=always
 
 # Test configuration
 test --test_output=errors
+test --test_summary=detailed
 test --test_verbose_timeout_warnings
 
 # Performance optimizations
@@ -10,7 +62,11 @@ build --jobs=auto
 build --local_resources=memory=2048
 build --local_resources=cpu=4
 
-# Debugging options (uncomment as needed)
-# build --verbose_failures
-# build --sandbox_debug
+# Color output
+common --color=yes
 
+# Show detailed errors
+build --verbose_failures
+
+# Cache settings
+build --disk_cache=~/.cache/bazel

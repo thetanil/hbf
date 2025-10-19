@@ -1,0 +1,21 @@
+# Core utilities and foundational code
+
+cc_library(
+    name = "hash",
+    srcs = ["hash.c"],
+    hdrs = ["hash.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "hash_test",
+    srcs = ["hash_test.c"],
+    deps = [":hash"],
+)
+
+cc_binary(
+    name = "hbf",
+    srcs = ["main.c"],
+    deps = [":hash"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,7 @@
+# Build tools
+
+sh_binary(
+    name = "lint",
+    srcs = ["lint.sh"],
+    visibility = ["//visibility:public"],
+)

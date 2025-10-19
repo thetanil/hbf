@@ -1,0 +1,16 @@
+# HBF - Web Compute Environment
+# Root build file
+
+# Alias for convenience (bazel build //:hbf instead of //internal/core:hbf)
+alias(
+    name = "hbf",
+    actual = "//internal/core:hbf",
+    visibility = ["//visibility:public"],
+)
+
+# Lint target
+alias(
+    name = "lint",
+    actual = "//tools:lint",
+    visibility = ["//visibility:public"],
+)

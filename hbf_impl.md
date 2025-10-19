@@ -97,127 +97,121 @@ Test/CI
   - CI: run `//:lint`, then build with `-Werror`, then tests.
 
 
-## Phase 1: Bootstrap (HTTP + Storage)
+## Phase 1: HTTP Server Bootstrap (CivetWeb Only)
 
 Goal
-- Minimal HTTP server with CivetWeb, process lifecycle, config, routing frame; storage directory for user pods.
+- Minimal HTTP server with CivetWeb, process lifecycle, config, and basic routing. **NO database work in this phase.**
 
 Tasks
-- CLI/config: `--port` (default 5309), `--storage_dir` (default ./henvs), `--log_level`, `--dev`, `--base_domain` (default ipsaw.com).
-- CivetWeb integration: start server, request logger, timeouts; register handlers for:
-  - GET `/health`
-  - System endpoints at apex domain (ipsaw.com)
-  - User pod routing (no logic yet)
-- Signal handling for graceful shutdown.
-- Default document serving: if no router.js, serve from document database by path.
+- Vendor CivetWeb source in `third_party/civetweb/`
+- CLI/config: `--port` (default 5309), `--log_level`, `--dev`
+- CivetWeb integration: start server, request logger, timeouts
+- Signal handling for graceful shutdown (SIGINT, SIGTERM)
+- Register handlers for:
+  - `GET /health` - returns JSON health status
+  - Placeholder 404 handler for all other routes
+- Logging infrastructure (`internal/core/log.c|h`) with levels (debug, info, warn, error)
 
 Deliverables
-- `internal/core/config.c|h`, `internal/http/server.c|h` with CivetWeb callbacks
-- `GET /health` returns 200 JSON `{status: "ok", version: "...", uptime_seconds: N}`
-- Default document handler (path → document ID lookup)
+- `internal/core/config.c|h` - CLI parsing and config struct
+- `internal/core/log.c|h` - Logging with levels and timestamps
+- `internal/http/server.c|h` - CivetWeb server lifecycle and callbacks
+- `third_party/civetweb/BUILD.bazel` - CivetWeb cc_library
+- `GET /health` returns 200 JSON: `{"status": "ok", "version": "0.1.0", "uptime_seconds": N}`
 
 Tests
-- Start/stop server, concurrency sanity, simple bench (<100 req/s local).
-- Health check returns expected format.
+- Start/stop server without errors
+- `/health` endpoint returns expected JSON
+- Signal handling (graceful shutdown on SIGINT)
+- Invalid port handling
+- Concurrent request handling (10+ simultaneous requests)
+
+Acceptance
+- `bazel build //:hbf` compiles with CivetWeb linked
+- `bazel test //...` passes all tests
+- `bazel run //:lint` passes with no warnings
+- Server starts, responds to `/health`, shuts down cleanly
 
 
-## Phase 1.2: Host + Path Routing
+## Phase 2: User Pod & Database Management
 
 Goal
-- Extract user-hash from Host header and optional henv-hash from path; route to correct database.
+- Manage user pod directories and SQLite database files; integrate simple-graph for document storage.
+
+Note: This phase was previously "Phase 1.3" and "Phase 2" - combined and moved here to keep Phase 1 focused only on HTTP server.
 
 Tasks
-- Router wrapper on top of CivetWeb:
+- Vendor SQLite amalgamation in `third_party/sqlite/`
+- Vendor simple-graph in `third_party/simple_graph/`
+- File structure:
+  - User directory: `storage_dir/{user-hash}/` mode 0700
+  - Default henv: `storage_dir/{user-hash}/index.db` mode 0600
+- SQLite database manager (`internal/db/db.c|h`):
+  - Open with pragmas: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`
+  - Connection cache with mutex protection
+- User pod manager (`internal/henv/manager.c|h`):
+  - `henv_create_user_pod`, `henv_user_exists`, `henv_open`, `henv_close_all`
+  - Hash collision detection
+- Schema initialization (`internal/db/schema.c|h`):
+  - Create `_hbf_*` system tables
+  - Integrate simple-graph tables for document storage
+  - `_hbf_users`, `_hbf_sessions`, `_hbf_table_permissions`, `_hbf_row_policies`, `_hbf_config`
+  - `_hbf_document_search` FTS5 virtual table
+- Default config values in `_hbf_config`
+
+Deliverables
+- `third_party/sqlite/BUILD.bazel` - SQLite cc_library
+- `third_party/simple_graph/BUILD.bazel` - simple-graph integration
+- `internal/db/db.c|h` - SQLite wrapper and connection management
+- `internal/db/schema.c|h` - Schema DDL and initialization
+- `internal/henv/manager.c|h` - User pod and henv management
+
+Tests
+- Create user pod → directory created with correct permissions (0700)
+- Create index.db → file created mode 0600, WAL mode enabled
+- Open existing henv → connection returned from cache
+- Hash collision → error returned
+- Schema initialization creates all tables
+- Config defaults inserted correctly
+
+Acceptance
+- User pod creation and database initialization works
+- All system tables present with correct schema
+- Connection caching functional
+- Simple-graph integration verified
+
+
+## Phase 3: Host + Path Routing & Authentication Endpoints
+
+Goal
+- Parse Host header for user-hash routing and implement `/new` and `/login` endpoints with Argon2id + JWT.
+
+Note: This phase combines routing (previously "Phase 1.2") with authentication (previously "Phase 3") since routing is needed for auth endpoints.
+
+### Phase 3.1: Host + Path Routing
+
+Tasks
+- Router wrapper (`internal/http/router.c|h`):
   - Parse Host header to extract user-hash (e.g., `a1b2c3d4.ipsaw.com` → `a1b2c3d4`)
   - Handle apex domain (`ipsaw.com`) for system endpoints
-  - Parse path for optional henv-hash: `/{henv-hash}/...` (future multi-henv support)
-  - Default to `index.db` if no henv-hash in path
-- Hash validation: 8 characters, [0-9a-z] only
-- Provide `hbf_route_context` structure with user_hash, henv_hash, subpath, hostname
+  - Hash validation: 8 characters, [0-9a-z] only
+  - Provide `hbf_route_context` structure with user_hash, subpath, hostname
+- Integration with CivetWeb server for request routing
 
 Deliverables
 - `internal/http/router.c|h` with `hbf_route_extract()` and `hbf_validate_hash()`
-- Integration with server for request routing
 
 Tests
 - Valid user-hash extraction: `a1b2c3d4.ipsaw.com` → user_hash="a1b2c3d4"
 - Apex domain handling: `ipsaw.com/new` → system handler
 - Invalid hash → 404
-- Path parsing (future): `/{henv-hash}/api/users` → henv_hash + subpath
+- Hash validation (reject non-alphanumeric, wrong length)
 
-
-## Phase 1.3: User Pod & Database File Management
-
-Goal
-- Manage user pod directories and henv database files; open/initialize as needed.
+### Phase 3.2: Authentication (Argon2id + JWT HS256)
 
 Tasks
-- `Manager` in C: `henv_create_user_pod`, `henv_user_exists`, `henv_open`, `henv_close_all`.
-- File structure:
-  - User directory: `storage_dir/{user-hash}/` mode 0700
-  - Default henv: `storage_dir/{user-hash}/index.db` mode 0600
-  - Future multi-henv: `storage_dir/{user-hash}/{henv-hash}.db` mode 0600
-- SQLite open with pragmas: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`.
-- Connection cache: one open connection per henv in hash map guarded by mutex; reference counting or LRU eviction in Phase 10.
-
-Deliverables
-- `internal/henv/manager.c|h` with user pod and henv management functions
-- Hash collision detection on user creation
-
-Tests
-- Create user pod → directory created with correct permissions
-- Create index.db → file created mode 0600, WAL mode enabled
-- Open existing henv → connection returned from cache
-- Hash collision → error returned
-- Directory permissions enforced
-
-
-## Phase 2: Schema & Initialization
-
-Goal
-- Create `_hbf_*` system tables and integrate simple-graph for document storage.
-
-Tables (prefix `_hbf_`)
-- `_hbf_users` (id, username unique, password_hash, role, email, created_at, last_login, enabled)
-- `_hbf_sessions` (session_id, user_id, token_hash, created_at, expires_at, last_used, ip, ua)
-- `_hbf_table_permissions` (table_name, user_id, can_read, can_write, can_delete, can_grant)
-- `_hbf_row_policies` (table_name, user_id?, policy_type, sql_condition, created_at, created_by)
-- `_hbf_config` (key, value, updated_at, updated_by)
-- Simple-graph tables (from https://github.com/dpapathanasiou/simple-graph)
-  - Review and integrate simple-graph schema for document storage
-  - Extend with `_hbf_document_search` FTS5 virtual table for full-text search
-  - Add triggers to maintain FTS index
-- Router script storage (stored as document with ID `_system/router.js` or dedicated table)
-
-Tasks
-- Place schema as const char* in `internal/db/schema.c` and execute inside a transaction.
-- Integrate simple-graph schema (adapt as needed for HBF requirements).
-- Insert default `_hbf_config` values:
-  - `session_timeout_hours=24`
-  - `max_users=10`
-  - `max_document_size_mb=10`
-  - `qjs_timeout_ms=5000`
-  - `qjs_mem_mb=64`
-- Bootstrap Monaco editor files as documents with `_system/` prefix.
-
-Deliverables
-- `internal/db/schema.c|h` + initialization from `henv_manager`
-- Simple-graph schema integration
-- Monaco editor bootstrap SQL
-
-Tests
-- Fresh DB contains all tables; indexes present; triggers maintain FTS
-- Simple-graph tables created correctly
-- Config values set
-- Monaco editor documents inserted (if bootstrapping in Phase 2)
-
-
-## Phase 3: Authentication (Argon2id + JWT HS256)
-
-Goal
-- User pod creation, per-henv authentication with secure password hashing and stateless tokens.
-
-Tasks
+- Vendor Argon2 reference implementation in `third_party/argon2/`
+- Vendor SHA-256 + HMAC single-file (Brad Conte style, MIT) in `third_party/sha256_hmac/`
 - Password hashing: Argon2id (Apache-2.0 ref impl) with parameters tuned for target box; encode hash with PHC string format.
 - JWT: Implement HS256 using MIT SHA-256 + HMAC (single-file, Brad Conte style) and base64url encode/decode (pure C, no external deps).
   - Use HMAC_SHA256 for the HS256 signature over `base64url(header).base64url(payload)`.
