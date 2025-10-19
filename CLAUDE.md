@@ -7,25 +7,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 HBF is a single, statically linked C99 web compute environment that embeds:
 - **SQLite** as the application/data store (with WAL + FTS5)
 - **CivetWeb** for HTTP and WebSockets
-- **QuickJS** for runtime extensibility and scripting
+- **QuickJS-NG** for runtime extensibility and scripting
 
-This is a **planning-stage repository**. The comprehensive implementation plan is in `hbf_impl.md`, but actual source code has not yet been written.
+**Current Status**: Phase 1 Complete ✅
+- ✅ Phase 0: Foundation, Bazel setup, musl toolchain, coding standards
+- ✅ Phase 1: HTTP server with CivetWeb, logging, CLI parsing, signal handling
+- 🔄 Phase 2: User pod & database management (next)
+
+The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md` and `DOCS/phase1-completion.md` for completion reports.
 
 ## Build System
 
 This project uses **Bazel 8 with bzlmod** (MODULE.bazel, no WORKSPACE).
 
-### Expected Build Commands (when implemented)
+### Build Commands
 ```bash
 # Build the static binary (musl toolchain)
 bazel build //:hbf
 
-# Run all tests
+# Run all tests (hash_test, config_test)
 bazel test //...
 
-# Run lint checks
-bazel build //:lint
+# Run lint checks (clang-tidy with CERT rules)
+bazel run //:lint
+
+# Run specific test with output
+bazel test //internal/core:config_test --test_output=all
 ```
+
+**Binary output**: `bazel-bin/internal/core/hbf` (170 KB stripped, 205 KB unstripped)
 
 ### Bazel Configuration
 - `.bazelrc` contains build settings including bzlmod enablement
@@ -54,32 +64,42 @@ bazel build //:lint
 - Output: single fully static binary with no runtime dependencies
 - Strip symbols for release builds
 
-## Planned Directory Structure
+## Directory Structure
 
 ```
 /third_party/       # Vendored dependencies (no git submodules)
-  quickjs/          # MIT
-  sqlite/           # Public Domain amalgamation
-  civetweb/         # MIT
-  argon2/           # Apache-2.0
-  sha256_hmac/      # MIT single-file implementation
+  civetweb/         # ✅ MIT - Fetched from Git (v1.16)
+  sqlite/           # 🔄 Public Domain amalgamation (Phase 2)
+  simple_graph/     # 🔄 MIT (Phase 5)
+  quickjs-ng/       # 🔄 MIT (Phase 6)
+  argon2/           # 🔄 Apache-2.0 (Phase 3)
+  sha256_hmac/      # 🔄 MIT single-file implementation (Phase 3)
 
 /internal/          # Core implementation (all C99)
-  core/             # Logging, config, CLI argument parsing
-  http/             # CivetWeb server, routing, request handling
-  cenv/             # Compute environment manager (SQLite DB per cenv)
-  db/               # SQLite wrapper, schema, prepared statements
-  auth/             # Argon2id password hashing, JWT HS256, sessions
-  authz/            # Table permissions, row policies, query rewriting
-  document/         # Document store with FTS5 full-text search
-  qjs/              # QuickJS engine, module loader, DB bindings
-  templates/        # EJS template integration
-  ws/               # WebSocket handlers
-  api/              # REST endpoint implementations
+  core/             # ✅ Logging, config, CLI, hash generator, main
+  http/             # ✅ CivetWeb server wrapper
+  henv/             # 🔄 User pod management (Phase 2)
+  db/               # 🔄 SQLite wrapper, schema, prepared statements (Phase 2)
+  auth/             # 🔄 Argon2id password hashing, JWT HS256 (Phase 3)
+  authz/            # 🔄 Table permissions, row policies (Phase 4)
+  document/         # 🔄 Document store with FTS5 search (Phase 5)
+  qjs/              # 🔄 QuickJS-NG engine, module loader (Phase 6)
+  templates/        # 🔄 EJS template integration (Phase 6.1)
+  ws/               # 🔄 WebSocket handlers (Phase 8)
+  api/              # 🔄 REST endpoint implementations (Phase 7)
 
 /tools/
-  pack_js/          # Bazel helper to bundle JS into C arrays or SQLite blobs
+  lint.sh           # ✅ clang-tidy wrapper script
+  pack_js/          # 🔄 JS bundler (Phase 6.2)
+
+/DOCS/              # ✅ Documentation
+  coding-standards.md
+  development-setup.md
+  phase0-completion.md
+  phase1-completion.md
 ```
+
+**Legend**: ✅ Implemented | 🔄 Planned
 
 ## Security & Crypto Implementation
 
@@ -138,21 +158,21 @@ All system tables use `_hbf_` prefix:
 
 The project follows a 10-phase implementation plan (see `hbf_impl.md` for details):
 
-1. **Phase 0**: Foundation (Bazel setup, musl toolchain, directory structure)
-2. **Phase 1-1.3**: HTTP server + cenv routing + SQLite DB management
-3. **Phase 2**: Schema & system table initialization
-4. **Phase 3**: Authentication (Argon2id + JWT HS256)
-5. **Phase 4**: Authorization & row-level policies
-6. **Phase 5**: Document store + FTS5 search
-7. **Phase 6**: QuickJS embedding + dynamic endpoints
-8. **Phase 6.1**: EJS template rendering in QuickJS
-9. **Phase 6.2**: Node-compatible module system (CommonJS + shims)
-10. **Phase 7**: REST API surface (parity with WCE reference)
-11. **Phase 8**: WebSocket support
-12. **Phase 9**: Packaging & static linking optimization
-13. **Phase 10**: Hardening & performance tuning
+1. ✅ **Phase 0**: Foundation (Bazel setup, musl toolchain, directory structure, DNS-safe hash)
+2. ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI parsing, signal handling)
+3. 🔄 **Phase 2**: User Pod & Database Management (SQLite, simple-graph, schema init)
+4. 🔄 **Phase 3**: Routing & Authentication (host/path routing, Argon2id, JWT HS256)
+5. 🔄 **Phase 4**: Authorization & row-level policies
+6. 🔄 **Phase 5**: Document store + FTS5 search (simple-graph integration)
+7. 🔄 **Phase 6**: QuickJS-NG embedding + user router.js
+8. 🔄 **Phase 6.1**: EJS template rendering
+9. 🔄 **Phase 6.2**: Node-compatible module system (CommonJS + shims)
+10. 🔄 **Phase 7**: REST API surface
+11. 🔄 **Phase 8**: WebSocket support
+12. 🔄 **Phase 9**: Packaging & static linking optimization
+13. 🔄 **Phase 10**: Hardening & performance tuning
 
-Each phase has specific deliverables, tests, and acceptance criteria.
+Each phase has specific deliverables, tests, and acceptance criteria. See completion reports in `DOCS/` for finished phases.
 
 ## Testing Strategy
 
@@ -180,57 +200,67 @@ Each phase has specific deliverables, tests, and acceptance criteria.
 - CERT C Coding Standard (applicable C99 rules)
 - `.clang-format` and `.clang-tidy` configurations enforce these rules
 
-## HTTP API Endpoints (Planned)
+## HTTP API Endpoints
 
-### System
-- `GET /health` - Health check
-- `POST /new` - Create new cenv + owner user
+### Current (Phase 1)
+- ✅ `GET /health` - Health check with uptime
+- ✅ `404` - JSON error response for unmatched routes
 
-### Authentication
-- `POST /{cenv}/login` - User login, returns JWT
+### Planned
 
-### Admin (owner/admin only)
-- `GET/POST/DELETE /{cenv}/admin/permissions`
-- `GET/POST /{cenv}/admin/policies`
-- `GET/POST/DELETE /{cenv}/admin/endpoints`
-- `GET /{cenv}/admin/metrics` (Phase 10)
+**System** (apex domain):
+- 🔄 `POST /new` - Create new user pod + owner (Phase 3)
 
-### Documents
-- `GET /{cenv}/documents` - List documents
-- `POST /{cenv}/documents` - Create document
-- `GET/PUT/DELETE /{cenv}/documents/{docID}`
-- `GET /{cenv}/documents/search?q=...` - FTS5 search
+**User Pod** (at {user-hash}.domain):
+- 🔄 `POST /login` - User login, returns JWT (Phase 3)
+- 🔄 `GET /_admin` - Monaco editor UI (Phase 6)
 
-### Templates
-- `GET /{cenv}/templates` - List template documents
-- `POST /{cenv}/templates/preview` - Render with data
+**Admin API** (owner/admin only):
+- 🔄 `GET/POST/DELETE /_api/permissions` (Phase 4)
+- 🔄 `GET/POST /_api/policies` (Phase 4)
+- 🔄 `GET/POST/PUT/DELETE /_api/documents/{docID}` (Phase 5)
+- 🔄 `GET /_api/documents/search?q=...` - FTS5 search (Phase 5)
+- 🔄 `GET /_api/templates` - List templates (Phase 6.1)
+- 🔄 `POST /_api/templates/preview` - Render with data (Phase 6.1)
+- 🔄 `GET /_api/metrics` - Per-henv stats (Phase 10)
 
-### Dynamic Endpoints
-- `/{cenv}/js/{path}` - Execute QuickJS script from `_hbf_endpoints`
+**User Routes** (via router.js):
+- 🔄 All other paths handled by user's router.js (Phase 6)
+- 🔄 Default: serve from document database by path (Phase 7)
 
-### WebSockets
-- `/{cenv}/ws/{channel}?token=...` - WebSocket connection with auth
+**WebSockets**:
+- 🔄 `/{user-hash}/ws/{channel}?token=...` (Phase 8)
 
-## CLI Arguments (Planned)
+## CLI Arguments
 
+### Current (Phase 1)
 ```bash
 hbf [options]
 
 Options:
-  --port <num>              HTTP server port (default: 5309)
-  --storage_dir <path>      Directory for cenv SQLite DBs (default: ./cenvs)
-  --log_level <level>       Log level: debug, info, warn, error
-  --dev                     Development mode
-  --db_max_open <num>       Max open SQLite connections
-  --qjs_mem_mb <num>        QuickJS memory limit in MB
-  --qjs_timeout_ms <num>    QuickJS execution timeout in ms
+  --port <num>         HTTP server port (default: 5309)
+  --log_level <level>  Log level: debug, info, warn, error (default: info)
+  --dev                Enable development mode
+  --help, -h           Show this help message
+```
+
+### Planned (Later Phases)
+```bash
+  --storage_dir <path>      Directory for henv SQLite DBs (default: ./henvs)
+  --base_domain <domain>    Base domain for routing (default: ipsaw.com)
+  --db_max_open <num>       Max open SQLite connections (Phase 2)
+  --qjs_mem_mb <num>        QuickJS memory limit in MB (Phase 6)
+  --qjs_timeout_ms <num>    QuickJS execution timeout in ms (Phase 6)
 ```
 
 ## Development Environment
 
-- **Container**: Custom devcontainer with Bazel, Go, Python (uv), Hugo
+- **Container**: Custom devcontainer with Bazel 8.4.2, Go, Python (uv), Hugo
+- **Tools**: clang-tidy-18 (LLVM 18), musl toolchain 1.2.3
 - **Ports**: 80 (web services), 8080 (Traefik dashboard)
 - **VS Code extensions**: Python, Black formatter, JSON, Markdown, reStructuredText
+
+See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup instructions.
 
 ## Key Design Decisions
 
@@ -242,7 +272,51 @@ Options:
 6. **Stateless + stateful auth**: JWT for stateless auth, DB sessions for revocation
 7. **Query rewriting for authz**: Row-level security via SQL WHERE clause injection
 
+## Current Implementation Status
+
+### Completed (Phase 0 & 1)
+
+**Core Components**:
+- ✅ `internal/core/hash.c|h` - DNS-safe hash generator (SHA-256 → base36, 8 chars)
+- ✅ `internal/core/log.c|h` - Logging with levels (DEBUG, INFO, WARN, ERROR) and UTC timestamps
+- ✅ `internal/core/config.c|h` - CLI argument parsing with validation
+- ✅ `internal/core/main.c` - Application lifecycle and signal handling
+- ✅ `internal/http/server.c|h` - CivetWeb wrapper with graceful shutdown
+
+**Tests**:
+- ✅ `internal/core/hash_test.c` - 5 test cases (determinism, DNS-safe chars, collisions, NULL handling)
+- ✅ `internal/core/config_test.c` - 25 test cases (all CLI args, edge cases, error handling)
+
+**Binary**:
+- ✅ Size: 170 KB (stripped), 205 KB (unstripped)
+- ✅ 100% static linking with musl libc 1.2.3
+- ✅ Zero runtime dependencies
+- ✅ All code passes clang-tidy CERT checks
+- ✅ Compiles with `-Werror` and 30+ warning flags
+
+**Endpoints**:
+- ✅ `GET /health` - Returns JSON with status, version, uptime
+- ✅ `404 Not Found` - JSON error response for unmatched routes
+
+### Quality Gates (All Passing)
+
+```bash
+# Build
+$ bazel build //:hbf
+✅ Build completed successfully
+
+# Test
+$ bazel test //...
+✅ 2 test targets, 30 test cases total, all passing
+
+# Lint
+$ bazel run //:lint
+✅ 5 source files checked, 0 issues
+```
+
 ## References
 
 - **Primary spec**: `hbf_impl.md` (comprehensive phase-by-phase implementation guide)
-- **WCE reference**: Design mirrors WCE's implementation approach, adapted to C99
+- **Completion reports**: `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`
+- **Coding standards**: `DOCS/coding-standards.md`
+- **Development setup**: `DOCS/development-setup.md`
