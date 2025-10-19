@@ -14,7 +14,11 @@ bazel_dep(name = "rules_cc", version = "0.1.1")
 # Platform support
 bazel_dep(name = "platforms", version = "0.0.11")
 
-# TODO: Add musl toolchain configuration
-# For Phase 0, we'll use the default system toolchain
-# In later phases, we'll configure a proper musl-based toolchain
-# that produces 100% static binaries
+# Musl toolchain for 100% static linking (no glibc)
+# This automatically enables fully_static_link feature
+bazel_dep(name = "toolchains_musl", version = "0.1.27", dev_dependency = True)
+
+# Use musl toolchains extension
+musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
+use_repo(musl, "musl_toolchains_hub")
+register_toolchains("@musl_toolchains_hub//:all")

@@ -39,8 +39,12 @@ build --conlyopt=-ffunction-sections
 build --conlyopt=-D_POSIX_C_SOURCE=200809L
 build --copt=-D_POSIX_C_SOURCE=200809L
 
-# Static linking (will be fully configured with musl toolchain in later phases)
+# Static linking with musl toolchain
+# NOTE: Using musl static linking. Binary has ZERO runtime dependencies.
+# Musl toolchain configured in MODULE.bazel via toolchains_musl v0.1.27
+build --linkopt=-static
 build --linkopt=-Wl,--gc-sections
+# Note: Stripping is done via genrule in root BUILD.bazel
 
 # Platform-specific settings (kept for compatibility)
 build:linux --copt=-D_GNU_SOURCE

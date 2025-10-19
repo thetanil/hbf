@@ -26,6 +26,7 @@ cc_test(
     name = "hash_test",
     srcs = ["hash_test.c"],
     deps = [":hash"],
+    linkstatic = 1,
 )
 
 cc_binary(

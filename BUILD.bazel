@@ -1,9 +1,19 @@
 # HBF - Web Compute Environment
 # Root build file
 
-# Alias for convenience (bazel build //:hbf instead of //internal/core:hbf)
-alias(
+# Stripped binary (smaller, production-ready)
+genrule(
     name = "hbf",
+    srcs = ["//internal/core:hbf"],
+    outs = ["hbf_bin"],
+    cmd = "cp $< $@ && chmod +w $@ && strip $@",
+    executable = True,
+    visibility = ["//visibility:public"],
+)
+
+# Unstripped binary (for debugging)
+alias(
+    name = "hbf_unstripped",
     actual = "//internal/core:hbf",
     visibility = ["//visibility:public"],
 )

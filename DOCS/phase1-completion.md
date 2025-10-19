@@ -261,20 +261,25 @@ $ bazel run //:lint
 
 ## Binary Statistics
 
-- **Size**: ~2.3 MB (with CivetWeb, dynamically linked)
-- **Build time**: ~2.3s (clean build)
-- **Dependencies**: CivetWeb (MIT), libc
+- **Size**: 170 KB (stripped, statically linked with musl)
+- **Size (unstripped)**: 205 KB
+- **Build time**: ~2.5s (clean build)
+- **Dependencies**: ZERO runtime dependencies (100% static with musl)
+- **Toolchain**: musl libc 1.2.3 (not glibc)
 - **Warnings**: 0
 - **Errors**: 0
 - **Memory**: Clean (no leaks detected during manual testing)
 
+**Size comparison**:
+- Glibc static (stripped): 1.2 MB
+- Musl static (stripped): 170 KB ← **86% smaller!**
+
 ## Known Limitations
 
-1. **Dynamic linking**: Still dynamically linked (musl static linking deferred to Phase 9)
-2. **No persistence**: No database or file storage yet (Phase 2)
-3. **No routing**: Only /health and 404 handler (routing deferred to Phase 3)
-4. **No authentication**: No user management yet (Phase 3)
-5. **No WebSocket testing**: WebSocket support enabled but not tested (Phase 8)
+1. **No persistence**: No database or file storage yet (Phase 2)
+2. **No routing**: Only /health and 404 handler (routing deferred to Phase 3)
+3. **No authentication**: No user management yet (Phase 3)
+4. **No WebSocket testing**: WebSocket support enabled but not tested (Phase 8)
 
 ## Next Steps (Phase 2)
 
