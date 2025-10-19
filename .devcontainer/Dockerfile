@@ -8,6 +8,8 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     vim \
     wget \
     sqlite3 \
+    clang-tidy-18 \
+    llvm-18 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
