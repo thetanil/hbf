@@ -7,7 +7,7 @@ cc_library(
     deps = [
         "//internal/core:config",
         "//internal/core:log",
-        "//third_party/civetweb",
+        "@civetweb//:civetweb",
     ],
     visibility = ["//visibility:public"],
 )

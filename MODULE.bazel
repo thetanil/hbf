@@ -22,3 +22,13 @@ bazel_dep(name = "toolchains_musl", version = "0.1.27", dev_dependency = True)
 musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 use_repo(musl, "musl_toolchains_hub")
 register_toolchains("@musl_toolchains_hub//:all")
+
+# CivetWeb HTTP server library (fetched from git)
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "civetweb",
+    remote = "https://github.com/civetweb/civetweb.git",
+    tag = "v1.16",
+    build_file = "//third_party/civetweb:civetweb.BUILD",
+)

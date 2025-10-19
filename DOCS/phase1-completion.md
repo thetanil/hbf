@@ -21,18 +21,27 @@ Phase 1 has been successfully completed. All deliverables have been implemented 
 
 ### 1. CivetWeb Integration
 
-**Location**: `third_party/civetweb/`
+**Source**: Fetched from Git via `git_repository` rule in MODULE.bazel
 
-**Version**: v1.16 (MIT License)
+**Repository**: https://github.com/civetweb/civetweb.git
+
+**Version**: v1.16 (tag), commit d7ba35b (MIT License)
+
+**Integration**:
+- No vendored source code in repository
+- Fetched during build from upstream Git repository
+- Custom BUILD file: `third_party/civetweb/civetweb.BUILD`
+- Only 2 files in repository (BUILD.bazel + civetweb.BUILD)
 
 **Configuration**:
 - NO_SSL - SSL/TLS disabled (use reverse proxy)
 - NO_CGI - CGI disabled
 - NO_FILES - File serving disabled (app handles this)
+- USE_IPV6=0 - IPv6 disabled (IPv4 only)
 - USE_WEBSOCKET - WebSocket support enabled for Phase 8
 - MG_EXPERIMENTAL_INTERFACES - Additional APIs enabled
 
-**Build**: `third_party/civetweb/BUILD.bazel`
+**Build**: `third_party/civetweb/civetweb.BUILD`
 - Single-file library (civetweb.c + .inl files)
 - Warning suppressions for third-party code
 - Clean compilation with `-Werror`
@@ -167,19 +176,45 @@ unsigned long hbf_server_uptime(const hbf_server_t *server);
 │       ├── BUILD.bazel      (NEW)
 │       └── server.c|h       (NEW - HTTP server wrapper)
 ├── third_party/
-│   └── civetweb/            (NEW - CivetWeb v1.16)
-│       ├── BUILD.bazel
-│       ├── src/civetweb.c
-│       ├── src/*.inl
-│       └── include/civetweb.h
-└── .bazelrc                 (UPDATED - POSIX features)
+│   └── civetweb/            (NEW - Git repository integration)
+│       ├── BUILD.bazel      (Exports civetweb.BUILD)
+│       └── civetweb.BUILD   (Build rules for external repo)
+└── .bazelrc                 (UPDATED - POSIX features, static linking)
 ```
 
 ## Build Configuration Updates
 
+### MODULE.bazel Changes
+
+**Musl Toolchain** (100% static linking, no glibc):
+```starlark
+bazel_dep(name = "toolchains_musl", version = "0.1.27", dev_dependency = True)
+
+musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
+use_repo(musl, "musl_toolchains_hub")
+register_toolchains("@musl_toolchains_hub//:all")
+```
+
+**CivetWeb Git Repository**:
+```starlark
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "civetweb",
+    remote = "https://github.com/civetweb/civetweb.git",
+    tag = "v1.16",
+    build_file = "//third_party/civetweb:civetweb.BUILD",
+)
+```
+
+This configuration:
+- Fetches CivetWeb from upstream Git during build
+- No vendored source code in repository
+- Reproducible builds via commit hash (d7ba35b)
+
 ### .bazelrc Changes
 
-Added POSIX C source compatibility:
+**POSIX C source compatibility**:
 ```
 build --conlyopt=-D_POSIX_C_SOURCE=200809L
 build --copt=-D_POSIX_C_SOURCE=200809L
@@ -189,6 +224,14 @@ This enables:
 - `sigaction()` for signal handling
 - `gmtime_r()` for thread-safe time functions
 - Other POSIX.1-2008 features while maintaining C99 compliance
+
+**Static linking with musl**:
+```
+build --linkopt=-static
+build --linkopt=-Wl,--gc-sections
+```
+
+This produces a 100% static binary with zero runtime dependencies.
 
 ## Testing
 
