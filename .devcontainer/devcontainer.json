@@ -1,4 +1,58 @@
 {
-    "name": "eclipse-s-core",
-    "image": "ghcr.io/eclipse-score/devcontainer:latest"
+    "name": "HBF Development Environment",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "workspaceFolder": "/workspaces/hbf",
+    "features": {
+        // "ghcr.io/devcontainers/features/docker-in-docker:2": {
+        //     "version": "latest",
+        //     "enableNonRootDocker": "true"
+        // },
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/go:1": {},
+        "ghcr.io/devcontainers/features/hugo:1": {},
+        "ghcr.io/devcontainers-extra/features/uv:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.flake8",
+                "ms-python.black-formatter",
+                "ms-vscode.vscode-json",
+                "dnut.rewrap-revived",
+                "lextudio.restructuredtext",
+                "trond-snekvik.simple-rst",
+                "ms-vscode.live-server",
+                "bierner.markdown-mermaid"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/opt/venv/bin/python",
+                "python.formatting.provider": "black"
+            }
+        }
+    },
+    "forwardPorts": [
+        80,
+        8080
+    ],
+    "portsAttributes": {
+        "80": {
+            "label": "Web Services",
+            "onAutoForward": "notify"
+        },
+        "8080": {
+            "label": "Traefik Dashboard",
+            "onAutoForward": "notify"
+        }
+    },
+    // "postCreateCommand": "chmod +x ./test-setup.sh",
+    "remoteUser": "vscode",
+    // Ensure proper file ownership and permissions
+    "updateRemoteUserUID": true,
+    // Additional settings for better persistence
+    "shutdownAction": "none"
 }
