@@ -7,6 +7,21 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "log",
+    srcs = ["log.c"],
+    hdrs = ["log.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "config",
+    srcs = ["config.c"],
+    hdrs = ["config.h"],
+    deps = [":log"],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "hash_test",
     srcs = ["hash_test.c"],
@@ -16,6 +31,10 @@ cc_test(
 cc_binary(
     name = "hbf",
     srcs = ["main.c"],
-    deps = [":hash"],
+    deps = [
+        ":config",
+        ":log",
+        "//internal/http:server",
+    ],
     visibility = ["//visibility:public"],
 )

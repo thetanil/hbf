@@ -1,35 +1,77 @@
 /* SPDX-License-Identifier: MIT */
-#include "hash.h"
+#include "config.h"
+#include "log.h"
+#include "../http/server.h"
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
-#include <string.h>
+#include <unistd.h>
+
+static volatile bool g_shutdown = false;
+static hbf_server_t *g_server = NULL;
+
+static void signal_handler(int signum)
+{
+	(void)signum;
+	g_shutdown = true;
+}
 
 int main(int argc, char *argv[])
 {
-	char hash[9];
+	hbf_config_t config;
+	struct sigaction sa;
 	int ret;
-	const char *test_input = "testuser";
 
-	(void)argc;
-	(void)argv;
+	/* Parse configuration */
+	ret = hbf_config_parse(&config, argc, argv);
+	if (ret != 0) {
+		return (ret < 0) ? 1 : 0;
+	}
 
-	printf("HBF v0.1.0 (Phase 0 - Foundation)\n");
-	printf("===================================\n\n");
+	/* Initialize logging */
+	hbf_log_init(config.log_level);
 
-	printf("Testing DNS-safe hash generator:\n");
-	printf("Input: %s\n", test_input);
+	hbf_log_info("HBF v0.1.0 starting");
+	hbf_log_info("Port: %d", config.port);
+	hbf_log_info("Log level: %d", config.log_level);
+	hbf_log_info("Dev mode: %s", config.dev_mode ? "enabled" : "disabled");
 
-	ret = hbf_dns_safe_hash(test_input, hash);
-	if (ret < 0) {
-		fprintf(stderr, "Error: Failed to generate hash\n");
+	/* Set up signal handlers for graceful shutdown */
+	sa.sa_handler = signal_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+
+	if (sigaction(SIGINT, &sa, NULL) < 0) {
+		hbf_log_error("Failed to set SIGINT handler");
 		return 1;
 	}
 
-	printf("Hash:  %s\n\n", hash);
+	if (sigaction(SIGTERM, &sa, NULL) < 0) {
+		hbf_log_error("Failed to set SIGTERM handler");
+		return 1;
+	}
 
-	printf("Build system verification successful!\n");
-	printf("- C99 compliance: OK\n");
-	printf("- Bazel bzlmod: OK\n");
-	printf("- DNS-safe hash: OK\n");
+	/* Start HTTP server */
+	g_server = hbf_server_start(&config);
+	if (!g_server) {
+		hbf_log_error("Failed to start server");
+		return 1;
+	}
+
+	hbf_log_info("Server running. Press Ctrl+C to stop.");
+
+	/* Wait for shutdown signal */
+	while (!g_shutdown) {
+		sleep(1);
+	}
+
+	hbf_log_info("Shutdown signal received");
+
+	/* Stop server */
+	hbf_server_stop(g_server);
+	g_server = NULL;
+
+	hbf_log_info("HBF stopped");
 
 	return 0;
 }

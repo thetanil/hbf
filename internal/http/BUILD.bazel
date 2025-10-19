@@ -1,3 +1,13 @@
 # HTTP server and routing (Phase 1+)
 
-# Placeholder for Phase 1
+cc_library(
+    name = "server",
+    srcs = ["server.c"],
+    hdrs = ["server.h"],
+    deps = [
+        "//internal/core:config",
+        "//internal/core:log",
+        "//third_party/civetweb",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -35,10 +35,14 @@ build --conlyopt=-O2
 build --conlyopt=-fdata-sections
 build --conlyopt=-ffunction-sections
 
+# POSIX features for C99
+build --conlyopt=-D_POSIX_C_SOURCE=200809L
+build --copt=-D_POSIX_C_SOURCE=200809L
+
 # Static linking (will be fully configured with musl toolchain in later phases)
 build --linkopt=-Wl,--gc-sections
 
-# Platform-specific settings
+# Platform-specific settings (kept for compatibility)
 build:linux --copt=-D_GNU_SOURCE
 
 # Development mode
