@@ -69,7 +69,7 @@ bazel test //internal/core:config_test --test_output=all
 ```
 /third_party/       # Vendored dependencies (no git submodules)
   civetweb/         # ✅ MIT - Fetched from Git (v1.16)
-  sqlite/           # 🔄 Public Domain amalgamation (Phase 2)
+  sqlite/           # 🔄 Public Domain amalgamation (Phase 2a)
   simple_graph/     # 🔄 MIT (Phase 5)
   quickjs-ng/       # 🔄 MIT (Phase 6)
   argon2/           # 🔄 Apache-2.0 (Phase 3)
@@ -78,8 +78,8 @@ bazel test //internal/core:config_test --test_output=all
 /internal/          # Core implementation (all C99)
   core/             # ✅ Logging, config, CLI, hash generator, main
   http/             # ✅ CivetWeb server wrapper
-  henv/             # 🔄 User pod management (Phase 2)
-  db/               # 🔄 SQLite wrapper, schema, prepared statements (Phase 2)
+  henv/             # 🔄 User pod management (Phase 2b)
+  db/               # 🔄 SQLite wrapper, schema, prepared statements (Phase 2a/2b)
   auth/             # 🔄 Argon2id password hashing, JWT HS256 (Phase 3)
   authz/            # 🔄 Table permissions, row policies (Phase 4)
   document/         # 🔄 Document store with FTS5 search (Phase 5)
@@ -160,17 +160,18 @@ The project follows a 10-phase implementation plan (see `hbf_impl.md` for detail
 
 1. ✅ **Phase 0**: Foundation (Bazel setup, musl toolchain, directory structure, DNS-safe hash)
 2. ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI parsing, signal handling)
-3. 🔄 **Phase 2**: User Pod & Database Management (SQLite, simple-graph, schema init)
-4. 🔄 **Phase 3**: Routing & Authentication (host/path routing, Argon2id, JWT HS256)
-5. 🔄 **Phase 4**: Authorization & row-level policies
-6. 🔄 **Phase 5**: Document store + FTS5 search (simple-graph integration)
-7. 🔄 **Phase 6**: QuickJS-NG embedding + user router.js
-8. 🔄 **Phase 6.1**: EJS template rendering
-9. 🔄 **Phase 6.2**: Node-compatible module system (CommonJS + shims)
-10. 🔄 **Phase 7**: REST API surface
-11. 🔄 **Phase 8**: WebSocket support
-12. 🔄 **Phase 9**: Packaging & static linking optimization
-13. 🔄 **Phase 10**: Hardening & performance tuning
+3. 🔄 **Phase 2a**: SQLite Integration & Database Schema (document-graph model, system tables, FTS5)
+4. 🔄 **Phase 2b**: User Pod & Connection Management (multi-tenancy, connection caching)
+5. 🔄 **Phase 3**: Routing & Authentication (host/path routing, Argon2id, JWT HS256)
+6. 🔄 **Phase 4**: Authorization & row-level policies
+7. 🔄 **Phase 5**: Document store + FTS5 search (simple-graph integration)
+8. 🔄 **Phase 6**: QuickJS-NG embedding + user router.js
+9. 🔄 **Phase 6.1**: EJS template rendering
+10. 🔄 **Phase 6.2**: Node-compatible module system (CommonJS + shims)
+11. 🔄 **Phase 7**: REST API surface
+12. 🔄 **Phase 8**: WebSocket support
+13. 🔄 **Phase 9**: Packaging & static linking optimization
+14. 🔄 **Phase 10**: Hardening & performance tuning
 
 Each phase has specific deliverables, tests, and acceptance criteria. See completion reports in `DOCS/` for finished phases.
 
@@ -246,9 +247,9 @@ Options:
 
 ### Planned (Later Phases)
 ```bash
-  --storage_dir <path>      Directory for henv SQLite DBs (default: ./henvs)
-  --base_domain <domain>    Base domain for routing (default: ipsaw.com)
-  --db_max_open <num>       Max open SQLite connections (Phase 2)
+  --storage_dir <path>      Directory for henv SQLite DBs (default: ./henvs) (Phase 2b)
+  --base_domain <domain>    Base domain for routing (default: ipsaw.com) (Phase 3)
+  --db_max_open <num>       Max open SQLite connections (Phase 2b)
   --qjs_mem_mb <num>        QuickJS memory limit in MB (Phase 6)
   --qjs_timeout_ms <num>    QuickJS execution timeout in ms (Phase 6)
 ```

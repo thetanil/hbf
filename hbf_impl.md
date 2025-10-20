@@ -133,52 +133,286 @@ Acceptance
 - Server starts, responds to `/health`, shuts down cleanly
 
 
-## Phase 2: User Pod & Database Management
+## Phase 2a: SQLite Integration & Database Schema
 
 Goal
-- Manage user pod directories and SQLite database files; integrate simple-graph for document storage.
+- Integrate SQLite3 with Bazel and define complete database schema based on document-graph model.
 
-Note: This phase was previously "Phase 1.3" and "Phase 2" - combined and moved here to keep Phase 1 focused only on HTTP server.
+Note: This phase focuses solely on SQLite integration and schema definition. User pod management is deferred to Phase 2b.
 
 Tasks
-- Vendor SQLite amalgamation in `third_party/sqlite/`
-- Vendor simple-graph in `third_party/simple_graph/`
+- Integrate SQLite3 from Bazel registry (or vendored amalgamation if not available)
+- SQLite database wrapper (`internal/db/db.c|h`):
+  - Open/close database connections
+  - Set pragmas: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`
+  - Execute SQL statements with prepared statements
+  - Basic error handling and result mapping
+- Schema initialization (`internal/db/schema.c|h`):
+  - Document-graph core tables (nodes, edges, tags) from `DOCS/schema_doc_graph.md`
+  - System tables for HBF (`_hbf_*` prefix)
+  - FTS5 virtual table for full-text search
+  - Indexes for performance
+  - Schema versioning
+
+### Database Schema (Detailed)
+
+**Document-Graph Core Tables** (based on `DOCS/schema_doc_graph.md`):
+
+```sql
+-- Nodes: atomic or composite entities (functions, modules, scenes, documents, etc.)
+CREATE TABLE nodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,                    -- e.g., "function", "module", "scene", "document"
+    body TEXT NOT NULL,                    -- JSON content and metadata
+    name TEXT GENERATED ALWAYS AS (json_extract(body, '$.name')) VIRTUAL,
+    version TEXT GENERATED ALWAYS AS (json_extract(body, '$.version')) VIRTUAL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    modified_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_nodes_type ON nodes(type);
+CREATE INDEX idx_nodes_name ON nodes(name);
+CREATE INDEX idx_nodes_created ON nodes(created_at);
+
+-- Edges: directed relationships between nodes
+CREATE TABLE edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    src INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    dst INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    rel TEXT NOT NULL,                     -- relationship type: "includes", "calls", "depends-on", "follows", "branch-to", etc.
+    props TEXT,                            -- JSON properties: ordering, weights, conditions, etc.
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_edges_src ON edges(src);
+CREATE INDEX idx_edges_dst ON edges(dst);
+CREATE INDEX idx_edges_rel ON edges(rel);
+CREATE INDEX idx_edges_src_rel ON edges(src, rel);
+
+-- Tags: hierarchical labeling for composable documents
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag TEXT NOT NULL,                     -- tag identifier
+    node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    parent_tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+    order_num INTEGER NOT NULL DEFAULT 0,  -- ordering among siblings
+    metadata TEXT,                         -- JSON metadata
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_tags_tag ON tags(tag);
+CREATE INDEX idx_tags_node ON tags(node_id);
+CREATE INDEX idx_tags_parent ON tags(parent_tag_id);
+CREATE INDEX idx_tags_parent_order ON tags(parent_tag_id, order_num);
+```
+
+**HBF System Tables**:
+
+```sql
+-- User accounts with Argon2id password hashes
+CREATE TABLE _hbf_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,           -- Argon2id PHC string format
+    email TEXT,
+    role TEXT NOT NULL DEFAULT 'user',     -- 'owner', 'admin', 'user'
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    modified_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_hbf_users_username ON _hbf_users(username);
+CREATE INDEX idx_hbf_users_role ON _hbf_users(role);
+
+-- JWT session tracking with token hashes
+CREATE TABLE _hbf_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES _hbf_users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,       -- SHA-256 hash of JWT
+    expires_at INTEGER NOT NULL,
+    last_used INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_hbf_sessions_user ON _hbf_sessions(user_id);
+CREATE INDEX idx_hbf_sessions_token ON _hbf_sessions(token_hash);
+CREATE INDEX idx_hbf_sessions_expires ON _hbf_sessions(expires_at);
+
+-- Table-level access control
+CREATE TABLE _hbf_table_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES _hbf_users(id) ON DELETE CASCADE,
+    table_name TEXT NOT NULL,
+    can_select INTEGER NOT NULL DEFAULT 0,
+    can_insert INTEGER NOT NULL DEFAULT 0,
+    can_update INTEGER NOT NULL DEFAULT 0,
+    can_delete INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE UNIQUE INDEX idx_hbf_perms_user_table ON _hbf_table_permissions(user_id, table_name);
+
+-- Row-level security policies (SQL conditions)
+CREATE TABLE _hbf_row_policies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    policy_name TEXT NOT NULL,
+    role TEXT NOT NULL,                    -- 'owner', 'admin', 'user'
+    operation TEXT NOT NULL,               -- 'SELECT', 'INSERT', 'UPDATE', 'DELETE'
+    condition TEXT NOT NULL,               -- SQL WHERE clause (e.g., "user_id = $user_id")
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_hbf_policies_table ON _hbf_row_policies(table_name);
+CREATE UNIQUE INDEX idx_hbf_policies_name ON _hbf_row_policies(table_name, policy_name);
+
+-- Per-henv configuration key-value store
+CREATE TABLE _hbf_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,                   -- JSON value
+    description TEXT,
+    modified_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- Audit trail for admin actions
+CREATE TABLE _hbf_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES _hbf_users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,                  -- 'CREATE_USER', 'GRANT_PERMISSION', etc.
+    table_name TEXT,
+    record_id INTEGER,
+    details TEXT,                          -- JSON details
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX idx_hbf_audit_user ON _hbf_audit_log(user_id);
+CREATE INDEX idx_hbf_audit_created ON _hbf_audit_log(created_at);
+CREATE INDEX idx_hbf_audit_action ON _hbf_audit_log(action);
+
+-- Schema version tracking
+CREATE TABLE _hbf_schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    description TEXT
+);
+```
+
+**Full-Text Search**:
+
+```sql
+-- FTS5 virtual table for searching node content
+CREATE VIRTUAL TABLE nodes_fts USING fts5(
+    node_id UNINDEXED,
+    type UNINDEXED,
+    content,
+    content=nodes,
+    content_rowid=id,
+    tokenize='porter unicode61'
+);
+
+-- Triggers to keep FTS index synchronized
+CREATE TRIGGER nodes_fts_insert AFTER INSERT ON nodes BEGIN
+    INSERT INTO nodes_fts(node_id, type, content)
+    VALUES (new.id, new.type, json_extract(new.body, '$.content'));
+END;
+
+CREATE TRIGGER nodes_fts_update AFTER UPDATE ON nodes BEGIN
+    UPDATE nodes_fts SET content = json_extract(new.body, '$.content')
+    WHERE node_id = new.id;
+END;
+
+CREATE TRIGGER nodes_fts_delete AFTER DELETE ON nodes BEGIN
+    DELETE FROM nodes_fts WHERE node_id = old.id;
+END;
+```
+
+**Default Configuration Values**:
+
+```sql
+-- Insert default config values
+INSERT INTO _hbf_config (key, value, description) VALUES
+    ('qjs_mem_mb', '64', 'QuickJS memory limit in MB'),
+    ('qjs_timeout_ms', '5000', 'QuickJS execution timeout in milliseconds'),
+    ('session_lifetime_hours', '168', 'Session lifetime in hours (default: 7 days)'),
+    ('max_upload_size_mb', '10', 'Maximum upload size in MB'),
+    ('enable_audit_log', 'true', 'Enable audit logging for admin actions');
+
+-- Insert schema version
+INSERT INTO _hbf_schema_version (version, description) VALUES
+    (1, 'Initial schema: document-graph + HBF system tables');
+```
+
+Deliverables
+- `third_party/sqlite/BUILD.bazel` - SQLite cc_library (from Bazel registry or vendored)
+- `internal/db/db.c|h` - SQLite wrapper with connection management
+- `internal/db/schema.c|h` - Complete schema DDL and initialization
+- `internal/db/schema.sql` - SQL schema file (embedded as C string or loaded from file)
+
+Tests
+- Open database and set pragmas correctly
+- Schema initialization creates all tables
+- Foreign keys enabled and working
+- WAL mode enabled
+- FTS5 virtual table created and functional
+- Config defaults inserted correctly
+- Schema version tracking works
+- Prepared statements execute successfully
+- NULL/int64/double/text/blob type mapping
+
+Acceptance
+- `bazel build //:hbf` succeeds with SQLite linked
+- `bazel test //...` passes all database tests
+- `bazel run //:lint` passes
+- Schema creates successfully in empty database
+- All indexes and triggers created
+- Document-graph queries work (insert nodes, create edges, add tags, traverse graph)
+- FTS5 search functional
+
+
+## Phase 2b: User Pod & Connection Management
+
+Goal
+- Implement user pod directory management and database connection caching.
+
+Note: This phase builds on Phase 2a's database schema and focuses on multi-tenancy infrastructure.
+
+Tasks
+- User pod manager (`internal/henv/manager.c|h`):
+  - `henv_create_user_pod(user_hash)` - Create directory and initialize DB
+  - `henv_user_exists(user_hash)` - Check if user pod exists
+  - `henv_open(user_hash)` - Open database with connection caching
+  - `henv_close_all()` - Close all cached connections
+  - Hash collision detection
 - File structure:
   - User directory: `storage_dir/{user-hash}/` mode 0700
   - Default henv: `storage_dir/{user-hash}/index.db` mode 0600
-- SQLite database manager (`internal/db/db.c|h`):
-  - Open with pragmas: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`
-  - Connection cache with mutex protection
-- User pod manager (`internal/henv/manager.c|h`):
-  - `henv_create_user_pod`, `henv_user_exists`, `henv_open`, `henv_close_all`
-  - Hash collision detection
-- Schema initialization (`internal/db/schema.c|h`):
-  - Create `_hbf_*` system tables
-  - Integrate simple-graph tables for document storage
-  - `_hbf_users`, `_hbf_sessions`, `_hbf_table_permissions`, `_hbf_row_policies`, `_hbf_config`
-  - `_hbf_document_search` FTS5 virtual table
-- Default config values in `_hbf_config`
+- Database connection cache (`internal/db/db.c|h`):
+  - LRU cache or simple hash map for open connections
+  - Mutex protection for thread safety
+  - Idle connection timeout
+  - Max connections limit
+- CLI argument: `--storage_dir <path>` (default: ./henvs)
 
 Deliverables
-- `third_party/sqlite/BUILD.bazel` - SQLite cc_library
-- `third_party/simple_graph/BUILD.bazel` - simple-graph integration
-- `internal/db/db.c|h` - SQLite wrapper and connection management
-- `internal/db/schema.c|h` - Schema DDL and initialization
-- `internal/henv/manager.c|h` - User pod and henv management
+- `internal/henv/manager.c|h` - User pod management
+- Connection caching in `internal/db/db.c|h`
+- Tests for user pod creation and management
 
 Tests
 - Create user pod → directory created with correct permissions (0700)
-- Create index.db → file created mode 0600, WAL mode enabled
+- Create index.db → file created mode 0600, schema initialized
 - Open existing henv → connection returned from cache
+- Open same henv twice → returns cached connection
 - Hash collision → error returned
-- Schema initialization creates all tables
-- Config defaults inserted correctly
+- Close all connections → cache cleared
+- Concurrent access to different henvs works
 
 Acceptance
 - User pod creation and database initialization works
-- All system tables present with correct schema
-- Connection caching functional
-- Simple-graph integration verified
+- Connection caching functional and thread-safe
+- Multiple henvs can be opened simultaneously
+- All tests pass
 
 
 ## Phase 3: Host + Path Routing & Authentication Endpoints
