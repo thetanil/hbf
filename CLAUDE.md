@@ -9,10 +9,11 @@ HBF is a single, statically linked C99 web compute environment that embeds:
 - **CivetWeb** for HTTP and WebSockets
 - **QuickJS-NG** for runtime extensibility and scripting
 
-**Current Status**: Phase 1 Complete ✅
+**Current Status**: Phase 2a Complete ✅
 - ✅ Phase 0: Foundation, Bazel setup, musl toolchain, coding standards
 - ✅ Phase 1: HTTP server with CivetWeb, logging, CLI parsing, signal handling
-- 🔄 Phase 2: User pod & database management (next)
+- ✅ Phase 2a: SQLite integration, database schema (document-graph + system tables, FTS5)
+- 🔄 Phase 2b: User pod & connection management (next)
 
 The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md` and `DOCS/phase1-completion.md` for completion reports.
 
@@ -69,7 +70,7 @@ bazel test //internal/core:config_test --test_output=all
 ```
 /third_party/       # Vendored dependencies (no git submodules)
   civetweb/         # ✅ MIT - Fetched from Git (v1.16)
-  sqlite/           # 🔄 Public Domain amalgamation (Phase 2a)
+  sqlite3/          # ✅ Public Domain - From Bazel Central Registry (v3.50.4)
   simple_graph/     # 🔄 MIT (Phase 5)
   quickjs-ng/       # 🔄 MIT (Phase 6)
   argon2/           # 🔄 Apache-2.0 (Phase 3)
@@ -79,7 +80,8 @@ bazel test //internal/core:config_test --test_output=all
   core/             # ✅ Logging, config, CLI, hash generator, main
   http/             # ✅ CivetWeb server wrapper
   henv/             # 🔄 User pod management (Phase 2b)
-  db/               # 🔄 SQLite wrapper, schema, prepared statements (Phase 2a/2b)
+  db/               # ✅ SQLite wrapper, schema, embedded schema.sql (Phase 2a)
+                    # 🔄 Connection caching (Phase 2b)
   auth/             # 🔄 Argon2id password hashing, JWT HS256 (Phase 3)
   authz/            # 🔄 Table permissions, row policies (Phase 4)
   document/         # 🔄 Document store with FTS5 search (Phase 5)
@@ -160,7 +162,7 @@ The project follows a 10-phase implementation plan (see `hbf_impl.md` for detail
 
 1. ✅ **Phase 0**: Foundation (Bazel setup, musl toolchain, directory structure, DNS-safe hash)
 2. ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI parsing, signal handling)
-3. 🔄 **Phase 2a**: SQLite Integration & Database Schema (document-graph model, system tables, FTS5)
+3. ✅ **Phase 2a**: SQLite Integration & Database Schema (document-graph model, system tables, FTS5)
 4. 🔄 **Phase 2b**: User Pod & Connection Management (multi-tenancy, connection caching)
 5. 🔄 **Phase 3**: Routing & Authentication (host/path routing, Argon2id, JWT HS256)
 6. 🔄 **Phase 4**: Authorization & row-level policies
@@ -275,7 +277,7 @@ See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup in
 
 ## Current Implementation Status
 
-### Completed (Phase 0 & 1)
+### Completed (Phase 0, 1, & 2a)
 
 **Core Components**:
 - ✅ `internal/core/hash.c|h` - DNS-safe hash generator (SHA-256 → base36, 8 chars)
@@ -283,17 +285,31 @@ See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup in
 - ✅ `internal/core/config.c|h` - CLI argument parsing with validation
 - ✅ `internal/core/main.c` - Application lifecycle and signal handling
 - ✅ `internal/http/server.c|h` - CivetWeb wrapper with graceful shutdown
+- ✅ `internal/db/db.c|h` - SQLite wrapper with WAL, foreign keys, transactions
+- ✅ `internal/db/schema.c|h` - Schema initialization with embedded SQL
+- ✅ `internal/db/schema.sql` - Document-graph + system tables + FTS5
+
+**Database Schema** (11 tables):
+- ✅ `nodes` - Document-graph nodes with JSON body
+- ✅ `edges` - Directed relationships
+- ✅ `tags` - Hierarchical labeling
+- ✅ `nodes_fts` - FTS5 full-text search with porter stemming
+- ✅ `_hbf_users`, `_hbf_sessions`, `_hbf_table_permissions`, `_hbf_row_policies`
+- ✅ `_hbf_config`, `_hbf_audit_log`, `_hbf_schema_version`
 
 **Tests**:
-- ✅ `internal/core/hash_test.c` - 5 test cases (determinism, DNS-safe chars, collisions, NULL handling)
-- ✅ `internal/core/config_test.c` - 25 test cases (all CLI args, edge cases, error handling)
+- ✅ `internal/core/hash_test.c` - 5 test cases
+- ✅ `internal/core/config_test.c` - 25 test cases
+- ✅ `internal/db/db_test.c` - 7 test cases (pragmas, transactions, etc.)
+- ✅ `internal/db/schema_test.c` - 9 test cases (schema init, FTS5, triggers, graph queries)
 
 **Binary**:
-- ✅ Size: 170 KB (stripped), 205 KB (unstripped)
+- ✅ Size: 170 KB (stripped), 205 KB (unstripped) - Phase 1 baseline
 - ✅ 100% static linking with musl libc 1.2.3
 - ✅ Zero runtime dependencies
 - ✅ All code passes clang-tidy CERT checks
 - ✅ Compiles with `-Werror` and 30+ warning flags
+- Note: SQLite libraries available but not yet integrated into main binary (Phase 2b will add)
 
 **Endpoints**:
 - ✅ `GET /health` - Returns JSON with status, version, uptime
@@ -308,11 +324,15 @@ $ bazel build //:hbf
 
 # Test
 $ bazel test //...
-✅ 2 test targets, 30 test cases total, all passing
+✅ 4 test targets, 41+ test cases total, all passing
+   - hash_test: 5 tests
+   - config_test: 25 tests
+   - db_test: 7 tests
+   - schema_test: 9 tests
 
 # Lint
 $ bazel run //:lint
-✅ 5 source files checked, 0 issues
+✅ 7 source files checked, 0 issues
 ```
 
 ## References
