@@ -5,7 +5,7 @@
 genrule(
     name = "hbf",
     srcs = ["//internal/core:hbf"],
-    outs = ["hbf_bin"],
+    outs = ["hbf"],
     cmd = "cp $< $@ && chmod +w $@ && strip $@",
     executable = True,
     visibility = ["//visibility:public"],

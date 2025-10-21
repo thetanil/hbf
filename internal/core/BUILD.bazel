@@ -43,6 +43,8 @@ cc_binary(
     deps = [
         ":config",
         ":log",
+        "//internal/db:db",
+        "//internal/db:schema",
         "//internal/http:server",
     ],
     visibility = ["//visibility:public"],

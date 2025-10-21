@@ -5,3 +5,9 @@ sh_binary(
     srcs = ["lint.sh"],
     visibility = ["//visibility:public"],
 )
+
+sh_binary(
+    name = "sql_to_c",
+    srcs = ["sql_to_c.sh"],
+    visibility = ["//visibility:public"],
+)

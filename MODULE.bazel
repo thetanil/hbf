@@ -12,7 +12,7 @@ module(
 bazel_dep(name = "rules_cc", version = "0.1.1")
 
 # Platform support
-bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "platforms", version = "1.0.0")
 
 # Musl toolchain for 100% static linking (no glibc)
 # This automatically enables fully_static_link feature
@@ -22,6 +22,9 @@ bazel_dep(name = "toolchains_musl", version = "0.1.27", dev_dependency = True)
 musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 use_repo(musl, "musl_toolchains_hub")
 register_toolchains("@musl_toolchains_hub//:all")
+
+# SQLite3 database (from Bazel Central Registry)
+bazel_dep(name = "sqlite3", version = "3.50.4")
 
 # CivetWeb HTTP server library (fetched from git)
 git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")

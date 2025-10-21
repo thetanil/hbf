@@ -1,3 +1,50 @@
-# SQLite database wrapper and schema (Phase 2+)
+# Database utilities
 
-# Placeholder for Phase 2
+# Convert schema.sql to C source file
+genrule(
+    name = "schema_sql_gen",
+    srcs = ["schema.sql"],
+    outs = ["schema_sql.c"],
+    cmd = "$(location //tools:sql_to_c) $(location schema.sql) $(location schema_sql.c)",
+    tools = ["//tools:sql_to_c"],
+)
+
+cc_library(
+    name = "db",
+    srcs = ["db.c"],
+    hdrs = ["db.h"],
+    deps = [
+        "//internal/core:log",
+        "@sqlite3//:sqlite3",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "schema",
+    srcs = [
+        "schema.c",
+        ":schema_sql_gen",
+    ],
+    hdrs = ["schema.h"],
+    deps = [
+        ":db",
+        "//internal/core:log",
+        "@sqlite3//:sqlite3",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "db_test",
+    srcs = ["db_test.c"],
+    deps = [":db"],
+    linkstatic = 1,
+)
+
+cc_test(
+    name = "schema_test",
+    srcs = ["schema_test.c"],
+    deps = [":schema"],
+    linkstatic = 1,
+)
