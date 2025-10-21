@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "config.h"
 #include "log.h"
+#include "../henv/manager.h"
 #include "../http/server.h"
 #include <signal.h>
 #include <stdbool.h>
@@ -33,8 +34,15 @@ int main(int argc, char *argv[])
 
 	hbf_log_info("HBF v0.1.0 starting");
 	hbf_log_info("Port: %d", config.port);
+	hbf_log_info("Storage directory: %s", config.storage_dir);
 	hbf_log_info("Log level: %d", config.log_level);
 	hbf_log_info("Dev mode: %s", config.dev_mode ? "enabled" : "disabled");
+
+	/* Initialize henv manager (max 100 cached connections) */
+	if (hbf_henv_init(config.storage_dir, 100) != 0) {
+		hbf_log_error("Failed to initialize henv manager");
+		return 1;
+	}
 
 	/* Set up signal handlers for graceful shutdown */
 	sa.sa_handler = signal_handler;
@@ -70,6 +78,9 @@ int main(int argc, char *argv[])
 	/* Stop server */
 	hbf_server_stop(g_server);
 	g_server = NULL;
+
+	/* Shutdown henv manager */
+	hbf_henv_shutdown();
 
 	hbf_log_info("HBF stopped");
 

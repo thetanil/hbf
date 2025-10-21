@@ -12,6 +12,7 @@ typedef struct {
 	int port;
 	hbf_log_level_t log_level;
 	bool dev_mode;
+	char storage_dir[256];
 } hbf_config_t;
 
 /*

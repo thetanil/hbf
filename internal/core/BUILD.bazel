@@ -45,6 +45,7 @@ cc_binary(
         ":log",
         "//internal/db:db",
         "//internal/db:schema",
+        "//internal/henv:manager",
         "//internal/http:server",
     ],
     visibility = ["//visibility:public"],

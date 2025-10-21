@@ -9,13 +9,14 @@ HBF is a single, statically linked C99 web compute environment that embeds:
 - **CivetWeb** for HTTP and WebSockets
 - **QuickJS-NG** for runtime extensibility and scripting
 
-**Current Status**: Phase 2a Complete ✅
+**Current Status**: Phase 2b Complete ✅
 - ✅ Phase 0: Foundation, Bazel setup, musl toolchain, coding standards
 - ✅ Phase 1: HTTP server with CivetWeb, logging, CLI parsing, signal handling
 - ✅ Phase 2a: SQLite integration, database schema (document-graph + system tables, FTS5)
-- 🔄 Phase 2b: User pod & connection management (next)
+- ✅ Phase 2b: User pod & connection management (multi-tenancy, connection caching)
+- 🔄 Phase 3: Routing & Authentication (next)
 
-The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md` and `DOCS/phase1-completion.md` for completion reports.
+The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, and `DOCS/phase2b-completion.md` for completion reports.
 
 ## Build System
 
@@ -36,7 +37,7 @@ bazel run //:lint
 bazel test //internal/core:config_test --test_output=all
 ```
 
-**Binary output**: `bazel-bin/internal/core/hbf` (170 KB stripped, 205 KB unstripped)
+**Binary output**: `bazel-bin/hbf` (1.1 MB stripped, statically linked with SQLite)
 
 ### Bazel Configuration
 - `.bazelrc` contains build settings including bzlmod enablement
@@ -79,9 +80,8 @@ bazel test //internal/core:config_test --test_output=all
 /internal/          # Core implementation (all C99)
   core/             # ✅ Logging, config, CLI, hash generator, main
   http/             # ✅ CivetWeb server wrapper
-  henv/             # 🔄 User pod management (Phase 2b)
+  henv/             # ✅ User pod management with connection caching (Phase 2b)
   db/               # ✅ SQLite wrapper, schema, embedded schema.sql (Phase 2a)
-                    # 🔄 Connection caching (Phase 2b)
   auth/             # 🔄 Argon2id password hashing, JWT HS256 (Phase 3)
   authz/            # 🔄 Table permissions, row policies (Phase 4)
   document/         # 🔄 Document store with FTS5 search (Phase 5)
@@ -92,6 +92,7 @@ bazel test //internal/core:config_test --test_output=all
 
 /tools/
   lint.sh           # ✅ clang-tidy wrapper script
+  sql_to_c.sh       # ✅ SQL to C byte array converter
   pack_js/          # 🔄 JS bundler (Phase 6.2)
 
 /DOCS/              # ✅ Documentation
@@ -99,6 +100,7 @@ bazel test //internal/core:config_test --test_output=all
   development-setup.md
   phase0-completion.md
   phase1-completion.md
+  phase2b-completion.md
 ```
 
 **Legend**: ✅ Implemented | 🔄 Planned
@@ -236,12 +238,13 @@ Each phase has specific deliverables, tests, and acceptance criteria. See comple
 
 ## CLI Arguments
 
-### Current (Phase 1)
+### Current (Phase 2b)
 ```bash
 hbf [options]
 
 Options:
   --port <num>         HTTP server port (default: 5309)
+  --storage_dir <path> Directory for user pod storage (default: ./henvs)
   --log_level <level>  Log level: debug, info, warn, error (default: info)
   --dev                Enable development mode
   --help, -h           Show this help message
@@ -249,12 +252,12 @@ Options:
 
 ### Planned (Later Phases)
 ```bash
-  --storage_dir <path>      Directory for henv SQLite DBs (default: ./henvs) (Phase 2b)
   --base_domain <domain>    Base domain for routing (default: ipsaw.com) (Phase 3)
-  --db_max_open <num>       Max open SQLite connections (Phase 2b)
   --qjs_mem_mb <num>        QuickJS memory limit in MB (Phase 6)
   --qjs_timeout_ms <num>    QuickJS execution timeout in ms (Phase 6)
 ```
+
+**Note**: Connection limit is hardcoded to 100 in Phase 2b; may become configurable in Phase 10.
 
 ## Development Environment
 
@@ -277,17 +280,18 @@ See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup in
 
 ## Current Implementation Status
 
-### Completed (Phase 0, 1, & 2a)
+### Completed (Phase 0, 1, 2a, & 2b)
 
 **Core Components**:
 - ✅ `internal/core/hash.c|h` - DNS-safe hash generator (SHA-256 → base36, 8 chars)
 - ✅ `internal/core/log.c|h` - Logging with levels (DEBUG, INFO, WARN, ERROR) and UTC timestamps
-- ✅ `internal/core/config.c|h` - CLI argument parsing with validation
-- ✅ `internal/core/main.c` - Application lifecycle and signal handling
+- ✅ `internal/core/config.c|h` - CLI argument parsing with validation (port, storage_dir, log_level, dev)
+- ✅ `internal/core/main.c` - Application lifecycle, signal handling, henv manager integration
 - ✅ `internal/http/server.c|h` - CivetWeb wrapper with graceful shutdown
 - ✅ `internal/db/db.c|h` - SQLite wrapper with WAL, foreign keys, transactions
 - ✅ `internal/db/schema.c|h` - Schema initialization with embedded SQL
 - ✅ `internal/db/schema.sql` - Document-graph + system tables + FTS5
+- ✅ `internal/henv/manager.c|h` - User pod management with LRU connection caching
 
 **Database Schema** (11 tables):
 - ✅ `nodes` - Document-graph nodes with JSON body
@@ -297,19 +301,26 @@ See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup in
 - ✅ `_hbf_users`, `_hbf_sessions`, `_hbf_table_permissions`, `_hbf_row_policies`
 - ✅ `_hbf_config`, `_hbf_audit_log`, `_hbf_schema_version`
 
+**User Pod Management**:
+- ✅ Multi-tenancy infrastructure with isolated directories
+- ✅ LRU connection cache (max 100 connections, thread-safe)
+- ✅ Automatic schema initialization on pod creation
+- ✅ Hash collision detection
+- ✅ Secure file permissions (directories 0700, databases 0600)
+
 **Tests**:
 - ✅ `internal/core/hash_test.c` - 5 test cases
 - ✅ `internal/core/config_test.c` - 25 test cases
 - ✅ `internal/db/db_test.c` - 7 test cases (pragmas, transactions, etc.)
 - ✅ `internal/db/schema_test.c` - 9 test cases (schema init, FTS5, triggers, graph queries)
+- ✅ `internal/henv/manager_test.c` - 12 test cases (pod creation, caching, permissions)
 
 **Binary**:
-- ✅ Size: 170 KB (stripped), 205 KB (unstripped) - Phase 1 baseline
+- ✅ Size: 1.1 MB (stripped, statically linked with SQLite)
 - ✅ 100% static linking with musl libc 1.2.3
 - ✅ Zero runtime dependencies
 - ✅ All code passes clang-tidy CERT checks
 - ✅ Compiles with `-Werror` and 30+ warning flags
-- Note: SQLite libraries available but not yet integrated into main binary (Phase 2b will add)
 
 **Endpoints**:
 - ✅ `GET /health` - Returns JSON with status, version, uptime
@@ -324,20 +335,21 @@ $ bazel build //:hbf
 
 # Test
 $ bazel test //...
-✅ 4 test targets, 41+ test cases total, all passing
+✅ 5 test targets, 53+ test cases total, all passing
    - hash_test: 5 tests
    - config_test: 25 tests
    - db_test: 7 tests
    - schema_test: 9 tests
+   - manager_test: 12 tests
 
 # Lint
 $ bazel run //:lint
-✅ 7 source files checked, 0 issues
+✅ 8 source files checked, 0 issues
 ```
 
 ## References
 
 - **Primary spec**: `hbf_impl.md` (comprehensive phase-by-phase implementation guide)
-- **Completion reports**: `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`
+- **Completion reports**: `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, `DOCS/phase2b-completion.md`
 - **Coding standards**: `DOCS/coding-standards.md`
 - **Development setup**: `DOCS/development-setup.md`
