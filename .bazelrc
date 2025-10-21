@@ -4,11 +4,8 @@
 # Enable bzlmod
 common --enable_bzlmod
 
-# Build configuration
-build --cxxopt=-std=c++17
-build --host_cxxopt=-std=c++17
-
 # C99 strict compilation with all warnings as errors
+# NOTE: This project is C99 only - no C++ code or flags
 build --conlyopt=-std=c99
 build --conlyopt=-Wall
 build --conlyopt=-Wextra
