@@ -35,21 +35,11 @@ cc_library(
     hdrs = ["modules.h"],
     deps = [
         ":engine",
-        ":loader",
-        "//internal/core:log",
-    ],
-)
-
-cc_library(
-    name = "loader",
-    srcs = ["loader.c"],
-    hdrs = ["loader.h"],
-    deps = [
-        ":engine",
         "//internal/core:log",
         "@sqlite3",
     ],
 )
+
 
 
 cc_test(
@@ -62,34 +52,5 @@ cc_test(
     linkstatic = 1,
 )
 
-cc_test(
-    name = "loader_test",
-    srcs = ["loader_test.c"],
-    deps = [
-        ":engine",
-        ":loader",
-        "//internal/core:log",
-        "//internal/db:db",
-        "//internal/db:schema",
-        "@sqlite3",
-    ],
-    linkstatic = 1,
-)
 
 
-cc_test(
-    name = "router_test",
-    srcs = ["router_test.c"],
-    data = ["//static/lib:router.js"],
-    deps = [
-        ":engine",
-        ":loader",
-        ":bindings",
-        "//internal/core:log",
-        "//internal/db:db",
-        "//internal/db:schema",
-        "@sqlite3",
-        "@quickjs-ng//:quickjs",
-    ],
-    linkstatic = 1,
-)

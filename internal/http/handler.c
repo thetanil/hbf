@@ -49,7 +49,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	req = hbf_qjs_create_request(ctx, conn);
 	if (JS_IsException(req) || JS_IsNull(req)) {
 		hbf_log_error("Failed to create request object");
-		hbf_qjs_pool_release(qjs_ctx);
+				// pool removed: no release needed
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -58,7 +58,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	if (JS_IsException(res) || JS_IsNull(res)) {
 		hbf_log_error("Failed to create response object");
 		JS_FreeValue(ctx, req);
-		hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -77,7 +77,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-		hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -88,7 +88,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-		hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -102,7 +102,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-		hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -114,7 +114,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-		hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -181,7 +181,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
 		hbf_response_free(&response);
-		hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
@@ -207,7 +207,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	hbf_response_free(&response);
 
 	/* Release context back to pool */
-	hbf_qjs_pool_release(qjs_ctx);
+	// pool removed: no release needed
 
 	return status;
 }

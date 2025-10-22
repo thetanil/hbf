@@ -47,7 +47,8 @@ cc_binary(
         "//internal/db:schema",
         "//internal/henv:manager",
         "//internal/http:server",
-    # pool removed
+    "//internal/qjs:engine",
+    "@sqlite3",
     ],
     visibility = ["//visibility:public"],
 )

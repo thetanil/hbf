@@ -1,6 +1,4 @@
-/* QuickJS engine wrapper - runtime initialization and context management
- * Provides memory limits, execution timeouts, and error handling.
- */
+
 #ifndef HBF_QJS_ENGINE_H
 #define HBF_QJS_ENGINE_H
 
@@ -8,6 +6,9 @@
 
 /* Opaque context handle */
 typedef struct hbf_qjs_ctx hbf_qjs_ctx_t;
+
+/* Global QuickJS context pointer (extern for static build) */
+extern hbf_qjs_ctx_t *g_qjs_ctx;
 
 /* Initialize QuickJS engine with global settings
  * mem_limit_mb: Memory limit per context in MB (0 = unlimited)

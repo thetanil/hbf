@@ -3,8 +3,7 @@
 #include "log.h"
 #include "../henv/manager.h"
 #include "../http/server.h"
-#include "../qjs/engine.h"
-#include "../qjs/loader.h"
+#include "internal/qjs/engine.h"
 #include "../db/db.h"
 #include "../db/schema.h"
 #include <signal.h>
@@ -15,7 +14,7 @@
 static volatile bool g_shutdown = false;
 static hbf_server_t *g_server = NULL;
 static sqlite3 *g_default_db = NULL;
-static hbf_qjs_ctx_t *g_qjs_ctx = NULL;
+hbf_qjs_ctx_t *g_qjs_ctx = NULL;
 
 static void signal_handler(int signum)
 {
@@ -87,17 +86,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	// Load router.js and server.js from database
-	ret = hbf_qjs_ctx_init_with_scripts(g_qjs_ctx, g_default_db);
-	if (ret != 0) {
-		hbf_log_error("Failed to initialize QuickJS context with scripts");
-		hbf_qjs_ctx_destroy(g_qjs_ctx);
-		g_qjs_ctx = NULL;
-		hbf_qjs_shutdown();
-		hbf_db_close(g_default_db);
-		hbf_henv_shutdown();
-		return 1;
-	}
 
 	/* Set up signal handlers for graceful shutdown */
 	sa.sa_handler = signal_handler;

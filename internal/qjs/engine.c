@@ -84,33 +84,6 @@ void hbf_qjs_shutdown(void)
 
 /* Create QuickJS context */
 
-/* C binding for console.log */
-static JSValue hbf_console_log(JSContext *ctx, JSValueConst this_val,
-							  int argc, JSValueConst *argv)
-{
-	int i;
-	char buf[1024];
-	size_t offset = 0;
-	for (i = 0; i < argc; i++) {
-		const char *str = JS_ToCString(ctx, argv[i]);
-		if (str) {
-			size_t len = strlen(str);
-			if (offset + len + 2 < sizeof(buf)) {
-				memcpy(buf + offset, str, len);
-				offset += len;
-				buf[offset++] = ' ';
-			}
-			JS_FreeCString(ctx, str);
-		}
-	}
-	if (offset > 0 && buf[offset - 1] == ' ') {
-		buf[offset - 1] = '\0';
-	} else {
-		buf[offset] = '\0';
-	}
-	hbf_log_info("[JS] %s", buf);
-	return JS_UNDEFINED;
-}
 
 hbf_qjs_ctx_t *hbf_qjs_ctx_create(void)
 {
@@ -162,11 +135,7 @@ hbf_qjs_ctx_t *hbf_qjs_ctx_create(void)
 	ctx->start_time_ms = hbf_qjs_get_time_ms();
 	ctx->error_buf[0] = '\0';
 
-	/* Register console.log binding */
-	JSValue console = JS_NewObject(js_ctx);
-	JS_SetPropertyStr(js_ctx, console, "log",
-					  JS_NewCFunction(js_ctx, hbf_console_log, "log", 1));
-	JS_SetPropertyStr(js_ctx, JS_GetGlobalObject(js_ctx), "console", console);
+	/* No console.log binding registered */
 
 	hbf_log_debug("QuickJS context created");
 	return ctx;
@@ -179,11 +148,19 @@ void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx)
 		return;
 
 	if (ctx->ctx) {
+		/* Remove the global 'console' property to avoid lingering references */
+		JSValue global_obj = JS_GetGlobalObject(ctx->ctx);
+		JSAtom console_atom = JS_NewAtom(ctx->ctx, "console");
+		JS_DeleteProperty(ctx->ctx, global_obj, console_atom, JS_PROP_THROW);
+		JS_FreeAtom(ctx->ctx, console_atom);
+		JS_FreeValue(ctx->ctx, global_obj);
 		JS_FreeContext(ctx->ctx);
 		ctx->ctx = NULL;
 	}
 
 	if (ctx->rt) {
+		/* Run garbage collection before freeing runtime to ensure all objects are collected */
+		JS_RunGC(ctx->rt);
 		JS_FreeRuntime(ctx->rt);
 		ctx->rt = NULL;
 	}
