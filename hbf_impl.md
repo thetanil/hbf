@@ -3,14 +3,17 @@
 This document proposes a pragmatic, phased plan to build HBF: a single,
 statically linked C99 web compute environment that embeds SQLite as the
 application/data store, CivetWeb for HTTP + WebSockets, and QuickJS-NG for runtime
-extensibility. 
+extensibility.
+
+**Design Philosophy**: Single-instance deployment (localhost or single k3s pod) with programmable routing via JavaScript. All HTTP requests handled by user-defined `server.js` loaded from SQLite database.
 
 - Language: Strict C99 (no C++)
 - Binary: Single statically linked executable with musl toolchain (100% static, no glibc)
 - HTTP: CivetWeb (HTTP, no HTTPS in scope), WebSockets supported
 - DB: SQLite3 amalgamation with WAL + FTS5; Simple-graph for document store
-- Scripting: QuickJS-NG embedded, sandboxed
-- User Routing: Express-like router.js per user pod
+- Scripting: QuickJS-NG embedded, sandboxed (memory/timeout limits)
+- Programmable Routing: Express.js-compatible API in JavaScript (`server.js` from database)
+- Static Content: Served from SQLite nodes table (injected at build time)
 - Templates: EJS-compatible renderer running inside QuickJS
 - Modules: Node-compatible JS module shim (CommonJS + minimal ESM), fs shim backed by SQLite
 - Build: Bazel (cc_binary), vendored third_party sources; no GPL dependencies (MIT/BSD/Apache-2/PD only)
@@ -48,23 +51,32 @@ Structure
   sha256_hmac/       (single-file SHA-256 + HMAC, MIT – Brad Conte style)
 /internal/
   core/              (logging, config, cli, hash generator)
-  http/              (civetweb server, routing, websockets)
+  http/              (civetweb server, request handler, websockets)
   henv/              (henv manager, user pods, db files)
   db/                (sqlite glue, schema, statements)
   auth/              (argon2, jwt, sessions, middleware)
   authz/             (table perms, row policies, query rewrite)
   document/          (simple-graph integration + FTS5)
-  qjs/               (quickjs-ng engine, module loader, db bindings, router bindings)
+  qjs/               (quickjs-ng engine, module loader, context pool, bindings/)
+    bindings/        (request, response, db, ws host modules)
   templates/         (ejs integration helpers)
-  ws/                (websocket adapters to JS)
+  ws/                (websocket handlers)
   api/               (REST endpoints, admin endpoints)
+/static/             (build-time content injected into database)
+  server.js          (Express-style routing script)
+  lib/               (router.js, static.js middleware)
+  www/               (index.html, style.css, client-side assets)
 /tools/
+  inject_content.sh  (static/ -> SQL INSERT statements)
+  sql_to_c.sh        (schema.sql -> C byte array)
   pack_js/           (Bazel helper to bundle JS -> C array/SQLite blob)
 
 hbf_impl.md
-README.md (later)
+CLAUDE.md
+README.md
 MODULE.bazel
 BUILD.bazel (root)
+.bazelrc
 ```
 
 Bazel Notes (Bazel 8, bzlmod)
@@ -456,87 +468,296 @@ Notes:
 - See `DOCS/phase2b-completion.md` for detailed completion report
 
 
-## Phase 3: Host + Path Routing & Authentication Endpoints
+## Phase 3: JavaScript Runtime & Express-Style Routing
 
-Goal
-- Parse Host header for user-hash routing and implement `/new` and `/login` endpoints with Argon2id + JWT.
+**Status**: 🔄 Planning
+**Dependencies**: Phase 2b (User pod & connection management)
+**Goal**: Embed QuickJS-NG and implement Express.js-style routing for dynamic request handling
 
-Note: This phase combines routing (previously "Phase 1.2") with authentication (previously "Phase 3") since routing is needed for auth endpoints.
+### Overview
 
-### Phase 3.1: Host + Path Routing
+Phase 3 introduces programmable request handling via a JavaScript runtime. Instead of static routes, HBF loads a `server.js` from the database and uses it to handle all HTTP requests through an Express.js-compatible API.
+
+**Key Architectural Shift**:
+- **Original Plan**: Authentication first, then routing, then QuickJS (Phases 3→6)
+- **Revised Plan**: QuickJS runtime first, with routing and static content serving
+- **Reasoning**: Single-instance deployment model initially (localhost or single k3s pod), user-programmable routing is core value proposition, static content database-backed from start
+
+**Single-Instance Model**:
+```
+HTTP Request → CivetWeb → HBF Request Handler → QuickJS (server.js) → Response
+                                                      ↓
+                                              Document Database
+                                              (nodes table)
+```
+
+**Key Components**:
+1. **Default Database**: `{storage_dir}/henvs/index.db` (loaded at startup)
+2. **Server Script**: Node with `name='server.js'` (loaded into QuickJS)
+3. **Static Files**: Nodes with paths like `/www/index.html`
+4. **Express.js Clone**: Minimal routing API compatible with QuickJS
+
+### Phase 3.1: QuickJS Integration & Basic Runtime
+
+**Goal**: Embed QuickJS-NG, load `server.js` from database, handle basic requests
 
 Tasks
-- Router wrapper (`internal/http/router.c|h`):
-  - Parse Host header to extract user-hash (e.g., `a1b2c3d4.ipsaw.com` → `a1b2c3d4`)
-  - Handle apex domain (`ipsaw.com`) for system endpoints
-  - Hash validation: 8 characters, [0-9a-z] only
-  - Provide `hbf_route_context` structure with user_hash, subpath, hostname
-- Integration with CivetWeb server for request routing
+- Vendor QuickJS-NG in `third_party/quickjs-ng/`
+  - Static linking
+  - No filesystem access (we provide shims)
+  - No network access (we provide shims)
+  - Configurable memory limit (default: 64 MB)
+  - Interrupt handler for timeout (default: 5000 ms)
+- QuickJS engine wrapper (`internal/qjs/engine.c|h`):
+  - `hbf_qjs_init(mem_limit_mb, timeout_ms)` - Initialize QuickJS engine
+  - `hbf_qjs_shutdown()` - Shutdown engine
+  - `hbf_qjs_ctx_create()` - Create runtime context (per-request or pooled)
+  - `hbf_qjs_ctx_destroy(ctx)` - Destroy context
+  - `hbf_qjs_eval(ctx, code, len)` - Evaluate JavaScript code
+  - `hbf_qjs_call_function(ctx, func_name, args_json, result_json)` - Call JS function
+  - `hbf_qjs_load_server_js(ctx, db)` - Load server.js from database
+- Database loader (`internal/qjs/loader.c|h`):
+  - Load server.js from `nodes` table where `json_extract(body, '$.name') = 'server.js'`
+  - Cache compiled script for subsequent requests
+- Build-time static content injection:
+  - Tool: `tools/inject_content.sh` (similar to `tools/sql_to_c.sh`)
+  - Generate SQL INSERT statements from `static/` directory
+  - Inject into database during schema initialization
+  - Directory structure: `static/server.js`, `static/www/index.html`, etc.
+- Context pooling (`internal/qjs/pool.c|h`):
+  - Pre-create contexts at startup (default: 16 contexts)
+  - Acquire/release for request handling
+  - Thread-safe via mutex
 
 Deliverables
-- `internal/http/router.c|h` with `hbf_route_extract()` and `hbf_validate_hash()`
+- `third_party/quickjs-ng/BUILD.bazel` - QuickJS build configuration
+- `internal/qjs/engine.c|h` - Runtime wrapper with memory limits
+- `internal/qjs/loader.c|h` - Database loader for server.js
+- `internal/qjs/pool.c|h` - Context pool for request handling
+- `tools/inject_content.sh` - Static content to SQL converter
+- `static/server.js` - Minimal server script (hello world)
+- `static/www/index.html` - Default homepage
+- Build system integration (genrules for content injection)
+- Main.c integration (load server.js at startup)
 
 Tests
-- Valid user-hash extraction: `a1b2c3d4.ipsaw.com` → user_hash="a1b2c3d4"
-- Apex domain handling: `ipsaw.com/new` → system handler
-- Invalid hash → 404
-- Hash validation (reject non-alphanumeric, wrong length)
+- QuickJS init/shutdown
+- Evaluate simple expression
+- Memory limit enforcement (context creation fails at limit)
+- Timeout enforcement (long-running scripts interrupted)
+- Error handling (JavaScript exceptions caught)
+- Load server.js from database
+- Load missing server.js (error handling)
+- Cache server.js (subsequent loads use cached version)
+- Context pool acquire/release
 
-### Phase 3.2: Authentication (Argon2id + JWT HS256)
+Acceptance
+- QuickJS-NG compiles and links statically
+- Memory limit enforced (context creation fails at limit)
+- Timeout enforced (long-running scripts interrupted)
+- server.js loads from `index.db` at startup
+- Static content injected into database at build time
+- All tests pass (10+ test cases)
+
+### Phase 3.2: Express.js-Compatible Router
+
+**Goal**: Implement minimal Express.js API for route handling in QuickJS
+
+Tasks
+- C-to-JS bindings (`internal/qjs/bindings/`):
+  - Request object (`bindings/request.c|h`):
+    - Create JavaScript request object from CivetWeb request
+    - Properties: `method`, `path`, `query`, `params`, `headers`, `body`
+    - Parse query string into `req.query` object
+    - Parse headers into `req.headers` object
+  - Response object (`bindings/response.c|h`):
+    - Create JavaScript response object
+    - Methods: `res.status(code)`, `res.send(body)`, `res.json(obj)`, `res.set(name, value)`
+    - Accumulate response in C struct (`hbf_response_t`)
+    - Send to CivetWeb after handler completes
+- Router module (`static/lib/router.js`):
+  - Express-style routing API in pure JavaScript
+  - Methods: `app.get(path, handler)`, `app.post(path, handler)`, `app.put(path, handler)`, `app.delete(path, handler)`, `app.use(handler)`
+  - Parameter extraction: `/user/:id` → `req.params.id`
+  - Route matching with regex compilation
+  - Middleware support for fallback handlers
+- Built-in module registration (`internal/qjs/modules.c|h`):
+  - Register `hbf:router` as built-in module
+  - Load router.js into QuickJS context
+  - Export as CommonJS module
+- CivetWeb handler integration (`internal/http/handler.c`):
+  - Main HTTP handler that delegates to QuickJS
+  - Create request/response objects
+  - Call `app.handle(req, res)` in JavaScript
+  - Handle JavaScript exceptions (500 error)
+  - Send response to CivetWeb
+
+Deliverables
+- `internal/qjs/bindings/request.c|h` - Request object creation
+- `internal/qjs/bindings/response.c|h` - Response object creation
+- `static/lib/router.js` - Express-style router implementation
+- `internal/qjs/modules.c|h` - Built-in module registration
+- `internal/http/handler.c|h` - CivetWeb→QuickJS bridge
+- Example `static/server.js` with `/hello` endpoint
+- Tests for routing, parameters, middleware
+
+Tests
+- Create request object
+- Create response object
+- Response status/send/json methods
+- Route matching: `GET /hello` → handler
+- Route parameters: `/user/123` → `req.params.id === "123"`
+- Middleware fallback
+- 404 handling
+
+Acceptance
+- `GET /hello` returns "Hello, World!"
+- Route parameters work (`/user/123` → `req.params.id === "123"`)
+- Response methods work (`res.status(404).send("Not Found")`)
+- Middleware fallback works
+- All tests pass (15+ test cases)
+
+### Phase 3.3: Static File Serving from Database
+
+**Goal**: Serve static files from `nodes` table with path-based lookup
+
+Tasks
+- Database binding (`internal/qjs/bindings/db.c|h`):
+  - `hbf:db` module for database access from JavaScript
+  - `db.query(sql, params)` → array of objects
+  - `db.execute(sql, params)` → `{rows_affected, last_insert_id}`
+  - Convert SQLite types to JavaScript types
+  - Prepared statements for SQL injection prevention
+- Static file middleware (`static/lib/static.js`):
+  - Query database for static files by path
+  - Content-Type detection from file extension
+  - 404 handling for missing files
+  - Integration with router as fallback handler
+- Example server.js with static files:
+  - Dynamic routes (e.g., `/hello`, `/api/user/:id`)
+  - Static file fallback (serves from `/www/*` in database)
+  - 404 handler
+
+Deliverables
+- `internal/qjs/bindings/db.c|h` - Database query from JS
+- `static/lib/static.js` - Static file middleware
+- `static/www/index.html` - Example homepage
+- `static/www/style.css` - Example stylesheet
+- Complete `static/server.js` with all features
+- Tests for static file serving
+
+Tests
+- Serve static HTML
+- Serve static CSS with correct Content-Type
+- Static file 404
+- Database query from JS
+- Content-Type headers
+
+Acceptance
+- `GET /` serves `index.html` from database
+- `GET /style.css` serves CSS with correct Content-Type
+- `GET /nonexistent` returns 404
+- Database queries work from JavaScript (`hbf:db`)
+- All tests pass (10+ test cases)
+
+**Status: Phase 3 READY FOR IMPLEMENTATION** 🔄
+
+Notes:
+- QuickJS context pooling: 16 contexts × 64 MB = 1 GB max (configurable)
+- Binary size expected: < 2 MB (QuickJS adds ~800 KB)
+- Request latency target: < 5ms for simple routes
+- Memory limit enforced per-context via `JS_NewRuntime()`
+- Timeout enforced via `JS_SetInterruptHandler()`
+- Security: No filesystem access, no network access (only `hbf:db` and request/response)
+- Authentication and multi-tenant routing deferred to Phase 4
+
+
+## Phase 4: Authentication & Authorization
+
+Goal
+- Implement authentication (Argon2id + JWT HS256) and authorization (table/row-level policies).
+
+Note: Authentication moved from original Phase 3, now builds on top of Phase 3's QuickJS runtime.
+
+### Phase 4.1: Authentication (Argon2id + JWT HS256)
 
 Tasks
 - Vendor Argon2 reference implementation in `third_party/argon2/`
 - Vendor SHA-256 + HMAC single-file (Brad Conte style, MIT) in `third_party/sha256_hmac/`
-- Password hashing: Argon2id (Apache-2.0 ref impl) with parameters tuned for target box; encode hash with PHC string format.
-- JWT: Implement HS256 using MIT SHA-256 + HMAC (single-file, Brad Conte style) and base64url encode/decode (pure C, no external deps).
-  - Use HMAC_SHA256 for the HS256 signature over `base64url(header).base64url(payload)`.
-  - Implement base64url encoder/decoder in-house (pure C).
-  - JWT payload includes `user_hash` to scope token to originating henv.
-- Session store: insert session on login with token hash (SHA-256 of the full JWT), expiry from config, rolling `last_used` and expiry updates.
-- Endpoints:
-  - POST `/new` {username, password, email}:
-    - Generate user_hash from username via `hbf_dns_safe_hash()`
-    - Check for hash collision (directory exists)
-    - Create user pod directory: `{storage_dir}/{user-hash}/`
-    - Create `index.db` with initial schema
-    - Bootstrap owner user with Argon2id password hash
-    - Return `{url: "https://{user-hash}.ipsaw.com", user_hash: "...", admin: {...}}`
-  - POST `/{user-hash}.ipsaw.com/login` {username, password}:
-    - Verify credentials against henv's `_hbf_users` table
+- Password hashing: Argon2id (Apache-2.0 ref impl) with parameters tuned for target box; encode hash with PHC string format
+- JWT: Implement HS256 using MIT SHA-256 + HMAC (single-file, Brad Conte style) and base64url encode/decode (pure C, no external deps)
+  - Use HMAC_SHA256 for the HS256 signature over `base64url(header).base64url(payload)`
+  - Implement base64url encoder/decoder in-house (pure C)
+  - JWT payload includes `user_id` (not user_hash, since we're single-instance)
+- Session store: insert session on login with token hash (SHA-256 of the full JWT), expiry from config, rolling `last_used` and expiry updates
+- Endpoints (exposed via QuickJS server.js):
+  - POST `/register` {username, password, email}:
+    - Create new user in `_hbf_users` table with Argon2id password hash
+    - Return `{user_id, username, role}`
+  - POST `/login` {username, password}:
+    - Verify credentials against `_hbf_users` table
     - Return `{token, expires_at, user}`
-- Request auth middleware: extract Bearer token, verify signature + expiry, check session exists, verify user_hash matches request.
+- Request auth middleware (C layer before QuickJS):
+  - Extract Bearer token from Authorization header
+  - Verify signature + expiry
+  - Check session exists in `_hbf_sessions`
+  - Inject `req.user` into JavaScript request object
 
 Deliverables
-- `internal/auth/argon2.c|h`, `internal/auth/jwt.c|h`, `internal/auth/session.c|h`
-- `third_party/sha256_hmac/` vendored single-file (MIT) and `internal/crypto/sha256_hmac.c|h` thin wrappers
-- HTTP handlers in `internal/api/auth.c` for `/new` and `/login`
-- `internal/core/hash.c|h` for `hbf_dns_safe_hash()` (from Phase 0)
+- `internal/auth/argon2.c|h` - Argon2id password hashing wrapper
+- `internal/auth/jwt.c|h` - JWT HS256 signing and verification
+- `internal/auth/session.c|h` - Session management
+- `internal/auth/base64url.c|h` - Base64url encoding/decoding
+- `third_party/argon2/BUILD.bazel` - Argon2 build configuration
+- `third_party/sha256_hmac/` - Vendored single-file SHA-256 + HMAC (MIT)
+- HTTP handlers in `internal/api/auth.c` for `/register` and `/login`
+- Auth middleware in `internal/http/auth_middleware.c|h`
+- Update `static/server.js` example with auth routes
 
 Tests
-- Hash/verify cycles, JWT sign/verify including expiry
-- `/new` creates user pod with correct structure
-- Hash collision detection
-- Login success/failure, disabled user handling
-- JWT scoping to user_hash
+- Argon2id hash/verify cycles
+- JWT sign/verify including expiry
+- Base64url encode/decode round-trip
+- `/register` creates user with hashed password
+- `/login` success/failure, disabled user handling
+- Auth middleware extracts and verifies JWT
+- Session management (create, validate, expire)
 
+Acceptance
+- Password hashing works with Argon2id PHC format
+- JWT tokens signed and verified correctly
+- `/register` endpoint creates users
+- `/login` endpoint returns valid JWT
+- Auth middleware validates tokens before passing to QuickJS
+- Sessions tracked in database
+- All tests pass (20+ test cases)
 
-## Phase 4: Authorization & Row Policies
+### Phase 4.2: Authorization & Row Policies
 
 Goal
 - Enforce table-level permissions and row-level policies by query rewriting.
 
 Tasks
-- `authz_check_*` helpers (owner/admin implicit full access).
-- Store table permissions and policies in DB; CRUD admin endpoints.
-- Query rewriter: append WHERE fragments for SELECT/UPDATE/DELETE using policies; substitute `$user_id` with caller.
-- Protect document and endpoint APIs with checks.
+- `authz_check_*` helpers (owner/admin implicit full access)
+- Store table permissions and policies in DB; CRUD admin endpoints
+- Query rewriter: append WHERE fragments for SELECT/UPDATE/DELETE using policies; substitute `$user_id` with caller
+- Protect database queries from JavaScript (`hbf:db` module) with permission checks
+- Admin endpoints (exposed via QuickJS server.js):
+  - `GET/POST/DELETE /admin/permissions` - Manage table permissions
+  - `GET/POST /admin/policies` - Manage row-level policies
 
 Deliverables
-- `internal/authz/authz.c|h`, `internal/authz/query_rewrite.c|h`
-- Admin endpoints: grant/revoke/list permissions; create/list row policies.
+- `internal/authz/authz.c|h` - Permission checking
+- `internal/authz/query_rewrite.c|h` - Query rewriting for row policies
+- Admin endpoints in `internal/api/authz.c`
+- Integration with `hbf:db` module (permission checks before query execution)
+- Update `static/server.js` example with admin routes
 
 Tests
-- Unit tests for rewrite (with existing WHERE/ORDER/LIMIT), permission matrix.
+- Unit tests for query rewrite (with existing WHERE/ORDER/LIMIT)
+- Permission matrix (user roles vs. table operations)
+- Row policy enforcement (query rewriting)
+- Admin endpoints (grant/revoke permissions, create policies)
 
 
 ## Phase 5: Document Store + Search (Simple-graph Integration)
@@ -666,39 +887,40 @@ Tests
 ## Phase 7: HTTP API Surface
 
 Goal
-- Implement REST endpoints for document and user management, with router.js handling custom routes.
+- Implement REST endpoints for document and user management, with server.js handling custom routes.
+
+Note: All endpoints exposed via QuickJS server.js (no multi-tenant routing).
 
 Endpoints
-- System (apex domain: ipsaw.com)
-  - GET `/health`
-  - POST `/new` (create user pod + owner)
-- User Pod (at {user-hash}.ipsaw.com)
-  - POST `/login` (authenticate to henv)
-  - GET `/_admin` (Monaco editor UI)
-  - Admin API (owner/admin only):
-    - `GET/POST/DELETE /_api/permissions` (+ list by user)
-    - `GET/POST /_api/policies`
-    - `GET/POST/PUT/DELETE /_api/documents/{docID...}` (document CRUD)
-    - `GET /_api/documents/search?q=...` (FTS5 search)
-  - Templates:
-    - `GET /_api/templates` (list template docs)
-    - `POST /_api/templates/preview` (render with provided data)
-- User Routes (via router.js)
-  - All other paths handled by user's router.js
-  - If no router.js: default handler serves from documents by path
+- System:
+  - GET `/health` - Health check (already implemented in Phase 1)
+  - POST `/register` - User registration (from Phase 4.1)
+  - POST `/login` - User authentication (from Phase 4.1)
+- Admin API (owner/admin only):
+  - `GET/POST/DELETE /_api/permissions` - Manage table permissions
+  - `GET/POST /_api/policies` - Manage row-level policies
+  - `GET/POST/PUT/DELETE /_api/documents/{docID...}` - Document CRUD
+  - `GET /_api/documents/search?q=...` - FTS5 search
+  - GET `/_api/templates` - List template docs
+  - POST `/_api/templates/preview` - Render with provided data
+- Developer UI:
+  - GET `/_admin` - Monaco editor UI for editing server.js
+- User Routes (via server.js):
+  - All other paths handled by user's server.js
+  - Default handler serves from documents by path
 
 Deliverables
 - `internal/api/*.c` handlers, shared JSON utilities, request parsing, uniform error responses
-- System endpoint handlers (health, new, login)
-- Admin API handlers (documents, permissions, policies)
-- Router.js integration (all requests → router.js → response)
+- Admin API handlers (documents, permissions, policies, templates)
+- Monaco editor UI (HTML + JavaScript embedded in database)
+- server.js integration (all requests → server.js → response)
 
 Tests
 - Black-box HTTP tests for happy paths and auth failures
-- System endpoints (health, /new, login)
-- Admin API (document CRUD, search)
-- Router.js handling (custom routes + default fallback)
-- Monaco editor serving
+- System endpoints (health, register, login)
+- Admin API (document CRUD, search, permissions, policies)
+- server.js handling (custom routes + default fallback)
+- Monaco editor serving and editing
 
 
 ## Phase 8: WebSockets
@@ -707,19 +929,24 @@ Goal
 - Provide WS endpoint(s) with CivetWeb, dispatch messages into QuickJS-NG handlers, and optional auth.
 
 Tasks
-- Route: `/{user-hash}.ipsaw.com/ws/{channel}` with token query `?token=...` or Authorization during upgrade.
-- On open/close/message events, call JS handler from router.js or dedicated WebSocket handler.
-- Broadcast helper and per-channel subscriptions in C, with backpressure.
-- `hbf:ws` module for server-initiated sends from JS.
+- Route: `/ws/{channel}` with token query `?token=...` or Authorization header during upgrade
+- On open/close/message events, call JS handler from server.js or dedicated WebSocket handler
+- Broadcast helper and per-channel subscriptions in C, with backpressure
+- `hbf:ws` module for server-initiated sends from JS
+- Auth integration: verify JWT before accepting WebSocket connection
 
 Deliverables
 - `internal/ws/ws.c|h` for WebSocket management
-- QuickJS-NG glue `hbf:ws` for server-initiated sends
-- WebSocket integration with router.js
+- QuickJS-NG glue `hbf:ws` for server-initiated sends from JavaScript
+- WebSocket integration with server.js (route handlers for WebSocket events)
+- Auth middleware for WebSocket upgrade
 
 Tests
-- Connect, auth, echo, broadcast to N clients, resilience on disconnect
-- WebSocket handlers in router.js
+- Connect with valid JWT, auth failure with invalid/missing token
+- Echo test (client sends message, receives same message back)
+- Broadcast to N clients (message sent to all connected clients in channel)
+- Resilience on disconnect (cleanup, no memory leaks)
+- WebSocket handlers in server.js
 
 
 ## Phase 9: Packaging, Static Linking, and Ops
@@ -731,27 +958,30 @@ Tasks
 - Bazel configs:
   - `:hbf` (musl 100% static) target; ship a single fully static binary
   - Strip symbols; embed build info/version
-- CLI flags:
+- CLI flags (update from Phase 1):
   - `--port` (default: 5309)
   - `--storage_dir` (default: ./henvs)
-  - `--base_domain` (default: ipsaw.com)
   - `--log_level` (default: info)
   - `--dev` (development mode)
-  - `--db_max_open` (default: 100)
-  - `--qjs_mem_mb` (default: 64)
-  - `--qjs_timeout_ms` (default: 5000)
-- Logging: levels, structured JSON logs option.
-- Default security headers (except HTTPS); CORS toggle.
+  - `--db_max_open` (default: 100) - Max database connections
+  - `--qjs_pool_size` (default: 16) - QuickJS context pool size
+  - `--qjs_mem_mb` (default: 64) - QuickJS memory limit per context
+  - `--qjs_timeout_ms` (default: 5000) - QuickJS execution timeout
+- Logging: levels, structured JSON logs option
+- Default security headers (except HTTPS); CORS toggle
+- Environment variables for secrets (JWT secret, etc.)
 
 Deliverables
 - `//:hbf` (musl 100% static) Bazel target
 - Release docs with size expectations
-- Deployment guide (Litestream configuration, k3s manifests, self-hosting instructions)
+- Deployment guide (systemd unit, Docker container, k3s manifests, self-hosting instructions)
+- Litestream configuration for SQLite replication
 
 Tests
 - Smoke test binary on a clean container; verify no runtime deps when using musl
-- Binary size check (target: <20MB)
-- Startup time measurement
+- Binary size check (target: <5MB including QuickJS)
+- Startup time measurement (target: <500ms)
+- Memory footprint check
 
 
 ## Phase 10: Hardening & Perf
@@ -760,32 +990,45 @@ Goal
 - Stability, safety, and throughput improvements.
 
 Tasks
-- Connection cache/LRU for henv SQLite handles; close idle DBs.
-- Rate limiting and request body size limits; template and JS execution quotas.
-- Precompiled SQL statements for hot paths; WAL checkpointing.
-- Optional per-henv thread pools; CivetWeb tuning (num threads, queue len).
-- Per-henv metrics collection (requests, DB queries, JS execution times).
+- Connection cache/LRU for SQLite handles; close idle DBs (already implemented in Phase 2b, tune parameters)
+- Rate limiting and request body size limits; template and JS execution quotas
+- Precompiled SQL statements for hot paths; WAL checkpointing tuning
+- CivetWeb tuning (num threads, queue len, keep-alive settings)
+- Metrics collection (requests, DB queries, JS execution times, memory usage)
+- Security hardening:
+  - Input validation (SQL injection, XSS, path traversal)
+  - Resource limits (max request size, max connections, max query time)
+  - Error message sanitization
+- Performance tuning:
+  - QuickJS bytecode caching
+  - Prepared statement caching
+  - Response caching for static content
 
 Deliverables
-- Config toggles and metrics endpoints (`/_api/metrics` for per-henv stats).
-- LRU cache for henv database connections
-- Rate limiting middleware
+- Config toggles and metrics endpoint (`/_api/metrics` for system stats)
+- Rate limiting middleware (requests per IP, per user)
+- Resource quota enforcement
+- Performance benchmarks and tuning guide
+- Security audit and hardening checklist
 
 Tests
 - Load tests (target: 1000 req/s on moderate hardware)
 - Memory leak checks (ASan/Valgrind)
-- Fuzz parsers (URLs, JSON, EJS, router.js)
+- Fuzz parsers (URLs, JSON, EJS, server.js)
 - Concurrent request handling (100+ simultaneous connections)
 - Database connection pooling under load
+- Rate limiting enforcement (block after threshold)
+- SQL injection attempts (all blocked)
+- XSS attempts (all sanitized)
 
 
 ## QuickJS-NG Integration Details (Reference)
 
-- Runtime/context lifecycle: create per-request context or a pool keyed by user-hash/henv-hash; set interrupt handler to abort long scripts.
-- Module loader hook: implement `JSModuleLoaderFunc` to resolve `import` from DB (simple-graph documents) or embedded C arrays. For CommonJS, use a bootstrap `require` implemented in JS using `eval` in a new function scope.
-- Host bindings should validate SQL and parameters; always use sqlite prepared statements; convert NULL/int64/double/text/blob properly.
-- Error reporting: surface JS stack traces to logs; client sees sanitized messages.
-- Router.js execution: load script from `_system/router.js` document, execute in sandboxed context per request, return response.
+- Runtime/context lifecycle: pre-create context pool at startup; acquire context per request, release after response sent; set interrupt handler to abort long scripts
+- Module loader hook: implement `JSModuleLoaderFunc` to resolve `import` from DB (simple-graph documents) or embedded C arrays. For CommonJS, use a bootstrap `require` implemented in JS using `eval` in a new function scope
+- Host bindings should validate SQL and parameters; always use sqlite prepared statements; convert NULL/int64/double/text/blob properly
+- Error reporting: surface JS stack traces to logs; client sees sanitized messages (no stack traces exposed)
+- server.js execution: load script from nodes table (name='server.js'), compile once at startup, execute route handlers in sandboxed context per request, return response
 
 
 ## SQLite Build Flags
@@ -898,26 +1141,27 @@ JS packer rule (concept)
 
 ## Security Notes
 
-- HTTPS is out of scope; recommend reverse proxy termination (Traefik, Caddy, nginx).
-- Use Argon2id for password hashing; configurable params; constant-time compare.
-- JWT: Base64url encode/decode; sign with HMAC_SHA256; store only SHA256(JWT) in sessions for revocation; secrets per process (env override); rotate via restart; scope to user-hash.
-- Strict query parameterization; reject raw string interpolation.
-- Sandbox QuickJS-NG: memory/time limits, no host FS/network except explicit shims.
-- Per-henv isolation: each henv is completely independent (separate SQLite DB, no shared state).
-- Router.js sandboxing: user code runs in isolated QuickJS context with no access to host system.
+- HTTPS is out of scope; recommend reverse proxy termination (Traefik, Caddy, nginx)
+- Use Argon2id for password hashing; configurable params; constant-time compare
+- JWT: Base64url encode/decode; sign with HMAC_SHA256; store only SHA256(JWT) in sessions for revocation; secrets per process (env override); rotate via restart
+- Strict query parameterization; reject raw string interpolation (always use prepared statements)
+- Sandbox QuickJS-NG: memory/time limits, no host FS/network except explicit shims (`hbf:db`, `hbf:http`, etc.)
+- server.js sandboxing: user code runs in isolated QuickJS context with no access to host system
+- Single database instance: `index.db` in storage directory (multi-tenancy not currently supported)
 
 
 ## Milestone Cheatsheet
 
-- M1: Server + host/path routing + user pod manager + schema init (Phases 1–2)
-- M2: User pod creation, auth (Argon2id, JWT), sessions (Phase 3–4)
-- M3: Simple-graph integration + FTS5 search + Monaco editor (Phase 5)
-- M4: QuickJS-NG runtime + router.js + host modules (Phase 6)
-- M5: EJS templates + admin UI (Phase 6.1)
-- M6: Node-compat loader + fs shim backed by documents (Phase 6.2)
-- M7: Full REST API + router.js routing (Phase 7)
-- M8: WebSockets (Phase 8)
-- M9: Static packaging + hardening (Phases 9–10)
+- M1: Foundation + HTTP server + schema init (Phases 0–2a)
+- M2: User pod manager + connection caching (Phase 2b)
+- M3: QuickJS-NG runtime + Express.js router + static files from DB (Phase 3)
+- M4: Authentication (Argon2id, JWT) + authorization (table/row policies) (Phase 4)
+- M5: Simple-graph integration + FTS5 search + Monaco editor (Phase 5)
+- M6: EJS templates + admin UI (Phase 6.1)
+- M7: Node-compat loader + fs shim backed by documents (Phase 6.2)
+- M8: Full REST API + server.js routing (Phase 7)
+- M9: WebSockets (Phase 8)
+- M10: Static packaging + hardening + performance tuning (Phases 9–10)
 
 
 ## Acceptance & Verification per Phase
@@ -943,39 +1187,41 @@ For each phase:
 
 ## Appendix: Minimal Contracts
 
-User Pod Creation
-- Endpoint: POST `/new`
+User Registration
+- Endpoint: POST `/register`
 - Inputs: username, password, email
-- Outputs: `{url: "https://{user-hash}.ipsaw.com", user_hash: "...", admin: {...}}`
-- Errors: username taken (hash collision), invalid input
+- Outputs: `{user_id, username, role}`
+- Errors: username taken, invalid input
 
 Authentication
-- Endpoint: POST `/{user-hash}.ipsaw.com/login`
+- Endpoint: POST `/login`
 - Inputs: username, password
-- Outputs: JWT (HS256), expiry, user info
-- Errors: invalid credentials, disabled user, henv not found
+- Outputs: `{token, expires_at, user: {user_id, username, role}}`
+- Errors: invalid credentials, disabled user
 
 DB API (QuickJS-NG via `hbf:db`)
 - `query(sql:string, params:array)` → array<object>
-- `execute(sql:string, params:array)` → { rows_affected:int, last_insert_id:int|null }
+- `execute(sql:string, params:array)` → {rows_affected:int, last_insert_id:int|null}
 - Errors: SQL error (message suppressed/trimmed), permission denied
 
 Router API (QuickJS-NG via `hbf:router`)
-- `router.get(path, handler)` → register GET route
-- `router.post(path, handler)` → register POST route
-- `router.use(handler)` → register middleware/default
-- `req.params` → path parameters (e.g., `/posts/:id`)
-- `res.json(obj)`, `res.send(string)`, `res.status(code)` → response builders
+- `app.get(path, handler)` → register GET route
+- `app.post(path, handler)` → register POST route
+- `app.put(path, handler)` → register PUT route
+- `app.delete(path, handler)` → register DELETE route
+- `app.use(handler)` → register middleware/default handler
+- `req.method`, `req.path`, `req.query`, `req.params`, `req.headers`, `req.body` → request properties
+- `res.json(obj)`, `res.send(string)`, `res.status(code)`, `res.set(name, value)` → response builders
 
 EJS (QuickJS-NG via `hbf:templates`)
 - `render(id|string, data, loader?)` → html string
 - Errors: parse/render error with location
 
 WebSockets
-- Connect `/{user-hash}.ipsaw.com/ws/{channel}?token=...`
+- Connect `/ws/{channel}?token=...`
 - JS handlers: `on_open(ctx)`, `on_message(ctx, data)`, `on_close(ctx)`
 
 
 ---
 
-That's the end-to-end plan to deliver HBF: a self-contained web compute environment with user-owned routing, in-browser development, and complete application isolation—implemented in C99, statically linked, and built with Bazel.
+That's the end-to-end plan to deliver HBF: a self-contained web compute environment with programmable routing via JavaScript, in-browser development with Monaco editor, and database-backed content storage—implemented in strict C99, statically linked with musl, and built with Bazel.

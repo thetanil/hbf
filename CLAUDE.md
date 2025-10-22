@@ -13,10 +13,12 @@ HBF is a single, statically linked C99 web compute environment that embeds:
 - ✅ Phase 0: Foundation, Bazel setup, musl toolchain, coding standards
 - ✅ Phase 1: HTTP server with CivetWeb, logging, CLI parsing, signal handling
 - ✅ Phase 2a: SQLite integration, database schema (document-graph + system tables, FTS5)
-- ✅ Phase 2b: User pod & connection management (multi-tenancy, connection caching)
-- 🔄 Phase 3: Routing & Authentication (next)
+- ✅ Phase 2b: User pod & connection management (connection caching, LRU eviction)
+- 🔄 Phase 3: JavaScript Runtime & Express-Style Routing (next: QuickJS-NG, server.js from DB, static content)
 
-The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, and `DOCS/phase2b-completion.md` for completion reports.
+**Architecture Shift**: Single-instance deployment (localhost or single k3s pod) with programmable routing via JavaScript. Multi-tenancy deferred to future phases.
+
+The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, `DOCS/phase2b-completion.md`, and `DOCS/phase3.md` for completion reports and detailed plans.
 
 ## Build System
 
@@ -72,32 +74,40 @@ bazel test //internal/core:config_test --test_output=all
 /third_party/       # Vendored dependencies (no git submodules)
   civetweb/         # ✅ MIT - Fetched from Git (v1.16)
   sqlite3/          # ✅ Public Domain - From Bazel Central Registry (v3.50.4)
+  quickjs-ng/       # 🔄 MIT (Phase 3) - JavaScript engine
   simple_graph/     # 🔄 MIT (Phase 5)
-  quickjs-ng/       # 🔄 MIT (Phase 6)
-  argon2/           # 🔄 Apache-2.0 (Phase 3)
-  sha256_hmac/      # 🔄 MIT single-file implementation (Phase 3)
+  argon2/           # 🔄 Apache-2.0 (Phase 4) - Password hashing
+  sha256_hmac/      # 🔄 MIT single-file (Phase 4) - JWT signing
 
 /internal/          # Core implementation (all C99)
   core/             # ✅ Logging, config, CLI, hash generator, main
   http/             # ✅ CivetWeb server wrapper
   henv/             # ✅ User pod management with connection caching (Phase 2b)
   db/               # ✅ SQLite wrapper, schema, embedded schema.sql (Phase 2a)
-  auth/             # 🔄 Argon2id password hashing, JWT HS256 (Phase 3)
+  qjs/              # 🔄 QuickJS-NG engine, bindings, context pool (Phase 3)
+    bindings/       # 🔄 Request, response, db, ws host modules (Phase 3)
+  auth/             # 🔄 Argon2id, JWT HS256, sessions (Phase 4)
   authz/            # 🔄 Table permissions, row policies (Phase 4)
   document/         # 🔄 Document store with FTS5 search (Phase 5)
-  qjs/              # 🔄 QuickJS-NG engine, module loader (Phase 6)
   templates/        # 🔄 EJS template integration (Phase 6.1)
   ws/               # 🔄 WebSocket handlers (Phase 8)
   api/              # 🔄 REST endpoint implementations (Phase 7)
 
+/static/            # 🔄 Build-time content (Phase 3)
+  server.js         # Express-style routing script
+  lib/              # router.js, static.js middleware
+  www/              # index.html, CSS, client assets
+
 /tools/
   lint.sh           # ✅ clang-tidy wrapper script
   sql_to_c.sh       # ✅ SQL to C byte array converter
+  inject_content.sh # 🔄 Static content → SQL INSERT statements (Phase 3)
   pack_js/          # 🔄 JS bundler (Phase 6.2)
 
 /DOCS/              # ✅ Documentation
   coding-standards.md
   development-setup.md
+  phase3.md         # 🔄 Phase 3 detailed plan
   phase0-completion.md
   phase1-completion.md
   phase2b-completion.md
@@ -132,16 +142,21 @@ PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 ```
 
-## QuickJS Integration
+## QuickJS Integration (Phase 3)
 
-- **Per-cenv runtime/context** (or pooled)
-- **Memory limits**: 32-128 MB configurable
-- **Execution timeout**: Interrupt handler enforces `_hbf_config.qjs_timeout_ms`
+- **Context pooling**: Pre-created contexts (default: 16) for request handling
+- **Memory limits**: 64 MB per context (configurable)
+- **Execution timeout**: Interrupt handler enforces timeout (default: 5000ms)
+- **Server.js loading**: Loaded from database (nodes table, name='server.js') at startup
+- **Express.js-compatible API**: `app.get()`, `app.post()`, `app.use()`, parameter extraction
 - **Host modules**:
+  - `hbf:router` - Express-style routing API (pure JavaScript)
   - `hbf:db` - query/execute with prepared statements
   - `hbf:http` - request/response objects
-  - `hbf:util` - JSON, base64, time utilities
-- **Node compatibility**: CommonJS wrapper + minimal shims (fs backed by SQLite, path, buffer, util, events, timers)
+  - `hbf:static` - Static file middleware (serves from nodes table)
+  - `hbf:util` - JSON, base64, time utilities (Phase 6+)
+- **Static content**: Injected into database at build time via `tools/inject_content.sh`
+- **Node compatibility** (Phase 6.2): CommonJS wrapper + minimal shims (fs backed by SQLite)
 - **No npm at runtime**: Pure JS modules only, vendored and packed via Bazel
 
 ## System Tables (Prefix: `_hbf_`)
@@ -160,22 +175,28 @@ All system tables use `_hbf_` prefix:
 
 ## Implementation Phases
 
-The project follows a 10-phase implementation plan (see `hbf_impl.md` for details):
+The project follows a phased implementation plan (see `hbf_impl.md` and `DOCS/phase3.md` for details):
 
 1. ✅ **Phase 0**: Foundation (Bazel setup, musl toolchain, directory structure, DNS-safe hash)
 2. ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI parsing, signal handling)
 3. ✅ **Phase 2a**: SQLite Integration & Database Schema (document-graph model, system tables, FTS5)
-4. 🔄 **Phase 2b**: User Pod & Connection Management (multi-tenancy, connection caching)
-5. 🔄 **Phase 3**: Routing & Authentication (host/path routing, Argon2id, JWT HS256)
-6. 🔄 **Phase 4**: Authorization & row-level policies
+4. ✅ **Phase 2b**: User Pod & Connection Management (connection caching, LRU eviction)
+5. 🔄 **Phase 3**: JavaScript Runtime & Express-Style Routing **(NEXT)**
+   - Phase 3.1: QuickJS integration, load server.js from DB, static content injection
+   - Phase 3.2: Express.js-compatible router (app.get/post/use, parameter extraction)
+   - Phase 3.3: Static file serving from database (nodes table)
+6. 🔄 **Phase 4**: Authentication & Authorization
+   - Phase 4.1: Argon2id, JWT HS256, sessions
+   - Phase 4.2: Table/row-level permissions, query rewriting
 7. 🔄 **Phase 5**: Document store + FTS5 search (simple-graph integration)
-8. 🔄 **Phase 6**: QuickJS-NG embedding + user router.js
-9. 🔄 **Phase 6.1**: EJS template rendering
-10. 🔄 **Phase 6.2**: Node-compatible module system (CommonJS + shims)
-11. 🔄 **Phase 7**: REST API surface
-12. 🔄 **Phase 8**: WebSocket support
-13. 🔄 **Phase 9**: Packaging & static linking optimization
-14. 🔄 **Phase 10**: Hardening & performance tuning
+8. 🔄 **Phase 6.1**: EJS template rendering
+9. 🔄 **Phase 6.2**: Node-compatible module system (CommonJS + shims)
+10. 🔄 **Phase 7**: REST API surface (admin endpoints, Monaco editor UI)
+11. 🔄 **Phase 8**: WebSocket support
+12. 🔄 **Phase 9**: Packaging & static linking optimization
+13. 🔄 **Phase 10**: Hardening & performance tuning
+
+**Key Architecture Decision**: Phase 3 moved QuickJS integration earlier (was Phase 6) to prioritize programmable routing. Single-instance deployment model initially (localhost or single k3s pod). Multi-tenant routing deferred to future phases.
 
 Each phase has specific deliverables, tests, and acceptance criteria. See completion reports in `DOCS/` for finished phases.
 
@@ -213,12 +234,9 @@ Each phase has specific deliverables, tests, and acceptance criteria. See comple
 
 ### Planned
 
-**System** (apex domain):
-- 🔄 `POST /new` - Create new user pod + owner (Phase 3)
-
-**User Pod** (at {user-hash}.domain):
-- 🔄 `POST /login` - User login, returns JWT (Phase 3)
-- 🔄 `GET /_admin` - Monaco editor UI (Phase 6)
+**System**:
+- 🔄 `POST /register` - User registration (Phase 4)
+- 🔄 `POST /login` - User login, returns JWT (Phase 4)
 
 **Admin API** (owner/admin only):
 - 🔄 `GET/POST/DELETE /_api/permissions` (Phase 4)
@@ -227,14 +245,15 @@ Each phase has specific deliverables, tests, and acceptance criteria. See comple
 - 🔄 `GET /_api/documents/search?q=...` - FTS5 search (Phase 5)
 - 🔄 `GET /_api/templates` - List templates (Phase 6.1)
 - 🔄 `POST /_api/templates/preview` - Render with data (Phase 6.1)
-- 🔄 `GET /_api/metrics` - Per-henv stats (Phase 10)
+- 🔄 `GET /_api/metrics` - System stats (Phase 10)
+- 🔄 `GET /_admin` - Monaco editor UI (Phase 7)
 
-**User Routes** (via router.js):
-- 🔄 All other paths handled by user's router.js (Phase 6)
-- 🔄 Default: serve from document database by path (Phase 7)
+**User Routes** (via server.js):
+- 🔄 All other paths handled by user's server.js (Phase 3)
+- 🔄 Default: serve static content from database (Phase 3.3)
 
 **WebSockets**:
-- 🔄 `/{user-hash}/ws/{channel}?token=...` (Phase 8)
+- 🔄 `/ws/{channel}?token=...` (Phase 8)
 
 ## CLI Arguments
 
@@ -252,12 +271,13 @@ Options:
 
 ### Planned (Later Phases)
 ```bash
-  --base_domain <domain>    Base domain for routing (default: ipsaw.com) (Phase 3)
-  --qjs_mem_mb <num>        QuickJS memory limit in MB (Phase 6)
-  --qjs_timeout_ms <num>    QuickJS execution timeout in ms (Phase 6)
+  --qjs_pool_size <num>     QuickJS context pool size (default: 16) (Phase 3)
+  --qjs_mem_mb <num>        QuickJS memory limit per context in MB (default: 64) (Phase 3)
+  --qjs_timeout_ms <num>    QuickJS execution timeout in ms (default: 5000) (Phase 3)
+  --db_max_open <num>       Max database connections (default: 100) (Phase 9)
 ```
 
-**Note**: Connection limit is hardcoded to 100 in Phase 2b; may become configurable in Phase 10.
+**Note**: Connection limit is currently hardcoded to 100 in Phase 2b; will become configurable in Phase 9.
 
 ## Development Environment
 
@@ -271,12 +291,15 @@ See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup in
 ## Key Design Decisions
 
 1. **Single binary deployment**: All dependencies statically linked, no installation required
-2. **Multi-tenancy via cenvs**: Each compute environment is an isolated SQLite database
-3. **No HTTPS in binary**: Expect reverse proxy (nginx, Traefik) for TLS termination
-4. **Pure JS modules only**: No native Node addons, no npm at runtime
-5. **SQLite as universal store**: App data, documents, FTS index, module cache, config all in one DB
-6. **Stateless + stateful auth**: JWT for stateless auth, DB sessions for revocation
-7. **Query rewriting for authz**: Row-level security via SQL WHERE clause injection
+2. **Single-instance model initially**: Localhost or single k3s pod deployment; multi-tenancy deferred to future phases
+3. **Programmable routing first**: QuickJS integration moved to Phase 3 (was Phase 6) to prioritize user-defined routing
+4. **Server.js from database**: JavaScript routing script loaded from SQLite at startup, reloadable without rebuild
+5. **Static content in database**: All static files (HTML, CSS, JS) injected into SQLite at build time, served dynamically
+6. **No HTTPS in binary**: Expect reverse proxy (nginx, Traefik, Caddy) for TLS termination
+7. **Pure JS modules only**: No native Node addons, no npm at runtime
+8. **SQLite as universal store**: App data, documents, FTS index, module cache, config, static content all in one DB
+9. **Stateless + stateful auth**: JWT for stateless auth, DB sessions for revocation (Phase 4)
+10. **Query rewriting for authz**: Row-level security via SQL WHERE clause injection (Phase 4)
 
 ## Current Implementation Status
 

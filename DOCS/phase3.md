@@ -1,0 +1,999 @@
+# Phase 3: JavaScript Runtime & Express-Style Routing
+
+**Status**: 🔄 Planning
+**Dependencies**: Phase 2b (User pod & connection management)
+**Goal**: Embed QuickJS-NG and implement Express.js-style routing for dynamic request handling
+
+## Overview
+
+Phase 3 introduces programmable request handling via a JavaScript runtime. Instead of static routes, HBF loads a `server.js` from the database and uses it to handle all HTTP requests through an Express.js-compatible API.
+
+### Key Architectural Shift
+
+**Original Plan**: Authentication first, then routing, then QuickJS (Phases 3→6)
+**Revised Plan**: QuickJS runtime first, with routing and static content serving
+
+**Reasoning**:
+- Single-instance deployment model initially (not multi-tenant routing yet)
+- User-programmable routing is core to HBF's value proposition
+- Static content needs to be database-backed from the start
+- Authentication can layer on top of the programmable runtime
+
+## Phase 3 Architecture
+
+### Single-Instance Model
+
+```
+HTTP Request → CivetWeb → HBF Request Handler → QuickJS (server.js) → Response
+                                                      ↓
+                                              Document Database
+                                              (nodes table)
+```
+
+**Key Components**:
+1. **Default Database**: `{storage_dir}/henvs/index.db` (loaded at startup)
+2. **Server Script**: Node with `name='server.js'` (loaded into QuickJS)
+3. **Static Files**: Nodes with paths like `/www/index.html`
+4. **Express.js Clone**: Minimal routing API compatible with QuickJS
+
+### Request Lifecycle
+
+```
+1. CivetWeb receives HTTP request
+2. C handler extracts request details (method, path, headers, body)
+3. Create QuickJS context (or reuse from pool)
+4. Load server.js if not cached
+5. Pass request object to JavaScript
+6. Execute route handler
+7. Return response to CivetWeb
+8. Release QuickJS context
+```
+
+## Phase 3.1: QuickJS Integration & Basic Runtime
+
+**Goal**: Embed QuickJS-NG, load `server.js` from database, handle basic requests
+
+### Tasks
+
+#### 1. Vendor QuickJS-NG
+
+```
+/third_party/quickjs-ng/
+├── BUILD.bazel          # Bazel build for QuickJS
+├── quickjs.c
+├── quickjs.h
+├── quickjspp.hpp        # (optional, may not need C++ wrapper)
+├── cutils.c/h
+├── libregexp.c/h
+├── libunicode.c/h
+└── README.md
+```
+
+**Build Configuration**:
+- Static linking
+- No filesystem access (we provide shims)
+- No network access (we provide shims)
+- Configurable memory limit (default: 64 MB)
+- Interrupt handler for timeout (default: 5000 ms)
+
+#### 2. QuickJS Engine Wrapper (`internal/qjs/engine.c|h`)
+
+**API Design**:
+
+```c
+/* Initialize QuickJS engine (called at startup) */
+int hbf_qjs_init(size_t mem_limit_mb, int timeout_ms);
+
+/* Shutdown QuickJS engine */
+void hbf_qjs_shutdown(void);
+
+/* Create a new runtime context (per-request or pooled) */
+typedef struct hbf_qjs_ctx hbf_qjs_ctx_t;
+hbf_qjs_ctx_t *hbf_qjs_ctx_create(void);
+
+/* Destroy context */
+void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx);
+
+/* Evaluate JavaScript code */
+int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len);
+
+/* Call a JavaScript function by name */
+int hbf_qjs_call_function(hbf_qjs_ctx_t *ctx, const char *func_name,
+                           const char *args_json, char **result_json);
+
+/* Load server.js from database */
+int hbf_qjs_load_server_js(hbf_qjs_ctx_t *ctx, sqlite3 *db);
+```
+
+**Memory Management**:
+- Set `JS_NewRuntime()` with memory limit
+- Configure interrupt handler via `JS_SetInterruptHandler()`
+- Track allocations to enforce limits
+
+**Error Handling**:
+- Catch JavaScript exceptions
+- Convert to C error codes
+- Log stack traces
+- Return sanitized errors to clients
+
+#### 3. Database Loader for server.js
+
+**Schema Integration** (uses existing `nodes` table):
+
+```sql
+-- server.js stored as a node
+INSERT INTO nodes (type, body) VALUES (
+  'script',
+  json_object(
+    'name', 'server.js',
+    'content', '/* JavaScript code here */',
+    'version', '1.0.0'
+  )
+);
+```
+
+**Loader Implementation** (`internal/qjs/loader.c|h`):
+
+```c
+/* Load server.js from database into QuickJS context */
+int hbf_qjs_load_server_from_db(hbf_qjs_ctx_t *ctx, sqlite3 *db) {
+    sqlite3_stmt *stmt;
+    const char *sql =
+        "SELECT json_extract(body, '$.content') "
+        "FROM nodes WHERE json_extract(body, '$.name') = 'server.js'";
+
+    /* Execute query, get JavaScript code */
+    /* Evaluate in QuickJS context */
+    /* Cache for subsequent requests */
+}
+```
+
+#### 4. Build-Time Static Content Injection
+
+**Goal**: Bundle static files and server.js into the database at build time
+
+**Approach**: Similar to `tools/sql_to_c.sh` for schema
+
+**New Tool**: `tools/inject_content.sh` (or Python script)
+
+```bash
+#!/bin/bash
+# tools/inject_content.sh
+# Generates SQL INSERT statements from static files
+
+STATIC_DIR=$1
+OUTPUT_SQL=$2
+
+cat > "$OUTPUT_SQL" << 'EOF'
+-- Static content for default site
+-- Generated by tools/inject_content.sh
+
+EOF
+
+# Iterate through static files
+find "$STATIC_DIR" -type f | while read file; do
+    path="${file#$STATIC_DIR}"
+    content=$(cat "$file" | sed 's/"/\\"/g')
+
+    cat >> "$OUTPUT_SQL" << EOF
+INSERT INTO nodes (type, body) VALUES (
+    'static',
+    json_object('name', '$path', 'content', '$content')
+);
+EOF
+done
+```
+
+**Directory Structure**:
+
+```
+/static/
+├── server.js           # Express-style server script
+└── www/
+    ├── index.html      # Static HTML
+    ├── style.css       # Static CSS
+    └── app.js          # Client-side JS
+```
+
+**Bazel Integration**:
+
+```python
+# BUILD.bazel
+genrule(
+    name = "static_content_sql",
+    srcs = glob(["static/**/*"]),
+    outs = ["static_content.sql"],
+    cmd = "$(location //tools:inject_content) static/ $(location static_content.sql)",
+    tools = ["//tools:inject_content"],
+)
+```
+
+**Database Initialization**:
+
+After schema init, run static content SQL:
+```c
+hbf_db_init_schema(db);
+hbf_db_exec_sql_file(db, "static_content.sql");
+```
+
+### Deliverables (Phase 3.1)
+
+- [ ] QuickJS-NG vendored in `third_party/quickjs-ng/`
+- [ ] `internal/qjs/engine.c|h` - Runtime wrapper with memory limits
+- [ ] `internal/qjs/loader.c|h` - Database loader for server.js
+- [ ] `tools/inject_content.sh` - Static content to SQL converter
+- [ ] `static/server.js` - Minimal server script (hello world)
+- [ ] `static/www/index.html` - Default homepage
+- [ ] Build system integration (genrules for content injection)
+- [ ] Main.c integration (load server.js at startup)
+
+### Tests (Phase 3.1)
+
+```c
+// internal/qjs/engine_test.c
+test_qjs_init_shutdown()
+test_qjs_eval_simple_expression()
+test_qjs_memory_limit()
+test_qjs_timeout_enforcement()
+test_qjs_error_handling()
+
+// internal/qjs/loader_test.c
+test_load_server_js_from_db()
+test_load_missing_server_js()
+test_cache_server_js()
+```
+
+### Acceptance Criteria (Phase 3.1)
+
+- [ ] QuickJS-NG compiles and links statically
+- [ ] Memory limit enforced (context creation fails at limit)
+- [ ] Timeout enforced (long-running scripts interrupted)
+- [ ] server.js loads from `index.db` at startup
+- [ ] Static content injected into database at build time
+- [ ] All tests pass (10+ test cases)
+
+## Phase 3.2: Express.js-Compatible Router
+
+**Goal**: Implement minimal Express.js API for route handling in QuickJS
+
+### Express.js Clone Design
+
+**Scope**: Minimal subset for routing
+
+```javascript
+// Example server.js
+const app = require('hbf:router');
+
+// Simple route
+app.get('/hello', (req, res) => {
+    res.send('Hello, World!');
+});
+
+// Route with parameter
+app.get('/user/:id', (req, res) => {
+    res.json({ userId: req.params.id });
+});
+
+// Static file fallback
+app.use(require('hbf:static')({ root: '/www' }));
+
+// Start listening (no-op in HBF, just for compatibility)
+app.listen(5309);
+```
+
+**Required API**:
+
+1. **Router Methods**: `app.get()`, `app.post()`, `app.put()`, `app.delete()`, `app.use()`
+2. **Request Object**: `req.method`, `req.path`, `req.query`, `req.params`, `req.headers`, `req.body`
+3. **Response Object**: `res.send()`, `res.json()`, `res.status()`, `res.set()`
+4. **Middleware**: `app.use(middleware)` for fallback handlers
+
+### Implementation Strategy
+
+#### 1. C-to-JS Bridge (`internal/qjs/bindings/`)
+
+**Request Binding** (`bindings/request.c`):
+
+```c
+/* Create JavaScript request object from CivetWeb request */
+JSValue hbf_create_request_object(JSContext *ctx,
+                                   struct mg_connection *conn,
+                                   const struct mg_request_info *ri) {
+    JSValue req = JS_NewObject(ctx);
+
+    /* Set properties */
+    JS_SetPropertyStr(ctx, req, "method",
+                      JS_NewString(ctx, ri->request_method));
+    JS_SetPropertyStr(ctx, req, "path",
+                      JS_NewString(ctx, ri->local_uri));
+    JS_SetPropertyStr(ctx, req, "query",
+                      JS_NewString(ctx, ri->query_string ? ri->query_string : ""));
+
+    /* Parse headers */
+    JSValue headers = JS_NewObject(ctx);
+    for (int i = 0; i < ri->num_headers; i++) {
+        JS_SetPropertyStr(ctx, headers, ri->http_headers[i].name,
+                          JS_NewString(ctx, ri->http_headers[i].value));
+    }
+    JS_SetPropertyStr(ctx, req, "headers", headers);
+
+    /* Parse query parameters into req.query object */
+    /* Parse path parameters into req.params object (done by router) */
+
+    return req;
+}
+```
+
+**Response Binding** (`bindings/response.c`):
+
+```c
+/* Response builder that accumulates in C */
+typedef struct {
+    int status_code;
+    char *headers[64];
+    int header_count;
+    char *body;
+    size_t body_len;
+} hbf_response_t;
+
+/* Bind response methods to JavaScript */
+JSValue hbf_create_response_object(JSContext *ctx, hbf_response_t *res_data) {
+    JSValue res = JS_NewObject(ctx);
+
+    /* res.status(code) */
+    JS_SetPropertyStr(ctx, res, "status",
+                      JS_NewCFunction(ctx, js_res_status, "status", 1));
+
+    /* res.send(body) */
+    JS_SetPropertyStr(ctx, res, "send",
+                      JS_NewCFunction(ctx, js_res_send, "send", 1));
+
+    /* res.json(obj) */
+    JS_SetPropertyStr(ctx, res, "json",
+                      JS_NewCFunction(ctx, js_res_json, "json", 1));
+
+    /* res.set(name, value) */
+    JS_SetPropertyStr(ctx, res, "set",
+                      JS_NewCFunction(ctx, js_res_set, "set", 2));
+
+    /* Store C struct pointer as opaque */
+    JS_SetOpaque(res, res_data);
+
+    return res;
+}
+
+/* C function implementations */
+static JSValue js_res_send(JSContext *ctx, JSValueConst this_val,
+                            int argc, JSValueConst *argv) {
+    hbf_response_t *res = JS_GetOpaque(this_val, /* class_id */);
+    const char *body = JS_ToCString(ctx, argv[0]);
+    res->body = strdup(body);
+    res->body_len = strlen(body);
+    JS_FreeCString(ctx, body);
+    return JS_UNDEFINED;
+}
+```
+
+#### 2. Router Module (`static/lib/router.js`)
+
+**Pure JavaScript Router** (loaded into QuickJS):
+
+```javascript
+// static/lib/router.js - Express-style router in pure JS
+
+function Router() {
+    this.routes = {
+        GET: [],
+        POST: [],
+        PUT: [],
+        DELETE: []
+    };
+    this.middleware = [];
+}
+
+Router.prototype.get = function(path, handler) {
+    this.routes.GET.push({ path: compilePath(path), handler });
+    return this;
+};
+
+Router.prototype.post = function(path, handler) {
+    this.routes.POST.push({ path: compilePath(path), handler });
+    return this;
+};
+
+// ... similar for put, delete
+
+Router.prototype.use = function(handler) {
+    this.middleware.push(handler);
+    return this;
+};
+
+// Match path with parameters (/user/:id)
+function compilePath(path) {
+    const keys = [];
+    const pattern = path
+        .replace(/:([^\/]+)/g, (_, key) => {
+            keys.push(key);
+            return '([^/]+)';
+        })
+        .replace(/\//g, '\\/');
+
+    return {
+        regex: new RegExp('^' + pattern + '$'),
+        keys: keys
+    };
+}
+
+// Main routing function (called from C)
+Router.prototype.handle = function(req, res) {
+    const routes = this.routes[req.method] || [];
+
+    for (let route of routes) {
+        const match = req.path.match(route.path.regex);
+        if (match) {
+            // Extract parameters
+            req.params = {};
+            route.path.keys.forEach((key, i) => {
+                req.params[key] = match[i + 1];
+            });
+
+            // Call handler
+            route.handler(req, res);
+            return true; // Handled
+        }
+    }
+
+    // Try middleware (fallback handlers)
+    for (let mw of this.middleware) {
+        mw(req, res);
+        return true;
+    }
+
+    return false; // Not handled
+};
+
+// Export as CommonJS module
+module.exports = new Router();
+```
+
+**Integration as Built-in Module**:
+
+Instead of loading from filesystem, register `router.js` as a built-in module:
+
+```c
+/* internal/qjs/modules.c */
+int hbf_qjs_register_builtin_modules(JSContext *ctx) {
+    /* Read router.js from embedded C string or database */
+    extern const char router_js_source[];
+
+    /* Evaluate as CommonJS module */
+    hbf_qjs_register_module(ctx, "hbf:router", router_js_source);
+
+    return 0;
+}
+```
+
+#### 3. CivetWeb Request Handler Integration
+
+**Main Handler** (`internal/http/handler.c`):
+
+```c
+/* CivetWeb handler that delegates to QuickJS */
+int hbf_http_handler(struct mg_connection *conn, void *cbdata) {
+    const struct mg_request_info *ri = mg_get_request_info(conn);
+    sqlite3 *db = (sqlite3 *)cbdata; // Default database
+
+    /* Get or create QuickJS context */
+    hbf_qjs_ctx_t *qjs = hbf_qjs_get_context();
+    if (!qjs) return 0; // Error
+
+    /* Create request and response objects */
+    JSContext *ctx = hbf_qjs_get_js_context(qjs);
+    JSValue req = hbf_create_request_object(ctx, conn, ri);
+
+    hbf_response_t response = {0};
+    response.status_code = 200;
+    JSValue res = hbf_create_response_object(ctx, &response);
+
+    /* Call router.handle(req, res) in JavaScript */
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue app = JS_GetPropertyStr(ctx, global, "app");
+    JSValue handle = JS_GetPropertyStr(ctx, app, "handle");
+
+    JSValue args[2] = { req, res };
+    JSValue result = JS_Call(ctx, handle, app, 2, args);
+
+    if (JS_IsException(result)) {
+        /* Handle JavaScript error */
+        hbf_qjs_handle_exception(ctx);
+        mg_send_http_error(conn, 500, "Internal Server Error");
+    } else {
+        /* Send response from JavaScript */
+        hbf_send_response(conn, &response);
+    }
+
+    /* Cleanup */
+    JS_FreeValue(ctx, result);
+    JS_FreeValue(ctx, req);
+    JS_FreeValue(ctx, res);
+    JS_FreeValue(ctx, handle);
+    JS_FreeValue(ctx, app);
+    JS_FreeValue(ctx, global);
+
+    hbf_qjs_release_context(qjs);
+
+    return 1; // Handled
+}
+
+/* Send HTTP response from response_t struct */
+static void hbf_send_response(struct mg_connection *conn,
+                               hbf_response_t *response) {
+    /* Send status line */
+    mg_printf(conn, "HTTP/1.1 %d OK\r\n", response->status_code);
+
+    /* Send headers */
+    for (int i = 0; i < response->header_count; i++) {
+        mg_printf(conn, "%s\r\n", response->headers[i]);
+    }
+
+    /* Send body */
+    if (!response->body) {
+        mg_printf(conn, "Content-Length: 0\r\n\r\n");
+    } else {
+        mg_printf(conn, "Content-Length: %zu\r\n\r\n", response->body_len);
+        mg_write(conn, response->body, response->body_len);
+        free(response->body);
+    }
+}
+```
+
+### Deliverables (Phase 3.2)
+
+- [ ] `internal/qjs/bindings/request.c|h` - Request object creation
+- [ ] `internal/qjs/bindings/response.c|h` - Response object creation
+- [ ] `static/lib/router.js` - Express-style router implementation
+- [ ] `internal/qjs/modules.c|h` - Built-in module registration
+- [ ] `internal/http/handler.c|h` - CivetWeb→QuickJS bridge
+- [ ] Example `static/server.js` with `/hello` endpoint
+- [ ] Tests for routing, parameters, middleware
+
+### Tests (Phase 3.2)
+
+```c
+// internal/qjs/bindings_test.c
+test_create_request_object()
+test_create_response_object()
+test_response_status()
+test_response_send()
+test_response_json()
+
+// Integration tests (HTTP endpoint tests)
+test_get_hello_endpoint()
+test_route_with_parameters()
+test_404_handling()
+test_middleware_fallback()
+```
+
+### Acceptance Criteria (Phase 3.2)
+
+- [ ] `GET /hello` returns "Hello, World!"
+- [ ] Route parameters work (`/user/123` → `req.params.id === "123"`)
+- [ ] Response methods work (`res.status(404).send("Not Found")`)
+- [ ] Middleware fallback works
+- [ ] All tests pass (15+ test cases)
+
+## Phase 3.3: Static File Serving from Database
+
+**Goal**: Serve static files from `nodes` table with path-based lookup
+
+### Static File Middleware
+
+**Implementation** (`static/lib/static.js`):
+
+```javascript
+// static/lib/static.js - Static file middleware
+
+const db = require('hbf:db');
+
+function staticFiles(options) {
+    const root = options.root || '/www';
+
+    return function(req, res) {
+        // Build database path
+        let path = req.path;
+        if (path === '/') path = '/index.html';
+        const dbPath = root + path;
+
+        // Query database for static file
+        const query = `
+            SELECT json_extract(body, '$.content') as content
+            FROM nodes
+            WHERE json_extract(body, '$.name') = ?
+        `;
+
+        const result = db.query(query, [dbPath]);
+
+        if (result.length > 0) {
+            // Determine content type from extension
+            const contentType = getContentType(path);
+            res.set('Content-Type', contentType);
+            res.send(result[0].content);
+        } else {
+            res.status(404).send('Not Found');
+        }
+    };
+}
+
+function getContentType(path) {
+    const ext = path.split('.').pop();
+    const types = {
+        'html': 'text/html',
+        'css': 'text/css',
+        'js': 'application/javascript',
+        'json': 'application/json',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'svg': 'image/svg+xml'
+    };
+    return types[ext] || 'application/octet-stream';
+}
+
+module.exports = staticFiles;
+```
+
+### Database Binding (`internal/qjs/bindings/db.c`)
+
+**Minimal DB API**:
+
+```c
+/* hbf:db module - Database access from JavaScript */
+
+/* db.query(sql, params) → array of objects */
+static JSValue js_db_query(JSContext *ctx, JSValueConst this_val,
+                            int argc, JSValueConst *argv) {
+    sqlite3 *db = /* get from context */;
+    const char *sql = JS_ToCString(ctx, argv[0]);
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+
+    /* Bind parameters from argv[1] array */
+    if (argc > 1 && JS_IsArray(ctx, argv[1])) {
+        /* Bind each parameter */
+    }
+
+    /* Execute and build result array */
+    JSValue result = JS_NewArray(ctx);
+    int idx = 0;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        JSValue row = JS_NewObject(ctx);
+
+        /* Convert SQLite row to JS object */
+        for (int i = 0; i < sqlite3_column_count(stmt); i++) {
+            const char *name = sqlite3_column_name(stmt, i);
+            /* Convert column value to JS type */
+            JSValue val = hbf_sqlite_to_js(ctx, stmt, i);
+            JS_SetPropertyStr(ctx, row, name, val);
+        }
+
+        JS_SetPropertyUint32(ctx, result, idx++, row);
+    }
+
+    sqlite3_finalize(stmt);
+    JS_FreeCString(ctx, sql);
+
+    return result;
+}
+
+/* Register module */
+int hbf_qjs_register_db_module(JSContext *ctx, sqlite3 *db) {
+    JSValue db_module = JS_NewObject(ctx);
+
+    JS_SetPropertyStr(ctx, db_module, "query",
+                      JS_NewCFunction(ctx, js_db_query, "query", 2));
+
+    /* Store db handle in module */
+    JS_SetOpaque(db_module, db);
+
+    /* Register as built-in module */
+    hbf_qjs_register_module(ctx, "hbf:db", db_module);
+
+    return 0;
+}
+```
+
+### Example server.js with Static Files
+
+```javascript
+// static/server.js - Example server with static files
+
+const app = require('hbf:router');
+const staticFiles = require('hbf:static');
+
+// Dynamic route
+app.get('/hello', (req, res) => {
+    res.json({ message: 'Hello, World!', timestamp: Date.now() });
+});
+
+// API route with parameter
+app.get('/api/user/:id', (req, res) => {
+    const userId = req.params.id;
+    res.json({ userId, name: `User ${userId}` });
+});
+
+// Static file fallback (serves from /www/* in database)
+app.use(staticFiles({ root: '/www' }));
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Not Found', path: req.path });
+});
+
+app.listen(5309);
+console.log('Server running on port 5309');
+```
+
+### Deliverables (Phase 3.3)
+
+- [ ] `internal/qjs/bindings/db.c|h` - Database query from JS
+- [ ] `static/lib/static.js` - Static file middleware
+- [ ] `static/www/index.html` - Example homepage
+- [ ] `static/www/style.css` - Example stylesheet
+- [ ] Complete `static/server.js` with all features
+- [ ] Tests for static file serving
+
+### Tests (Phase 3.3)
+
+```c
+// Integration tests
+test_serve_static_html()
+test_serve_static_css()
+test_static_file_404()
+test_db_query_from_js()
+test_content_type_headers()
+```
+
+### Acceptance Criteria (Phase 3.3)
+
+- [ ] `GET /` serves `index.html` from database
+- [ ] `GET /style.css` serves CSS with correct Content-Type
+- [ ] `GET /nonexistent` returns 404
+- [ ] Database queries work from JavaScript (`hbf:db`)
+- [ ] All tests pass (10+ test cases)
+
+## Implementation Order
+
+### Week 1: QuickJS Foundation (Phase 3.1)
+1. Vendor QuickJS-NG
+2. Build system integration
+3. Engine wrapper with memory/timeout limits
+4. Database loader for server.js
+5. Basic eval and error handling
+6. Tests
+
+### Week 2: Static Content Pipeline (Phase 3.1 continued)
+1. Build `tools/inject_content.sh`
+2. Create `static/` directory structure
+3. Create minimal `server.js`
+4. Create example `www/index.html`
+5. Bazel genrules for content injection
+6. Database initialization integration
+7. Tests
+
+### Week 3: Express.js Router (Phase 3.2)
+1. Design C↔JS binding architecture
+2. Implement request object creation
+3. Implement response object creation
+4. Write `router.js` in pure JavaScript
+5. Register as built-in module
+6. CivetWeb handler integration
+7. Tests
+
+### Week 4: Static Files & Polish (Phase 3.3)
+1. Implement `hbf:db` module binding
+2. Write `static.js` middleware
+3. Integrate with router
+4. Add content-type detection
+5. Complete example server.js
+6. End-to-end testing
+7. Documentation
+
+## Migration Notes
+
+### Changes from Original Phase Plan
+
+**What Moved Earlier**:
+- QuickJS integration (was Phase 6 → now Phase 3.1)
+- Express.js router (was Phase 6 → now Phase 3.2)
+- Database-backed static files (was Phase 5 → now Phase 3.3)
+- Built-in module system (was Phase 6.2 → now Phase 3.2)
+
+**What Moved Later**:
+- Authentication (Phase 3 → Phase 4)
+- Multi-tenant routing (Phase 3.1 → Phase 4)
+- Row-level security (Phase 4 → Phase 5)
+
+**What Stays the Same**:
+- Document store design (still Phase 5, but simplified)
+- WebSocket support (still Phase 8)
+- Performance tuning (still Phase 10)
+
+### Benefits of New Order
+
+1. **Earlier Value**: Programmable routing is core value prop
+2. **Simpler Model**: Single-instance first, multi-tenant later
+3. **Better Testing**: Can test routes before auth complexity
+4. **Aligned with Use Case**: Local development workflow prioritized
+5. **Reduced Risk**: QuickJS integration proven before scaling
+
+## QuickJS Context Management
+
+### Strategy: Context Pool
+
+**Approach**: Pre-create QuickJS contexts at startup, reuse per-request
+
+```c
+/* Context pool for request handling */
+typedef struct {
+    hbf_qjs_ctx_t *contexts[16];  /* Pool of 16 contexts */
+    pthread_mutex_t mutex;
+    int available[16];             /* Bitmap of available contexts */
+} hbf_qjs_pool_t;
+
+/* Get context from pool (blocking if none available) */
+hbf_qjs_ctx_t *hbf_qjs_pool_acquire(hbf_qjs_pool_t *pool);
+
+/* Return context to pool */
+void hbf_qjs_pool_release(hbf_qjs_pool_t *pool, hbf_qjs_ctx_t *ctx);
+```
+
+**Lifecycle**:
+1. Startup: Create pool, pre-load server.js into each context
+2. Request: Acquire context, execute route handler, release context
+3. Shutdown: Destroy all contexts, free pool
+
+**Advantages**:
+- No context creation overhead per-request
+- server.js pre-loaded and compiled
+- Memory limit enforced per-context
+- Thread-safe via mutex
+
+**Memory Usage**:
+- 16 contexts × 64 MB = 1 GB max (configurable)
+- Shared code between contexts (QuickJS optimization)
+- Actual usage much lower for simple scripts
+
+## Performance Considerations
+
+### Benchmarks to Track
+
+1. **QuickJS Startup**: Time to create runtime + load server.js
+   - Target: < 50ms
+
+2. **Request Latency**: Time from CivetWeb → QuickJS → Response
+   - Target: < 5ms for simple routes
+
+3. **Database Query**: Time for static file lookup
+   - Target: < 1ms (indexed by name)
+
+4. **Memory Usage**: RSS after 1000 requests
+   - Target: < 100 MB (excluding QuickJS pool)
+
+### Optimizations
+
+1. **Context Pooling**: Reuse contexts (implemented)
+2. **Compiled Routes**: Keep router.js compiled in memory
+3. **Prepared Statements**: Cache static file query
+4. **Response Buffering**: Pre-allocate response buffers
+
+## Security Considerations
+
+### Phase 3 Security
+
+1. **Sandbox QuickJS**:
+   - ✅ Memory limit enforced (64 MB default)
+   - ✅ Execution timeout enforced (5s default)
+   - ✅ No filesystem access (except via `hbf:db`)
+   - ✅ No network access (only responds to requests)
+
+2. **Input Validation**:
+   - ✅ Path traversal prevention (router.js)
+   - ✅ SQL injection prevention (prepared statements)
+   - ✅ Request size limits (CivetWeb configuration)
+
+3. **Error Handling**:
+   - ✅ JavaScript exceptions caught
+   - ✅ Stack traces logged (not sent to client)
+   - ✅ Sanitized error messages
+
+### Future Security (Phase 4+)
+
+- Authentication layer (JWT)
+- Authorization (row-level policies)
+- Rate limiting
+- CORS headers
+
+## Files Modified/Created
+
+### New Directories
+```
+/third_party/quickjs-ng/          # QuickJS source
+/static/                          # Static content (build-time)
+  ├── server.js                   # Main server script
+  ├── lib/
+  │   ├── router.js              # Express-style router
+  │   └── static.js              # Static file middleware
+  └── www/
+      ├── index.html             # Default homepage
+      └── style.css              # Example styles
+```
+
+### New Files
+```
+/internal/qjs/
+  ├── BUILD.bazel
+  ├── engine.c|h                 # QuickJS wrapper
+  ├── loader.c|h                 # Database loader
+  ├── modules.c|h                # Built-in module registration
+  ├── pool.c|h                   # Context pool
+  └── bindings/
+      ├── request.c|h            # Request object
+      ├── response.c|h           # Response object
+      └── db.c|h                 # Database module
+
+/internal/http/
+  └── handler.c|h                # QuickJS request handler
+
+/tools/
+  └── inject_content.sh          # Static content → SQL
+```
+
+### Modified Files
+```
+/internal/core/main.c              # Initialize QuickJS pool, load server.js
+/internal/http/server.c            # Register QuickJS handler
+/internal/db/schema.sql            # (no changes needed, uses existing nodes table)
+/.bazelrc                          # QuickJS build flags
+/BUILD.bazel                       # genrules for static content
+```
+
+## Documentation Deliverables
+
+1. **API Reference**: Express.js subset documentation
+2. **server.js Guide**: How to write route handlers
+3. **Built-in Modules**: `hbf:router`, `hbf:db`, `hbf:static`
+4. **Performance Guide**: Benchmarks and optimization tips
+5. **Security Guide**: Sandboxing and safety guarantees
+
+## Success Criteria
+
+Phase 3 is complete when:
+
+- [ ] QuickJS-NG embedded and statically linked
+- [ ] `server.js` loads from `index.db` at startup
+- [ ] Express.js-style routing works (`app.get()`, etc.)
+- [ ] Route parameters work (`/user/:id`)
+- [ ] Static files serve from database (`/www/*`)
+- [ ] Database queries work from JS (`hbf:db.query()`)
+- [ ] Memory and timeout limits enforced
+- [ ] Context pooling implemented
+- [ ] All tests pass (35+ test cases across 3 sub-phases)
+- [ ] Binary size < 2 MB (QuickJS adds ~800 KB)
+- [ ] Documentation complete
+
+## Next Steps (Phase 4)
+
+After Phase 3, we'll layer on:
+- **Authentication**: JWT, Argon2id, sessions (moved from original Phase 3)
+- **Multi-tenant Routing**: `{henv-id}.ipsaw.com` routing (moved from original Phase 3.1)
+- **User Pod Creation**: `POST /new` endpoint
+- **Authorization Foundation**: Table permissions (Phase 4 content)
+
+Phase 3 provides the programmable runtime that makes HBF valuable. Authentication and multi-tenancy build on top of this foundation.
+
+---
+
+**Phase 3 Status**: 🔄 Ready for Implementation
+**Estimated Effort**: 4 weeks
+**Dependencies**: Phase 2b complete ✅

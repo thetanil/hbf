@@ -59,11 +59,11 @@ HBF (abbreviation intentionally minimal) is a **multi-tenant web compute environ
 
 ### Coming Soon (Phase 3+)
 
-- 🔄 **Host-Based Routing** - `{user-hash}.domain.com` → user pod
+- 🔄 **QuickJS-NG Runtime** - Embedded JavaScript engine with memory/timeout limits
+- 🔄 **Express.js-Style Routing** - Programmable routes via `server.js` from database
+- 🔄 **Static File Serving** - Content stored in SQLite, served via JavaScript middleware
 - 🔄 **Authentication** - Argon2id password hashing, JWT HS256 tokens
-- 🔄 **User Pod Creation** - `POST /new` endpoint for self-service signup
 - 🔄 **Authorization** - Table-level permissions, row-level security policies
-- 🔄 **QuickJS-NG Runtime** - Sandboxed JavaScript execution for user routes
 - 🔄 **Document API** - CRUD operations with FTS5 search
 - 🔄 **EJS Templates** - Server-side rendering in QuickJS
 - 🔄 **WebSocket Support** - Real-time communication channels
@@ -93,28 +93,38 @@ Target:       x86_64 Linux (easily portable)
 /third_party/              # Vendored dependencies (no git submodules)
   civetweb/                # ✅ MIT - HTTP server (v1.16)
   sqlite3/                 # ✅ Public Domain - Database (v3.50.4)
+  quickjs-ng/              # 🔄 MIT - JS engine (Phase 3)
   simple_graph/            # 🔄 MIT - Document store (Phase 5)
-  quickjs-ng/              # 🔄 MIT - JS engine (Phase 6)
-  argon2/                  # 🔄 Apache-2.0 - Password hashing (Phase 3)
-  sha256_hmac/             # 🔄 MIT - JWT signing (Phase 3)
+  argon2/                  # 🔄 Apache-2.0 - Password hashing (Phase 4)
+  sha256_hmac/             # 🔄 MIT - JWT signing (Phase 4)
 
 /internal/                 # Core implementation (all C99)
   core/                    # ✅ Logging, config, CLI, hash, main
   http/                    # ✅ CivetWeb server wrapper
   henv/                    # ✅ User pod management + connection cache
   db/                      # ✅ SQLite wrapper, schema, transactions
-  auth/                    # 🔄 Argon2id, JWT, sessions (Phase 3)
+  qjs/                     # 🔄 QuickJS engine, bindings (Phase 3)
+  auth/                    # 🔄 Argon2id, JWT, sessions (Phase 4)
   authz/                   # 🔄 Permissions, row policies (Phase 4)
   document/                # 🔄 Document store + FTS5 (Phase 5)
-  qjs/                     # 🔄 QuickJS engine, router (Phase 6)
   templates/               # 🔄 EJS rendering (Phase 6.1)
   ws/                      # 🔄 WebSocket handlers (Phase 8)
   api/                     # 🔄 REST endpoints (Phase 7)
+
+/static/                   # Build-time content (injected into DB)
+  server.js                # 🔄 Express-style routing script (Phase 3)
+  lib/                     # 🔄 router.js, static.js middleware (Phase 3)
+  www/                     # 🔄 index.html, CSS, client assets (Phase 3)
+
+/tools/                    # Build tools
+  inject_content.sh        # 🔄 Static content → SQL (Phase 3)
+  sql_to_c.sh              # ✅ Schema → C byte array (Phase 2a)
 
 /DOCS/                     # Documentation
   coding-standards.md      # C99 style guide
   development-setup.md     # Devcontainer setup
   phase*-completion.md     # Completion reports
+  phase3.md                # Phase 3 detailed plan
   schema_doc_graph.md      # Database schema design
 ```
 
@@ -265,19 +275,21 @@ $ bazel build //:hbf && bazel test //...
 
 ## 🗺️ Roadmap
 
-### Phase 3: Routing & Authentication (Next)
-- Host-based routing: `{user-hash}.domain.com`
-- User pod creation: `POST /new`
-- Login endpoint: `POST /login`
+### Phase 3: JavaScript Runtime & Express-Style Routing (Next)
+- QuickJS-NG integration with memory/timeout limits
+- Express.js-compatible API (`app.get()`, `app.post()`, etc.)
+- Load `server.js` from database at startup
+- Static content serving from database (nodes table)
+- Build-time content injection (`tools/inject_content.sh`)
+- Context pooling for performance (16 contexts × 64 MB)
+
+### Phase 4: Authentication & Authorization
 - Argon2id password hashing
 - JWT HS256 token generation
 - Session management
-
-### Phase 4: Authorization
 - Table-level permission system
 - Row-level security policies
 - Query rewriting for RLS
-- Audit logging
 
 ### Phase 5: Document Store
 - CRUD operations via REST API
@@ -285,13 +297,6 @@ $ bazel build //:hbf && bazel test //...
 - FTS5 full-text search with BM25 ranking
 - Binary content support
 - Content-Type handling
-
-### Phase 6: Programmable Runtime
-- QuickJS-NG embedded engine
-- User-owned `router.js` for custom routing
-- Host modules: `hbf:db`, `hbf:http`, `hbf:router`
-- Memory limits and execution timeouts
-- Monaco editor for in-browser development
 
 ### Phase 6.1: Template Rendering
 - EJS-compatible engine in QuickJS
@@ -304,11 +309,17 @@ $ bazel build //:hbf && bazel test //...
 - Minimal Node.js API shims
 - Pure JS modules only (no native addons)
 
-### Phase 7-10: Polish & Deploy
-- Complete REST API surface
+### Phase 7: HTTP API Surface
+- Complete REST API endpoints
+- Admin UI with Monaco editor
+- Document management
+- User management
+
+### Phase 8-10: Polish & Deploy
 - WebSocket support
 - Packaging & optimization
 - Performance tuning & hardening
+- Production deployment guides
 
 See [hbf_impl.md](hbf_impl.md) for complete phase-by-phase implementation details.
 
