@@ -99,3 +99,19 @@ cc_test(
     ],
     linkstatic = 1,
 )
+
+cc_test(
+    name = "router_test",
+    srcs = ["router_test.c"],
+    deps = [
+        ":engine",
+        ":loader",
+        ":bindings",
+        "//internal/core:log",
+        "//internal/db:db",
+        "//internal/db:schema",
+        "@sqlite3",
+        "@quickjs-ng//:quickjs",
+    ],
+    linkstatic = 1,
+)

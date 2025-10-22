@@ -2,116 +2,132 @@
 // Pure JavaScript implementation compatible with QuickJS
 
 function Router() {
-	this.routes = {
-		GET: [],
-		POST: [],
-		PUT: [],
-		DELETE: []
-	};
-	this.middleware = [];
+    this.routes = {
+        GET: [],
+        POST: [],
+        PUT: [],
+        DELETE: []
+    };
+    this.middleware = [];
+    this._inHandle = false; // reentrancy guard
 }
 
 // Compile path pattern to regex (supports :param syntax)
 function compilePath(path) {
-	var keys = [];
-	var pattern = path;
+    var keys = [];
+    var pattern = path;
 
-	// Replace :param with regex capture group
-	pattern = pattern.replace(/:([^\/]+)/g, function(match, key) {
-		keys.push(key);
-		return '([^/]+)';
-	});
+    // Replace :param with regex capture group
+    pattern = pattern.replace(/:([^\/]+)/g, function (match, key) {
+        keys.push(key);
+        return '([^/]+)';
+    });
 
-	// Escape forward slashes
-	pattern = pattern.replace(/\//g, '\\/');
+    // Escape forward slashes
+    pattern = pattern.replace(/\//g, '\\/');
 
-	return {
-		regex: new RegExp('^' + pattern + '$'),
-		keys: keys
-	};
+    return {
+        regex: new RegExp('^' + pattern + '$'),
+        keys: keys
+    };
 }
 
 // Register GET route
-Router.prototype.get = function(path, handler) {
-	this.routes.GET.push({
-		path: compilePath(path),
-		handler: handler
-	});
-	return this;
+Router.prototype.get = function (path, handler) {
+    this.routes.GET.push({
+        path: compilePath(path),
+        handler: handler
+    });
+    return this;
 };
 
 // Register POST route
-Router.prototype.post = function(path, handler) {
-	this.routes.POST.push({
-		path: compilePath(path),
-		handler: handler
-	});
-	return this;
+Router.prototype.post = function (path, handler) {
+    this.routes.POST.push({
+        path: compilePath(path),
+        handler: handler
+    });
+    return this;
 };
 
 // Register PUT route
-Router.prototype.put = function(path, handler) {
-	this.routes.PUT.push({
-		path: compilePath(path),
-		handler: handler
-	});
-	return this;
+Router.prototype.put = function (path, handler) {
+    this.routes.PUT.push({
+        path: compilePath(path),
+        handler: handler
+    });
+    return this;
 };
 
 // Register DELETE route
-Router.prototype.delete = function(path, handler) {
-	this.routes.DELETE.push({
-		path: compilePath(path),
-		handler: handler
-	});
-	return this;
+Router.prototype.delete = function (path, handler) {
+    this.routes.DELETE.push({
+        path: compilePath(path),
+        handler: handler
+    });
+    return this;
 };
 
 // Register middleware (fallback handler)
-Router.prototype.use = function(handler) {
-	this.middleware.push(handler);
-	return this;
+Router.prototype.use = function (handler) {
+    this.middleware.push(handler);
+    return this;
 };
 
 // Handle incoming request
-Router.prototype.handle = function(req, res) {
-	var method = req.method || 'GET';
-	var path = req.path || '/';
-	var routes = this.routes[method] || [];
-	var i, route, match, j;
+Router.prototype.handle = function (req, res) {
+    var method = req.method || 'GET';
+    var path = req.path || '/';
+    var routes = this.routes[method] || [];
+    var i, route, match, j;
 
-	// Try to match routes
-	for (i = 0; i < routes.length; i++) {
-		route = routes[i];
-		match = path.match(route.path.regex);
+    // Prevent accidental recursion like app.use(app.handle) or nested app.handle()
+    if (this._inHandle) {
+        throw new Error('Re-entrant app.handle() detected');
+    }
+    this._inHandle = true;
 
-		if (match) {
-			// Extract parameters
-			req.params = req.params || {};
-			for (j = 0; j < route.path.keys.length; j++) {
-				req.params[route.path.keys[j]] = match[j + 1];
-			}
+    // Try to match routes
+    for (i = 0; i < routes.length; i++) {
+        route = routes[i];
+        match = path.match(route.path.regex);
 
-			// Call handler
-			route.handler(req, res);
-			return true;
-		}
-	}
+        if (match) {
+            // Extract parameters
+            req.params = req.params || {};
+            for (j = 0; j < route.path.keys.length; j++) {
+                req.params[route.path.keys[j]] = match[j + 1];
+            }
 
-	// Try middleware (fallback handlers)
-	for (i = 0; i < this.middleware.length; i++) {
-		this.middleware[i](req, res);
-		return true;
-	}
+            // Call handler
+            try {
+                route.handler(req, res);
+                return true;
+            } finally {
+                this._inHandle = false;
+            }
+        }
+    }
 
-	// No handler found
-	return false;
+    // Try middleware (fallback handlers)
+    for (i = 0; i < this.middleware.length; i++) {
+        try {
+            this.middleware[i](req, res);
+            return true;
+        } finally {
+            this._inHandle = false;
+        }
+    }
+
+    // No handler found
+    this._inHandle = false;
+    return false;
 };
 
 // Dummy listen method (for Express.js compatibility)
-Router.prototype.listen = function(port) {
-	// No-op: HBF handles the actual server listening
-	return this;
+Router.prototype.listen = function (port) {
+    // No-op: HBF handles the actual server listening
+    return this;
 };
 
 // Export router instance
@@ -119,12 +135,12 @@ var app = new Router();
 
 // Make app available globally
 if (typeof globalThis !== 'undefined') {
-	globalThis.app = app;
+    globalThis.app = app;
 } else if (typeof global !== 'undefined') {
-	global.app = app;
+    global.app = app;
 }
 
 // Also support module.exports for consistency
 if (typeof module !== 'undefined' && module.exports) {
-	module.exports = app;
+    module.exports = app;
 }
