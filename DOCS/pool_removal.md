@@ -48,7 +48,8 @@ database.
 ### 4. Update Router and Server Scripts
 - Modify `router.js` and `server.js` to use the new DB API for any database operations.
 - Remove any logic that assumed per-request context isolation.
-- Ensure all stateful JS (globals, caches) is managed carefully, as all requests share the same context.
+- Ensure all stateful JS (globals, caches) is managed carefully, as all requests
+  share the same context.
 
 ### 5. Update HTTP Handler
 - In `internal/http/handler.c`, use the single JSContext for all requests.
