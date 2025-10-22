@@ -1,12 +1,22 @@
+/* Initialize the JS DB module (db.query, db.execute) */
 
 #ifndef HBF_QJS_ENGINE_H
 #define HBF_QJS_ENGINE_H
 
 #include <stddef.h>
+#include <quickjs.h>
+#include <sqlite3.h>
+#include <stdint.h>
 
 /* Opaque context handle */
 typedef struct hbf_qjs_ctx hbf_qjs_ctx_t;
-
+struct hbf_qjs_ctx {
+	JSRuntime *rt;
+	JSContext *ctx;
+	char error_buf[512];
+	int64_t start_time_ms;
+	sqlite3 *db;
+};
 /* Global QuickJS context pointer (extern for static build) */
 extern hbf_qjs_ctx_t *g_qjs_ctx;
 

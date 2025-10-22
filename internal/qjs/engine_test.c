@@ -451,6 +451,63 @@ static void test_boolean_logic(void)
 	printf("  ✓ Boolean logic (verified: true/false, comparisons, logical ops)\n");
 }
 
+static void test_console_log(void)
+{
+	hbf_qjs_ctx_t *ctx;
+	int ret;
+
+	hbf_qjs_init(64, 5000);
+
+	ctx = hbf_qjs_ctx_create();
+	assert(ctx != NULL);
+
+	/* Test console.log with single argument */
+	ret = hbf_qjs_eval(ctx, "console.log('Hello, world!');",
+			   strlen("console.log('Hello, world!');"), "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	/* Test console.log with multiple arguments */
+	ret = hbf_qjs_eval(ctx, "console.log('The answer is', 42);",
+			   strlen("console.log('The answer is', 42);"),
+			   "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	/* Test console.log with numbers */
+	ret = hbf_qjs_eval(ctx, "console.log(1, 2, 3, 4, 5);",
+			   strlen("console.log(1, 2, 3, 4, 5);"), "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	/* Test console.log with objects */
+	ret = hbf_qjs_eval(ctx,
+			   "console.log({name: 'Alice', age: 30});",
+			   strlen("console.log({name: 'Alice', age: 30});"),
+			   "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	/* Test console.warn */
+	ret = hbf_qjs_eval(ctx, "console.warn('This is a warning');",
+			   strlen("console.warn('This is a warning');"),
+			   "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	/* Test console.error */
+	ret = hbf_qjs_eval(ctx, "console.error('This is an error');",
+			   strlen("console.error('This is an error');"),
+			   "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	/* Test console.debug */
+	ret = hbf_qjs_eval(ctx, "console.debug('Debug message');",
+			   strlen("console.debug('Debug message');"),
+			   "<test>");
+	assert(ret == 0); /* MUST succeed */
+
+	hbf_qjs_ctx_destroy(ctx);
+	hbf_qjs_shutdown();
+
+	printf("  ✓ Console module (verified: log/warn/error/debug work)\n");
+}
+
 int main(void)
 {
 	/* Initialize logging */
@@ -469,6 +526,65 @@ int main(void)
 	test_arrays_and_methods();
 	test_closures_and_scope();
 	test_boolean_logic();
+	test_console_log();
+
+	/* DB module tests */
+	hbf_qjs_init(64, 5000);
+	hbf_qjs_ctx_t *ctx = hbf_qjs_ctx_create();
+	assert(ctx != NULL);
+	JSContext *js_ctx = (JSContext *)hbf_qjs_get_js_context(ctx);
+
+	/* Create test table and insert data */
+	hbf_qjs_eval(ctx, "db.execute('CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)')", strlen("db.execute('CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)')"), "<test>");
+	hbf_qjs_eval(ctx, "db.execute('INSERT INTO test (name) VALUES (?)', ['Alice'])", strlen("db.execute('INSERT INTO test (name) VALUES (?)', ['Alice'])"), "<test>");
+	hbf_qjs_eval(ctx, "db.execute('INSERT INTO test (name) VALUES (?)', ['Bob'])", strlen("db.execute('INSERT INTO test (name) VALUES (?)', ['Bob'])"), "<test>");
+
+	/* Query data */
+	JSValue result = JS_Eval(js_ctx, "db.query('SELECT * FROM test ORDER BY id')", strlen("db.query('SELECT * FROM test ORDER BY id')"), "<test>", JS_EVAL_TYPE_GLOBAL);
+	assert(JS_IsArray(js_ctx, result));
+	int64_t len = 0;
+	JSValue len_val = JS_GetPropertyStr(js_ctx, result, "length");
+	JS_ToInt64(js_ctx, &len, len_val);
+	JS_FreeValue(js_ctx, len_val);
+	assert(len == 2);
+	JSValue row0 = JS_GetPropertyUint32(js_ctx, result, 0);
+	JSValue row1 = JS_GetPropertyUint32(js_ctx, result, 1);
+	JSValue name0 = JS_GetPropertyStr(js_ctx, row0, "name");
+	JSValue name1 = JS_GetPropertyStr(js_ctx, row1, "name");
+	const char *s0 = JS_ToCString(js_ctx, name0);
+	const char *s1 = JS_ToCString(js_ctx, name1);
+	assert(strcmp(s0, "Alice") == 0);
+	assert(strcmp(s1, "Bob") == 0);
+	JS_FreeCString(js_ctx, s0);
+	JS_FreeCString(js_ctx, s1);
+	JS_FreeValue(js_ctx, name0);
+	JS_FreeValue(js_ctx, name1);
+	JS_FreeValue(js_ctx, row0);
+	JS_FreeValue(js_ctx, row1);
+	JS_FreeValue(js_ctx, result);
+
+	/* Update data and check affected rows */
+	result = JS_Eval(js_ctx, "db.execute('UPDATE test SET name = ? WHERE id = 1', ['Carol'])", strlen("db.execute('UPDATE test SET name = ? WHERE id = 1', ['Carol'])"), "<test>", JS_EVAL_TYPE_GLOBAL);
+	int affected;
+	JS_ToInt32(js_ctx, &affected, result);
+	assert(affected == 1);
+	JS_FreeValue(js_ctx, result);
+
+	/* Query updated row */
+	result = JS_Eval(js_ctx, "db.query('SELECT name FROM test WHERE id = 1')", strlen("db.query('SELECT name FROM test WHERE id = 1')"), "<test>", JS_EVAL_TYPE_GLOBAL);
+	row0 = JS_GetPropertyUint32(js_ctx, result, 0);
+	name0 = JS_GetPropertyStr(js_ctx, row0, "name");
+	s0 = JS_ToCString(js_ctx, name0);
+	assert(strcmp(s0, "Carol") == 0);
+	JS_FreeCString(js_ctx, s0);
+	JS_FreeValue(js_ctx, name0);
+	JS_FreeValue(js_ctx, row0);
+	JS_FreeValue(js_ctx, result);
+
+	JS_RunGC(ctx->rt);
+	hbf_qjs_ctx_destroy(ctx);
+	hbf_qjs_shutdown();
+	printf("  ✓ DB module: db.query and db.execute work as expected\n");
 
 	printf("\nAll engine tests passed!\n");
 	return 0;
