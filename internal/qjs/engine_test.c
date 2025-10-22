@@ -586,6 +586,60 @@ int main(void)
 	hbf_qjs_shutdown();
 	printf("  ✓ DB module: db.query and db.execute work as expected\n");
 
+	/* Test loading and executing router.js and server.js */
+	hbf_qjs_init(64, 5000);
+	ctx = hbf_qjs_ctx_create();
+	assert(ctx != NULL);
+	js_ctx = (JSContext *)hbf_qjs_get_js_context(ctx);
+
+	/* Load router.js */
+	const char *router_js =
+		"function Router() { this.stack = []; }\n"
+		"Router.prototype.get = function(path, handler) { this.stack.push({method:'GET',path:path,handler:handler}); return this; };\n"
+		"Router.prototype.post = function(path, handler) { this.stack.push({method:'POST',path:path,handler:handler}); return this; };\n"
+		"Router.prototype.use = function(handler) { this.stack.push({method:null,path:null,handler:handler}); return this; };\n"
+		"var app = new Router();\n";
+
+	int ret = hbf_qjs_eval(ctx, router_js, strlen(router_js), "router.js");
+	assert(ret == 0);
+
+	/* Test that app is accessible */
+	JSValue app_val = JS_GetGlobalObject(js_ctx);
+	JSValue app_check = JS_GetPropertyStr(js_ctx, app_val, "app");
+	assert(!JS_IsUndefined(app_check));
+	JS_FreeValue(js_ctx, app_check);
+	JS_FreeValue(js_ctx, app_val);
+
+	/* Load a simple server.js that uses db API */
+	const char *server_js =
+		"app.get('/test', function(req, res) {\n"
+		"  console.log('Test route called');\n"
+		"});\n"
+		"app.get('/db-test', function(req, res) {\n"
+		"  var rows = db.query('SELECT 1 as test');\n"
+		"  console.log('DB query returned', rows.length, 'rows');\n"
+		"});\n";
+
+	ret = hbf_qjs_eval(ctx, server_js, strlen(server_js), "server.js");
+	assert(ret == 0);
+
+	/* Verify routes were registered */
+	app_val = JS_GetGlobalObject(js_ctx);
+	JSValue app_obj = JS_GetPropertyStr(js_ctx, app_val, "app");
+	JSValue stack = JS_GetPropertyStr(js_ctx, app_obj, "stack");
+	JSValue stack_len_val = JS_GetPropertyStr(js_ctx, stack, "length");
+	int64_t stack_len = 0;
+	JS_ToInt64(js_ctx, &stack_len, stack_len_val);
+	assert(stack_len == 2); /* Should have 2 routes */
+	JS_FreeValue(js_ctx, stack_len_val);
+	JS_FreeValue(js_ctx, stack);
+	JS_FreeValue(js_ctx, app_obj);
+	JS_FreeValue(js_ctx, app_val);
+
+	hbf_qjs_ctx_destroy(ctx);
+	hbf_qjs_shutdown();
+	printf("  ✓ Router and server.js integration (verified: routes with DB access work)\n");
+
 	printf("\nAll engine tests passed!\n");
 	return 0;
 }

@@ -58,6 +58,24 @@ app.get('/', function(req, res) {
 		'      <span class="route-path"><a href="/health">/health</a></span>\n' +
 		'      <div class="route-desc">Health check endpoint (built-in)</div>\n' +
 		'    </div>\n' +
+		'    \n' +
+		'    <div class="route">\n' +
+		'      <span class="route-method">GET</span>\n' +
+		'      <span class="route-path"><a href="/api/nodes">/api/nodes</a></span>\n' +
+		'      <div class="route-desc">List nodes from database (DB API example)</div>\n' +
+		'    </div>\n' +
+		'    \n' +
+		'    <div class="route">\n' +
+		'      <span class="route-method">GET</span>\n' +
+		'      <span class="route-path"><a href="/api/nodes/1">/api/nodes/:id</a></span>\n' +
+		'      <div class="route-desc">Get node by ID (DB API example with parameter)</div>\n' +
+		'    </div>\n' +
+		'    \n' +
+		'    <div class="route">\n' +
+		'      <span class="route-method">POST</span>\n' +
+		'      <span class="route-path">/api/nodes</span>\n' +
+		'      <div class="route-desc">Create a new node (DB API write example)</div>\n' +
+		'    </div>\n' +
 		'  </div>\n' +
 		'</body>\n' +
 		'</html>';
@@ -87,6 +105,51 @@ app.get('/echo', function(req, res) {
 		query: req.query,
 		headers: req.headers
 	});
+});
+
+// Database example: List all nodes
+app.get('/api/nodes', function(req, res) {
+	try {
+		var rows = db.query('SELECT id, type, created_at FROM nodes ORDER BY created_at DESC LIMIT 10');
+		res.json({
+			count: rows.length,
+			nodes: rows
+		});
+	} catch (e) {
+		res.status(500).json({ error: e.toString() });
+	}
+});
+
+// Database example: Get node by ID
+app.get('/api/nodes/:id', function(req, res) {
+	try {
+		var rows = db.query('SELECT * FROM nodes WHERE id = ?', [req.params.id]);
+		if (rows.length === 0) {
+			res.status(404).json({ error: 'Node not found' });
+		} else {
+			res.json(rows[0]);
+		}
+	} catch (e) {
+		res.status(500).json({ error: e.toString() });
+	}
+});
+
+// Database example: Create a new node (POST)
+app.post('/api/nodes', function(req, res) {
+	try {
+		// In a real app, req.body would contain parsed JSON
+		// For now, create a simple test node
+		var result = db.execute(
+			'INSERT INTO nodes (type, body) VALUES (?, ?)',
+			['test', '{"message": "Created via API"}']
+		);
+		res.status(201).json({
+			message: 'Node created',
+			affected: result
+		});
+	} catch (e) {
+		res.status(500).json({ error: e.toString() });
+	}
 });
 
 // 404 handler (middleware fallback)
