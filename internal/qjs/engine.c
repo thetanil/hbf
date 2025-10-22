@@ -8,6 +8,17 @@
 #include "internal/core/log.h"
 #include "quickjs.h"
 
+/* C binding for console.log, forwards to hbf_log_info */
+/* QuickJS engine wrapper implementation */
+#include "internal/qjs/engine.h"
+
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "internal/core/log.h"
+#include "quickjs.h"
+
 /* Global engine configuration */
 static struct {
 	size_t mem_limit_bytes;
@@ -147,15 +158,9 @@ void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx)
 	if (!ctx)
 		return;
 
-	if (ctx->ctx) {
-		/* Remove the global 'console' property to avoid lingering references */
-		JSValue global_obj = JS_GetGlobalObject(ctx->ctx);
-		JSAtom console_atom = JS_NewAtom(ctx->ctx, "console");
-		JS_DeleteProperty(ctx->ctx, global_obj, console_atom, JS_PROP_THROW);
-		JS_FreeAtom(ctx->ctx, console_atom);
-		JS_FreeValue(ctx->ctx, global_obj);
-		JS_FreeContext(ctx->ctx);
-		ctx->ctx = NULL;
+       if (ctx->ctx) {
+	       JS_FreeContext(ctx->ctx);
+	       ctx->ctx = NULL;
 	}
 
 	if (ctx->rt) {
