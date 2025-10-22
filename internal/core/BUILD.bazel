@@ -47,6 +47,7 @@ cc_binary(
         "//internal/db:schema",
         "//internal/henv:manager",
         "//internal/http:server",
+        "//internal/qjs:pool",
     ],
     visibility = ["//visibility:public"],
 )

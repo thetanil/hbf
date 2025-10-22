@@ -11,3 +11,13 @@ sh_binary(
     srcs = ["sql_to_c.sh"],
     visibility = ["//visibility:public"],
 )
+
+cc_binary(
+    name = "test_qjs",
+    srcs = ["test_qjs.c"],
+    deps = [
+        "//internal/core:log",
+        "//internal/qjs:engine",
+    ],
+    visibility = ["//visibility:public"],
+)

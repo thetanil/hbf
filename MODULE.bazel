@@ -35,3 +35,11 @@ git_repository(
     tag = "v1.16",
     build_file = "//third_party/civetweb:civetweb.BUILD",
 )
+
+# QuickJS-NG JavaScript engine (MIT license)
+git_repository(
+    name = "quickjs-ng",
+    remote = "https://github.com/quickjs-ng/quickjs.git",
+    tag = "v0.8.0",
+    build_file = "//third_party/quickjs-ng:quickjs.BUILD",
+)

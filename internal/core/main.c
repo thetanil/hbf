@@ -3,6 +3,9 @@
 #include "log.h"
 #include "../henv/manager.h"
 #include "../http/server.h"
+#include "../qjs/pool.h"
+#include "../db/db.h"
+#include "../db/schema.h"
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -10,6 +13,7 @@
 
 static volatile bool g_shutdown = false;
 static hbf_server_t *g_server = NULL;
+static sqlite3 *g_default_db = NULL;
 
 static void signal_handler(int signum)
 {
@@ -42,6 +46,41 @@ int main(int argc, char *argv[])
 	if (hbf_henv_init(config.storage_dir, 100) != 0) {
 		hbf_log_error("Failed to initialize henv manager");
 		return 1;
+	}
+
+	/* Open default database for QuickJS (index.db) */
+	/* TODO: Make this configurable, for now use in-memory for Phase 3.1 */
+	ret = hbf_db_open(":memory:", &g_default_db);
+	if (ret != 0) {
+		hbf_log_error("Failed to open default database");
+		hbf_henv_shutdown();
+		return 1;
+	}
+
+	/* Initialize database schema */
+	ret = hbf_db_init_schema(g_default_db);
+	if (ret != 0) {
+		hbf_log_error("Failed to initialize database schema");
+		hbf_db_close(g_default_db);
+		hbf_henv_shutdown();
+		return 1;
+	}
+
+	/* Initialize QuickJS context pool (16 contexts, 64MB each, 5s timeout) */
+	ret = hbf_qjs_pool_init(16, 64, 5000, g_default_db);
+	if (ret != 0) {
+		hbf_log_error("Failed to initialize QuickJS pool");
+		hbf_db_close(g_default_db);
+		hbf_henv_shutdown();
+		return 1;
+	}
+
+	/* Log pool statistics */
+	{
+		int total, available, in_use;
+		hbf_qjs_pool_stats(&total, &available, &in_use);
+		hbf_log_info("QuickJS pool initialized: %d total, %d available, %d in use",
+			     total, available, in_use);
 	}
 
 	/* Set up signal handlers for graceful shutdown */
@@ -78,6 +117,16 @@ int main(int argc, char *argv[])
 	/* Stop server */
 	hbf_server_stop(g_server);
 	g_server = NULL;
+
+	/* Shutdown QuickJS pool */
+	hbf_qjs_pool_shutdown();
+	hbf_log_info("QuickJS pool shutdown");
+
+	/* Close default database */
+	if (g_default_db) {
+		hbf_db_close(g_default_db);
+		g_default_db = NULL;
+	}
 
 	/* Shutdown henv manager */
 	hbf_henv_shutdown();
