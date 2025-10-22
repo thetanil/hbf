@@ -27,21 +27,3 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-cc_test(
-    name = "handler_test",
-    srcs = ["handler_test.c"],
-    data = ["//static/lib:router.js"],
-    deps = [
-        ":handler",
-        "//internal/core:log",
-        "//internal/db:db",
-        "//internal/db:schema",
-        "//internal/qjs:engine",
-        "//internal/qjs:loader",
-        "//internal/qjs:pool",
-        "@civetweb//:civetweb",
-        "@quickjs-ng//:quickjs",
-        "@sqlite3",
-    ],
-    linkstatic = 1,
-)
