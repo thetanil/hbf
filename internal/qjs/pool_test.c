@@ -167,7 +167,7 @@ static void test_pool_eval_in_context(void)
 	assert(ctx != NULL);
 
 	/* Evaluate code in pooled context */
-	ret = hbf_qjs_eval(ctx, code, strlen(code));
+	ret = hbf_qjs_eval(ctx, code, strlen(code), "<test>");
 	assert(ret == 0);
 
 	hbf_qjs_pool_release(ctx);
@@ -191,7 +191,7 @@ static void *thread_acquire_release(void *arg)
 
 		/* Do some work */
 		const char *code = "1 + 1;";
-		hbf_qjs_eval(ctx, code, strlen(code));
+		hbf_qjs_eval(ctx, code, strlen(code), "<test>");
 
 		hbf_qjs_pool_release(ctx);
 		(*count)++;

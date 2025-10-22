@@ -158,7 +158,8 @@ void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx)
 }
 
 /* Evaluate JavaScript code */
-int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len)
+int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
+		 const char *filename)
 {
 	JSValue result;
 
@@ -167,11 +168,16 @@ int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len)
 		return -1;
 	}
 
+	/* Use default filename if not provided */
+	if (!filename) {
+		filename = "<eval>";
+	}
+
 	/* Reset start time for timeout tracking */
 	ctx->start_time_ms = hbf_qjs_get_time_ms();
 
 	/* Evaluate code */
-	result = JS_Eval(ctx->ctx, code, len, "<eval>",
+	result = JS_Eval(ctx->ctx, code, len, filename,
 			 JS_EVAL_TYPE_GLOBAL);
 
 	/* Check for exception */

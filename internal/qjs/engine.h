@@ -28,10 +28,12 @@ hbf_qjs_ctx_t *hbf_qjs_ctx_create(void);
 void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx);
 
 /* Evaluate JavaScript code in context
+ * filename: Source name for error messages (e.g., "server.js" or "<eval>")
  * Returns 0 on success, -1 on error
  * Error details available via hbf_qjs_get_error()
  */
-int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len);
+int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
+		 const char *filename);
 
 /* Get last error message from context
  * Returns error string (valid until next call) or NULL if no error

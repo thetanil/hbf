@@ -97,7 +97,7 @@ static void test_router_handle_simple(void)
         "var res={};\n"
         "app.handle(req,res);\n";
 
-    ret = hbf_qjs_eval(ctx, invoke, strlen(invoke));
+    ret = hbf_qjs_eval(ctx, invoke, strlen(invoke), "<test>");
     assert(ret == 0);
 
     hbf_qjs_ctx_destroy(ctx);
@@ -133,7 +133,7 @@ static void test_router_no_stack_overflow_on_404(void)
         "var res={};\n"
         "app.handle(req,res);\n";
 
-    ret = hbf_qjs_eval(ctx, invoke, strlen(invoke));
+    ret = hbf_qjs_eval(ctx, invoke, strlen(invoke), "<test>");
     /* Expect failure due to reentrancy guard, not stack overflow */
     assert(ret != 0);
 
@@ -172,7 +172,7 @@ static void test_router_next_middleware_chain(void)
         "if (!res._sent) throw new Error('Route handler not called');\n"
         "if (!res._hasMiddleware1) throw new Error('Middleware not called before route');\n";
 
-    ret = hbf_qjs_eval(ctx, invoke, strlen(invoke));
+    ret = hbf_qjs_eval(ctx, invoke, strlen(invoke), "<test>");
     assert(ret == 0);
 
     /* Test that 404 fallback middleware works */
@@ -182,7 +182,7 @@ static void test_router_next_middleware_chain(void)
         "app.handle(req2,res2);\n"
         "if (!res2._fallback) throw new Error('Fallback middleware not called');\n";
 
-    ret = hbf_qjs_eval(ctx, invoke404, strlen(invoke404));
+    ret = hbf_qjs_eval(ctx, invoke404, strlen(invoke404), "<test>");
     assert(ret == 0);
 
     hbf_qjs_ctx_destroy(ctx);

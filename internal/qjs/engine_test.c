@@ -48,7 +48,7 @@ static void test_eval_simple_expression(void)
 	ctx = hbf_qjs_ctx_create();
 	assert(ctx != NULL);
 
-	ret = hbf_qjs_eval(ctx, code, strlen(code));
+	ret = hbf_qjs_eval(ctx, code, strlen(code), "<test>");
 	assert(ret == 0);
 
 	hbf_qjs_ctx_destroy(ctx);
@@ -70,7 +70,7 @@ static void test_eval_error(void)
 	ctx = hbf_qjs_ctx_create();
 	assert(ctx != NULL);
 
-	ret = hbf_qjs_eval(ctx, code, strlen(code));
+	ret = hbf_qjs_eval(ctx, code, strlen(code), "<test>");
 	assert(ret != 0);
 
 	error = hbf_qjs_get_error(ctx);
@@ -95,7 +95,7 @@ static void test_eval_function(void)
 	ctx = hbf_qjs_ctx_create();
 	assert(ctx != NULL);
 
-	ret = hbf_qjs_eval(ctx, code, strlen(code));
+	ret = hbf_qjs_eval(ctx, code, strlen(code), "<test>");
 	assert(ret == 0);
 
 	hbf_qjs_ctx_destroy(ctx);
@@ -117,7 +117,7 @@ static void test_timeout_enforcement(void)
 	ctx = hbf_qjs_ctx_create();
 	assert(ctx != NULL);
 
-	ret = hbf_qjs_eval(ctx, code, strlen(code));
+	ret = hbf_qjs_eval(ctx, code, strlen(code), "<test>");
 	/* Should fail due to timeout */
 	assert(ret != 0);
 

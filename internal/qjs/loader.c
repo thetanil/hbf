@@ -61,9 +61,9 @@ int hbf_qjs_load_script(hbf_qjs_ctx_t *ctx, sqlite3 *db, const char *name)
 
 	content_len = (size_t)sqlite3_column_bytes(stmt, 0);
 
-	/* Evaluate script */
+	/* Evaluate script with proper source name for error messages */
 	hbf_log_info("Loading script '%s' (%zu bytes)", name, content_len);
-	rc = hbf_qjs_eval(ctx, content, content_len);
+	rc = hbf_qjs_eval(ctx, content, content_len, name);
 
 	sqlite3_finalize(stmt);
 

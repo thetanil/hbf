@@ -72,6 +72,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 
 	if (JS_IsUndefined(app)) {
 		hbf_log_error("app is undefined in global context");
+		JS_FreeValue(ctx, app);
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
