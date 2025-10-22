@@ -79,6 +79,17 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	/* Create user pod if it doesn't exist */
+	if (!hbf_henv_user_exists(user_hash)) {
+		hbf_log_info("Creating user pod: %s", user_hash);
+		ret = hbf_henv_create_user_pod(user_hash);
+		if (ret != 0) {
+			hbf_log_error("Failed to create user pod");
+			hbf_henv_shutdown();
+			return 1;
+		}
+	}
+
 	/* Get database path */
 	ret = hbf_henv_get_db_path(user_hash, default_db_path);
 	if (ret != 0) {
