@@ -271,13 +271,12 @@ Options:
 
 ### Planned (Later Phases)
 ```bash
-  --qjs_pool_size <num>     QuickJS context pool size (default: 16) (Phase 3)
-  --qjs_mem_mb <num>        QuickJS memory limit per context in MB (default: 64) (Phase 3)
-  --qjs_timeout_ms <num>    QuickJS execution timeout in ms (default: 5000) (Phase 3)
   --db_max_open <num>       Max database connections (default: 100) (Phase 9)
 ```
 
-**Note**: Connection limit is currently hardcoded to 100 in Phase 2b; will become configurable in Phase 9.
+**Notes**:
+- Connection limit is currently hardcoded to 100 in Phase 2b; will become configurable in Phase 9.
+- QuickJS settings (memory: 64MB, timeout: 5000ms) are hardcoded in main.c - no pool, single global context.
 
 ## Development Environment
 

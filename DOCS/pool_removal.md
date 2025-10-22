@@ -91,9 +91,15 @@ database.
 - All tests passing (6 suites, 14 functions total).
 
 ### 6. Remove Pool-Related Configuration
-- Remove CLI/config options for pool size, context memory limits per pool entry,
-  etc.
-- Set memory and timeout limits globally for the single context.
+
+**Status: Complete ✅** (Nothing to Remove)
+
+- **No pool-related config options were ever implemented** - they were only documented as "Planned (Later Phases)" in CLAUDE.md.
+- Verified: No `--qjs_pool_size`, `--qjs_mem_mb`, or `--qjs_timeout_ms` options exist in code.
+- **Global limits are hardcoded in main.c**:
+  - `hbf_qjs_init(64, 5000)` - 64MB memory limit, 5000ms timeout
+  - Applied to single global context (no per-context configuration needed)
+- **Updated CLAUDE.md**: Removed planned pool-related options, documented current hardcoded settings.
 
 ### 7. Testing and Validation
 
