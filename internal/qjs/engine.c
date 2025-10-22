@@ -221,3 +221,13 @@ void *hbf_qjs_get_js_runtime(hbf_qjs_ctx_t *ctx)
 {
 	return ctx ? ctx->rt : NULL;
 }
+
+/* Mark the beginning of JS execution */
+void hbf_qjs_begin_exec(hbf_qjs_ctx_t *ctx)
+{
+	if (!ctx) {
+		return;
+	}
+
+	ctx->start_time_ms = hbf_qjs_get_time_ms();
+}

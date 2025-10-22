@@ -4,6 +4,7 @@
 #include "internal/core/log.h"
 #include "internal/qjs/bindings/request.h"
 #include "internal/qjs/bindings/response.h"
+#include "internal/qjs/engine.h"
 #include "internal/qjs/pool.h"
 #include "quickjs.h"
 
@@ -121,6 +122,9 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JSValue args[2];
 		args[0] = req;
 		args[1] = res;
+
+		/* Reset execution timeout timer before JS entry point */
+		hbf_qjs_begin_exec(qjs_ctx);
 
 		result = JS_Call(ctx, handle_func, app, 2, args);
 	}

@@ -48,4 +48,10 @@ void *hbf_qjs_get_js_context(hbf_qjs_ctx_t *ctx);
  */
 void *hbf_qjs_get_js_runtime(hbf_qjs_ctx_t *ctx);
 
+/* Mark the beginning of JS execution (resets timeout timer)
+ * Call this before any JS entry point (JS_Call, JS_Eval, etc.)
+ * to ensure accurate timeout measurement
+ */
+void hbf_qjs_begin_exec(hbf_qjs_ctx_t *ctx);
+
 #endif /* HBF_QJS_ENGINE_H */
