@@ -51,17 +51,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "pool",
-    srcs = ["pool.c"],
-    hdrs = ["pool.h"],
-    deps = [
-        ":engine",
-        ":loader",
-        "//internal/core:log",
-        "@sqlite3",
-    ],
-)
 
 cc_test(
     name = "engine_test",
@@ -87,18 +76,6 @@ cc_test(
     linkstatic = 1,
 )
 
-cc_test(
-    name = "pool_test",
-    srcs = ["pool_test.c"],
-    deps = [
-        ":pool",
-        "//internal/core:log",
-        "//internal/db:db",
-        "//internal/db:schema",
-        "@sqlite3",
-    ],
-    linkstatic = 1,
-)
 
 cc_test(
     name = "router_test",

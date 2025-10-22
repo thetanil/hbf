@@ -74,7 +74,6 @@ static void test_router_handle_simple(void)
 {
     sqlite3 *db = setup_test_db();
     int ret;
-    hbf_qjs_ctx_t *ctx;
 
     /* router.js is already in schema, just override server.js for this test */
     update_script(db, "server.js", server_js_non_recursive);
@@ -82,8 +81,6 @@ static void test_router_handle_simple(void)
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
 
-    ctx = hbf_qjs_ctx_create();
-    assert(ctx);
 
     /* load router (from schema) then server (our test version) */
     ret = hbf_qjs_load_script(ctx, db, "router.js");
@@ -100,7 +97,6 @@ static void test_router_handle_simple(void)
     ret = hbf_qjs_eval(ctx, invoke, strlen(invoke), "<test>");
     assert(ret == 0);
 
-    hbf_qjs_ctx_destroy(ctx);
     hbf_qjs_shutdown();
     hbf_db_close(db);
 
@@ -111,7 +107,6 @@ static void test_router_no_stack_overflow_on_404(void)
 {
     sqlite3 *db = setup_test_db();
     int ret;
-    hbf_qjs_ctx_t *ctx;
 
     /* router.js is already in schema, just override server.js for this test */
     update_script(db, "server.js", server_js_faulty);
@@ -119,8 +114,6 @@ static void test_router_no_stack_overflow_on_404(void)
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
 
-    ctx = hbf_qjs_ctx_create();
-    assert(ctx);
 
     ret = hbf_qjs_load_script(ctx, db, "router.js");
     assert(ret == 0);
@@ -137,7 +130,6 @@ static void test_router_no_stack_overflow_on_404(void)
     /* Expect failure due to reentrancy guard, not stack overflow */
     assert(ret != 0);
 
-    hbf_qjs_ctx_destroy(ctx);
     hbf_qjs_shutdown();
     hbf_db_close(db);
 
@@ -148,7 +140,6 @@ static void test_router_next_middleware_chain(void)
 {
     sqlite3 *db = setup_test_db();
     int ret;
-    hbf_qjs_ctx_t *ctx;
 
     /* router.js is already in schema, just override server.js for this test */
     update_script(db, "server.js", server_js_with_next);
@@ -156,8 +147,6 @@ static void test_router_next_middleware_chain(void)
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
 
-    ctx = hbf_qjs_ctx_create();
-    assert(ctx);
 
     ret = hbf_qjs_load_script(ctx, db, "router.js");
     assert(ret == 0);
@@ -185,7 +174,6 @@ static void test_router_next_middleware_chain(void)
     ret = hbf_qjs_eval(ctx, invoke404, strlen(invoke404), "<test>");
     assert(ret == 0);
 
-    hbf_qjs_ctx_destroy(ctx);
     hbf_qjs_shutdown();
     hbf_db_close(db);
 

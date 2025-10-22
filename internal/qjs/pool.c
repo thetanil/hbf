@@ -57,6 +57,10 @@ int hbf_qjs_pool_init(int pool_size, size_t mem_limit_mb, int timeout_ms,
 	/* Pre-create contexts */
 	hbf_log_info("Creating QuickJS context pool (size=%d)", pool_size);
 
+	/* Create clean QuickJS contexts following best practices
+	 * Do NOT load router.js/server.js here - that should happen per-request
+	 * This keeps contexts fresh and avoids state pollution between requests
+	 */
 	for (i = 0; i < pool_size; i++) {
 		hbf_qjs_ctx_t *ctx = hbf_qjs_ctx_create();
 		if (!ctx) {
@@ -72,27 +76,12 @@ int hbf_qjs_pool_init(int pool_size, size_t mem_limit_mb, int timeout_ms,
 			return -1;
 		}
 
-		/* Initialize context with router.js and server.js from database */
-		if (db) {
-			rc = hbf_qjs_ctx_init_with_scripts(ctx, db);
-			if (rc != 0) {
-				hbf_log_error("Failed to initialize context %d with scripts", i);
-				/* Clean up partial pool */
-				hbf_qjs_ctx_destroy(ctx);
-				while (i > 0) {
-					i--;
-					hbf_qjs_ctx_destroy(g_pool.entries[i].ctx);
-				}
-				pthread_mutex_destroy(&g_pool.mutex);
-				pthread_cond_destroy(&g_pool.cond);
-				hbf_qjs_shutdown();
-				return -1;
-			}
-		}
-
 		g_pool.entries[i].ctx = ctx;
 		g_pool.entries[i].available = 1;
 	}
+
+	/* Store database reference for later use (when loading scripts per-request) */
+	(void)db; /* Unused for now - will be used when we implement per-request script loading */
 
 	g_pool.pool_size = pool_size;
 	g_pool.initialized = 1;

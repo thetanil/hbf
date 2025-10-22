@@ -5,7 +5,7 @@
 #include "internal/qjs/bindings/request.h"
 #include "internal/qjs/bindings/response.h"
 #include "internal/qjs/engine.h"
-#include "internal/qjs/pool.h"
+// #include "internal/qjs/pool.h" // pool removed
 #include "quickjs.h"
 
 /* QuickJS request handler */
@@ -28,10 +28,11 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 
 	hbf_log_debug("QuickJS handler: %s %s", ri->request_method, ri->local_uri);
 
-	/* Acquire QuickJS context from pool */
-	qjs_ctx = hbf_qjs_pool_acquire();
+	// Pool removed: use global QuickJS context
+	extern hbf_qjs_ctx_t *g_qjs_ctx; // TODO: define global context in main
+	qjs_ctx = g_qjs_ctx;
 	if (!qjs_ctx) {
-		hbf_log_error("Failed to acquire QuickJS context");
+		hbf_log_error("Global QuickJS context not initialized");
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -39,7 +40,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	ctx = (JSContext *)hbf_qjs_get_js_context(qjs_ctx);
 	if (!ctx) {
 		hbf_log_error("Failed to get JS context");
-		hbf_qjs_pool_release(qjs_ctx);
+		// Pool removed: no release needed for global context
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}

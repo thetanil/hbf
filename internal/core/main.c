@@ -3,7 +3,8 @@
 #include "log.h"
 #include "../henv/manager.h"
 #include "../http/server.h"
-#include "../qjs/pool.h"
+#include "../qjs/engine.h"
+#include "../qjs/loader.h"
 #include "../db/db.h"
 #include "../db/schema.h"
 #include <signal.h>
@@ -14,6 +15,7 @@
 static volatile bool g_shutdown = false;
 static hbf_server_t *g_server = NULL;
 static sqlite3 *g_default_db = NULL;
+static hbf_qjs_ctx_t *g_qjs_ctx = NULL;
 
 static void signal_handler(int signum)
 {
@@ -66,21 +68,35 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* Initialize QuickJS context pool (16 contexts, 64MB each, 5s timeout) */
-	ret = hbf_qjs_pool_init(16, 64, 5000, g_default_db);
+	// Initialize QuickJS engine (memory limit: 64MB, timeout: 5000ms)
+	ret = hbf_qjs_init(64, 5000);
 	if (ret != 0) {
-		hbf_log_error("Failed to initialize QuickJS pool");
+		hbf_log_error("Failed to initialize QuickJS engine");
 		hbf_db_close(g_default_db);
 		hbf_henv_shutdown();
 		return 1;
 	}
 
-	/* Log pool statistics */
-	{
-		int total, available, in_use;
-		hbf_qjs_pool_stats(&total, &available, &in_use);
-		hbf_log_info("QuickJS pool initialized: %d total, %d available, %d in use",
-			     total, available, in_use);
+	// Create global QuickJS context
+	g_qjs_ctx = hbf_qjs_ctx_create();
+	if (!g_qjs_ctx) {
+		hbf_log_error("Failed to create QuickJS context");
+		hbf_qjs_shutdown();
+		hbf_db_close(g_default_db);
+		hbf_henv_shutdown();
+		return 1;
+	}
+
+	// Load router.js and server.js from database
+	ret = hbf_qjs_ctx_init_with_scripts(g_qjs_ctx, g_default_db);
+	if (ret != 0) {
+		hbf_log_error("Failed to initialize QuickJS context with scripts");
+		hbf_qjs_ctx_destroy(g_qjs_ctx);
+		g_qjs_ctx = NULL;
+		hbf_qjs_shutdown();
+		hbf_db_close(g_default_db);
+		hbf_henv_shutdown();
+		return 1;
 	}
 
 	/* Set up signal handlers for graceful shutdown */
@@ -118,9 +134,12 @@ int main(int argc, char *argv[])
 	hbf_server_stop(g_server);
 	g_server = NULL;
 
-	/* Shutdown QuickJS pool */
-	hbf_qjs_pool_shutdown();
-	hbf_log_info("QuickJS pool shutdown");
+	// Shutdown global QuickJS context and engine
+	if (g_qjs_ctx) {
+		hbf_qjs_ctx_destroy(g_qjs_ctx);
+		g_qjs_ctx = NULL;
+	}
+	hbf_qjs_shutdown();
 
 	/* Close default database */
 	if (g_default_db) {

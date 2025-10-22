@@ -20,7 +20,7 @@ cc_library(
     deps = [
         "//internal/core:log",
         "//internal/qjs:bindings",
-        "//internal/qjs:pool",
+    # pool removed
         "@civetweb//:civetweb",
         "@quickjs-ng//:quickjs",
     ],

@@ -6,11 +6,11 @@
 
 /* QuickJS request handler (delegates to JavaScript)
  * This handler:
- * 1. Acquires a QuickJS context from the pool
+ * 1. Uses a global QuickJS context
  * 2. Creates request/response objects
  * 3. Calls app.handle(req, res) in JavaScript
  * 4. Sends the response back to CivetWeb
- * 5. Releases the context back to the pool
+ * 5. No release needed for global context
  *
  * Returns: HTTP status code
  */
