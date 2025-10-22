@@ -41,24 +41,25 @@ find "$STATIC_DIR" -type f | sort | while read -r file; do
 		type="static"
 	fi
 
-	# Extract just filename for server.js
+	# Extract just filename for server.js and router.js
 	if [[ "$rel_path" == "server.js" ]]; then
 		name="server.js"
+	elif [[ "$rel_path" == "lib/router.js" ]]; then
+		name="router.js"
 	else
 		name="/$rel_path"
 	fi
 
-	# Read file content and escape for JSON
-	content=$(cat "$file" | python3 -c 'import sys, json; print(json.dumps(sys.stdin.read()))')
-
-	# Generate INSERT statement
-	cat >> "$OUTPUT_SQL" << EOF
-INSERT INTO nodes (type, body) VALUES (
-    '$type',
-    json_object('name', '$name', 'content', $content)
-);
-
-EOF
+	# Read file content and create proper JSON object
+	python3 - "$file" "$type" "$name" >> "$OUTPUT_SQL" << 'PYTHON_SCRIPT'
+import sys, json
+with open(sys.argv[1], 'r') as f:
+    content = f.read()
+body = json.dumps({'name': sys.argv[3], 'content': content})
+# Escape single quotes for SQL by doubling them
+body_escaped = body.replace("'", "''")
+print(f"INSERT INTO nodes (type, body) VALUES ('{sys.argv[2]}', '{body_escaped}');\n")
+PYTHON_SCRIPT
 done
 
 echo "Generated $OUTPUT_SQL with $(grep -c '^INSERT' "$OUTPUT_SQL") inserts"

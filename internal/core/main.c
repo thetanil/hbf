@@ -49,22 +49,23 @@ int main(int argc, char *argv[])
 	}
 
 	/* Open default database for QuickJS (index.db) */
-	/* TODO: Make this configurable, for now use in-memory for Phase 3.1 */
-	ret = hbf_db_open(":memory:", &g_default_db);
+	/* TODO: Make this configurable, for now use /tmp/hbf_test.db for Phase 3.2 testing */
+	ret = hbf_db_open("/tmp/hbf_test.db", &g_default_db);
 	if (ret != 0) {
 		hbf_log_error("Failed to open default database");
 		hbf_henv_shutdown();
 		return 1;
 	}
 
-	/* Initialize database schema */
-	ret = hbf_db_init_schema(g_default_db);
+	/* Initialize database schema (skip if already exists for Phase 3.2 testing) */
+	/* TODO: Add proper schema version checking */
+	/* ret = hbf_db_init_schema(g_default_db);
 	if (ret != 0) {
 		hbf_log_error("Failed to initialize database schema");
 		hbf_db_close(g_default_db);
 		hbf_henv_shutdown();
 		return 1;
-	}
+	} */
 
 	/* Initialize QuickJS context pool (16 contexts, 64MB each, 5s timeout) */
 	ret = hbf_qjs_pool_init(16, 64, 5000, g_default_db);

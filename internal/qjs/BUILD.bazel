@@ -13,6 +13,34 @@ cc_library(
 )
 
 cc_library(
+    name = "bindings",
+    srcs = [
+        "bindings/request.c",
+        "bindings/response.c",
+    ],
+    hdrs = [
+        "bindings/request.h",
+        "bindings/response.h",
+    ],
+    deps = [
+        "//internal/core:log",
+        "@civetweb//:civetweb",
+        "@quickjs-ng//:quickjs",
+    ],
+)
+
+cc_library(
+    name = "modules",
+    srcs = ["modules.c"],
+    hdrs = ["modules.h"],
+    deps = [
+        ":engine",
+        ":loader",
+        "//internal/core:log",
+    ],
+)
+
+cc_library(
     name = "loader",
     srcs = ["loader.c"],
     hdrs = ["loader.h"],

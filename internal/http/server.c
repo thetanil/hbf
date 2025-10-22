@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "server.h"
 #include "../core/log.h"
+#include "handler.h"
 #include <civetweb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +16,6 @@ struct hbf_server {
 
 /* Forward declarations */
 static int health_handler(struct mg_connection *conn, void *cbdata);
-static int notfound_handler(struct mg_connection *conn, void *cbdata);
 
 hbf_server_t *hbf_server_start(const hbf_config_t *config)
 {
@@ -60,7 +60,8 @@ hbf_server_t *hbf_server_start(const hbf_config_t *config)
 
 	/* Register handlers */
 	mg_set_request_handler(server->ctx, "/health", health_handler, server);
-	mg_set_request_handler(server->ctx, "**", notfound_handler, server);
+	/* All other routes handled by QuickJS */
+	mg_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
 
 	hbf_log_info("HTTP server started on port %d", config->port);
 
@@ -124,31 +125,4 @@ static int health_handler(struct mg_connection *conn, void *cbdata)
 		response);
 
 	return 200;
-}
-
-/* 404 handler for unmatched routes */
-static int notfound_handler(struct mg_connection *conn, void *cbdata)
-{
-	const struct mg_request_info *ri;
-	char response[256];
-
-	(void)cbdata;
-
-	ri = mg_get_request_info(conn);
-
-	snprintf(response, sizeof(response),
-		"{\"error\":\"Not Found\",\"path\":\"%s\"}",
-		ri->local_uri);
-
-	mg_printf(conn,
-		"HTTP/1.1 404 Not Found\r\n"
-		"Content-Type: application/json\r\n"
-		"Content-Length: %d\r\n"
-		"Connection: close\r\n"
-		"\r\n"
-		"%s",
-		(int)strlen(response),
-		response);
-
-	return 404;
 }

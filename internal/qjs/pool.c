@@ -72,6 +72,15 @@ int hbf_qjs_pool_init(int pool_size, size_t mem_limit_mb, int timeout_ms,
 			return -1;
 		}
 
+		/* Load router.js first (provides Express-style API) */
+		if (db) {
+			rc = hbf_qjs_load_script(ctx, db, "router.js");
+			if (rc != 0) {
+				hbf_log_warn("Failed to load router.js into context %d", i);
+				/* Continue anyway - might not exist yet */
+			}
+		}
+
 		/* Load server.js into context */
 		if (db) {
 			rc = hbf_qjs_load_server_js(ctx, db);
