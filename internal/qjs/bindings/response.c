@@ -7,21 +7,13 @@
 
 #include "internal/core/log.h"
 
-/* Private atom for storing response pointer */
-static JSAtom response_ptr_atom = 0;
-
 /* Helper: Get response_t from JS object */
 static hbf_response_t *get_response_data(JSContext *ctx, JSValueConst this_val)
 {
 	JSValue ptr_val;
 	int64_t ptr_int;
 
-	if (response_ptr_atom == 0) {
-		hbf_log_error("Response pointer atom not initialized");
-		return NULL;
-	}
-
-	ptr_val = JS_GetProperty(ctx, this_val, response_ptr_atom);
+	ptr_val = JS_GetPropertyStr(ctx, this_val, "__hbf_response_ptr__");
 	if (JS_IsException(ptr_val) || JS_IsUndefined(ptr_val)) {
 		JS_FreeValue(ctx, ptr_val);
 		hbf_log_error("Failed to get response pointer from object");
@@ -211,11 +203,6 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 	res_data->body_len = 0;
 	res_data->sent = 0;
 
-	/* Initialize atom on first use */
-	if (response_ptr_atom == 0) {
-		response_ptr_atom = JS_NewAtom(ctx, "__hbf_response_ptr__");
-	}
-
 	/* Create response object */
 	res = JS_NewObject(ctx);
 	if (JS_IsException(res)) {
@@ -224,7 +211,7 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 
 	/* Store response pointer as hidden property (as int64) */
 	ptr_val = JS_NewInt64(ctx, (int64_t)((uintptr_t)res_data));
-	JS_SetProperty(ctx, res, response_ptr_atom, ptr_val);
+	JS_SetPropertyStr(ctx, res, "__hbf_response_ptr__", ptr_val);
 
 	/* Bind methods */
 	JS_SetPropertyStr(ctx, res, "status",
