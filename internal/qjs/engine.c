@@ -79,10 +79,8 @@ void hbf_qjs_shutdown(void)
 	hbf_log_info("QuickJS engine shutdown");
 }
 
-/* Create QuickJS context */
-
-
-hbf_qjs_ctx_t *hbf_qjs_ctx_create(void)
+/* Create QuickJS context (internal implementation) */
+static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 {
 	hbf_qjs_ctx_t *ctx;
 	JSRuntime *rt;
@@ -133,13 +131,21 @@ hbf_qjs_ctx_t *hbf_qjs_ctx_create(void)
 	ctx->error_buf[0] = '\0';
 	ctx->db = NULL;
 
-	/* Open DB (use in-memory for tests, or configurable path) */
-	if (hbf_db_open(":memory:", &ctx->db) != 0) {
-		hbf_log_error("Failed to open SQLite DB");
-		JS_FreeContext(js_ctx);
-		JS_FreeRuntime(rt);
-		free(ctx);
-		return NULL;
+	/* Handle database setup */
+	if (db) {
+		/* Use provided database (external) */
+		ctx->db = db;
+		ctx->own_db = 0; /* Don't close on destroy */
+	} else if (own_db) {
+		/* Open own database (for testing) */
+		if (hbf_db_open(":memory:", &ctx->db) != 0) {
+			hbf_log_error("Failed to open SQLite DB");
+			JS_FreeContext(js_ctx);
+			JS_FreeRuntime(rt);
+			free(ctx);
+			return NULL;
+		}
+		ctx->own_db = 1; /* Close on destroy */
 	}
 
 	/* Set context opaque to allow DB access from JS modules */
@@ -155,25 +161,41 @@ hbf_qjs_ctx_t *hbf_qjs_ctx_create(void)
 	return ctx;
 }
 
+/* Create QuickJS context with in-memory database (for testing) */
+hbf_qjs_ctx_t *hbf_qjs_ctx_create(void)
+{
+	return hbf_qjs_ctx_create_internal(NULL, 1);
+}
+
+/* Create QuickJS context with external database */
+hbf_qjs_ctx_t *hbf_qjs_ctx_create_with_db(sqlite3 *db)
+{
+	if (!db) {
+		hbf_log_error("External database pointer is NULL");
+		return NULL;
+	}
+	return hbf_qjs_ctx_create_internal(db, 0);
+}
+
 /* Destroy QuickJS context */
 void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx)
 {
 	if (!ctx)
 		return;
 
+	/* Only close database if we own it */
+	if (ctx->db && ctx->own_db) {
+		sqlite3_close(ctx->db);
+		ctx->db = NULL;
+	}
 
-       if (ctx->db) {
-	       sqlite3_close(ctx->db);
-	       ctx->db = NULL;
-       }
-
-       if (ctx->ctx && ctx->rt) {
-	       JS_RunGC(ctx->rt);
-	       JS_FreeContext(ctx->ctx);
-	       JS_FreeRuntime(ctx->rt);
-	       ctx->ctx = NULL;
-	       ctx->rt = NULL;
-       }
+	if (ctx->ctx && ctx->rt) {
+		JS_RunGC(ctx->rt);
+		JS_FreeContext(ctx->ctx);
+		JS_FreeRuntime(ctx->rt);
+		ctx->ctx = NULL;
+		ctx->rt = NULL;
+	}
 
 	free(ctx);
 	hbf_log_debug("QuickJS context destroyed");

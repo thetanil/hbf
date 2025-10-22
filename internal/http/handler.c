@@ -119,7 +119,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 500;
 	}
 
-	/* Call app.handle(req, res) */
+	/* Call app.handle(req, res) with mutex protection */
 	{
 		JSValue args[2];
 		args[0] = req;
@@ -135,12 +135,19 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			hbf_log_error("res is null or undefined!");
 		}
 
+		/* Lock mutex to serialize JS execution (single-threaded model) */
+		extern pthread_mutex_t g_qjs_mutex;
+		pthread_mutex_lock(&g_qjs_mutex);
+
 		/* Reset execution timeout timer before JS entry point */
 		hbf_qjs_begin_exec(qjs_ctx);
 
 		hbf_log_debug("Calling JS_Call...");
 		result = JS_Call(ctx, handle_func, app, 2, args);
 		hbf_log_debug("JS_Call returned");
+
+		/* Unlock mutex */
+		pthread_mutex_unlock(&g_qjs_mutex);
 	}
 
 	/* Check for JavaScript error */

@@ -63,13 +63,32 @@ database.
 - No per-request context isolation assumptions - all routes share the single global context and database connection.
 
 ### 5. Update HTTP Handler
-- In `internal/http/handler.c`, use the single JSContext for all requests.
-- For each request:
-  - Construct JS request/response objects as before.
-  - Call `app.handle(req, res)` in the shared context.
-  - Ensure no concurrent JS execution (single-threaded event loop or mutex
-    around JS calls).
-- If concurrency is needed, queue requests and process them sequentially.
+
+**Status: Complete ✅**
+
+- HTTP handler (`internal/http/handler.c`) updated to use global `g_qjs_ctx`.
+- **Engine modifications**:
+  - Added `hbf_qjs_ctx_create_with_db(sqlite3 *db)` to accept external database pointer.
+  - Internal refactoring: `hbf_qjs_ctx_create_internal()` handles both owned and external DB.
+  - Added `own_db` flag to context struct - only closes DB if owned.
+  - `hbf_qjs_ctx_destroy()` respects `own_db` flag.
+- **Main.c startup sequence**:
+  1. Opens main database (`{storage_dir}/{hash(timestamp)}/index.db` - unique per invocation)
+  2. Initializes database schema
+  3. Creates global QuickJS context with external DB via `hbf_qjs_ctx_create_with_db()`
+  4. Loads `router.js` and `server.js` from database `nodes` table
+  5. Starts HTTP server
+- **Thread safety**:
+  - Added global `pthread_mutex_t g_qjs_mutex` in `main.c`.
+  - HTTP handler locks mutex before `JS_Call()` and unlocks after.
+  - Single-threaded JS execution model - requests are serialized.
+- **Request flow**:
+  1. HTTP request arrives → handler acquires mutex
+  2. Creates JS `req` and `res` objects
+  3. Calls `app.handle(req, res)` in shared context
+  4. Releases mutex
+  5. Sends HTTP response
+- All tests passing (6 suites, 14 functions total).
 
 ### 6. Remove Pool-Related Configuration
 - Remove CLI/config options for pool size, context memory limits per pool entry,

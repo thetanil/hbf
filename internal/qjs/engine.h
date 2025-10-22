@@ -16,9 +16,14 @@ struct hbf_qjs_ctx {
 	char error_buf[512];
 	int64_t start_time_ms;
 	sqlite3 *db;
+	int own_db; /* 1 if we own the DB and should close it */
 };
 /* Global QuickJS context pointer (extern for static build) */
 extern hbf_qjs_ctx_t *g_qjs_ctx;
+
+/* Global mutex for serializing JS execution (defined in main.c) */
+#include <pthread.h>
+extern pthread_mutex_t g_qjs_mutex;
 
 /* Initialize QuickJS engine with global settings
  * mem_limit_mb: Memory limit per context in MB (0 = unlimited)
@@ -32,8 +37,15 @@ void hbf_qjs_shutdown(void);
 
 /* Create a new QuickJS context
  * Returns context handle or NULL on error
+ * NOTE: This creates an in-memory database for testing
  */
 hbf_qjs_ctx_t *hbf_qjs_ctx_create(void);
+
+/* Create a new QuickJS context with external database
+ * db: Existing SQLite database connection (caller owns, must remain valid)
+ * Returns context handle or NULL on error
+ */
+hbf_qjs_ctx_t *hbf_qjs_ctx_create_with_db(sqlite3 *db);
 
 /* Destroy a QuickJS context */
 void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx);
