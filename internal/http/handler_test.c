@@ -102,55 +102,6 @@ static sqlite3 *setup_test_db(void)
 	return db;
 }
 
-static void insert_script(sqlite3 *db, const char *name, const char *content)
-{
-	const char *sql =
-		"INSERT INTO nodes (type, body) VALUES ('script', json_object('name', ?, 'content', ?))";
-	sqlite3_stmt *stmt;
-	int ret;
-
-	ret = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-	assert(ret == SQLITE_OK);
-
-	ret = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
-	assert(ret == SQLITE_OK);
-
-	ret = sqlite3_bind_text(stmt, 2, content, -1, SQLITE_STATIC);
-	assert(ret == SQLITE_OK);
-
-	ret = sqlite3_step(stmt);
-	assert(ret == SQLITE_DONE);
-
-	sqlite3_finalize(stmt);
-}
-
-static char *load_router_js(void)
-{
-	FILE *f = fopen("static/lib/router.js", "r");
-	char *content;
-	long size;
-
-	if (!f) {
-		return NULL;
-	}
-
-	fseek(f, 0, SEEK_END);
-	size = ftell(f);
-	fseek(f, 0, SEEK_SET);
-
-	content = malloc((size_t)size + 1);
-	if (!content) {
-		fclose(f);
-		return NULL;
-	}
-
-	fread(content, 1, (size_t)size, f);
-	content[size] = '\0';
-	fclose(f);
-
-	return content;
-}
-
 static void init_mock_connection(const char *method, const char *uri)
 {
 	memset(&mock_conn, 0, sizeof(mock_conn));

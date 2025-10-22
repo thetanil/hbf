@@ -7,11 +7,35 @@
 
 #include "internal/core/log.h"
 
+/* Private atom for storing response pointer */
+static JSAtom response_ptr_atom = 0;
+
 /* Helper: Get response_t from JS object */
 static hbf_response_t *get_response_data(JSContext *ctx, JSValueConst this_val)
 {
-	(void)ctx; /* Unused parameter */
-	return (hbf_response_t *)JS_GetOpaque(this_val, 0);
+	JSValue ptr_val;
+	int64_t ptr_int;
+
+	if (response_ptr_atom == 0) {
+		hbf_log_error("Response pointer atom not initialized");
+		return NULL;
+	}
+
+	ptr_val = JS_GetProperty(ctx, this_val, response_ptr_atom);
+	if (JS_IsException(ptr_val) || JS_IsUndefined(ptr_val)) {
+		JS_FreeValue(ctx, ptr_val);
+		hbf_log_error("Failed to get response pointer from object");
+		return NULL;
+	}
+
+	if (JS_ToInt64(ctx, &ptr_int, ptr_val) < 0) {
+		JS_FreeValue(ctx, ptr_val);
+		hbf_log_error("Failed to convert response pointer to integer");
+		return NULL;
+	}
+
+	JS_FreeValue(ctx, ptr_val);
+	return (hbf_response_t *)((uintptr_t)ptr_int);
 }
 
 /* res.status(code) - Set HTTP status code */
@@ -173,6 +197,7 @@ static JSValue js_res_set(JSContext *ctx, JSValueConst this_val,
 JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 {
 	JSValue res;
+	JSValue ptr_val;
 
 	if (!ctx || !res_data) {
 		hbf_log_error("Invalid arguments to hbf_qjs_create_response");
@@ -186,14 +211,20 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 	res_data->body_len = 0;
 	res_data->sent = 0;
 
+	/* Initialize atom on first use */
+	if (response_ptr_atom == 0) {
+		response_ptr_atom = JS_NewAtom(ctx, "__hbf_response_ptr__");
+	}
+
 	/* Create response object */
 	res = JS_NewObject(ctx);
 	if (JS_IsException(res)) {
 		return res;
 	}
 
-	/* Store response data as opaque pointer */
-	JS_SetOpaque(res, res_data);
+	/* Store response pointer as hidden property (as int64) */
+	ptr_val = JS_NewInt64(ctx, (int64_t)((uintptr_t)res_data));
+	JS_SetProperty(ctx, res, response_ptr_atom, ptr_val);
 
 	/* Bind methods */
 	JS_SetPropertyStr(ctx, res, "status",

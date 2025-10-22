@@ -26,24 +26,16 @@ static sqlite3 *setup_test_db(void)
     return db;
 }
 
-static void insert_script(sqlite3 *db, const char *name, const char *content)
+static void update_script(sqlite3 *db, const char *name, const char *content)
 {
     sqlite3_stmt *stmt;
     int ret;
 
-    /* Delete any existing script with this name (from schema or previous test) */
-    const char *delete_sql = "DELETE FROM nodes WHERE type='script' AND json_extract(body, '$.name') = ?";
-    ret = sqlite3_prepare_v2(db, delete_sql, -1, &stmt, NULL);
-    assert(ret == SQLITE_OK);
-    ret = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
-    assert(ret == SQLITE_OK);
-    ret = sqlite3_step(stmt);
-    assert(ret == SQLITE_DONE);
-    sqlite3_finalize(stmt);
-
-    /* Insert test script */
+    /* Update existing script content using UPDATE instead of DELETE+INSERT
+     * This preserves the original row ID and doesn't interfere with other tests */
     const char *sql =
-        "INSERT INTO nodes (type, body) VALUES ('script', json_object('name', ?, 'content', ?))";
+        "UPDATE nodes SET body = json_object('name', ?, 'content', ?) "
+        "WHERE type='script' AND json_extract(body, '$.name') = ?";
     ret = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     assert(ret == SQLITE_OK);
 
@@ -51,6 +43,9 @@ static void insert_script(sqlite3 *db, const char *name, const char *content)
     assert(ret == SQLITE_OK);
 
     ret = sqlite3_bind_text(stmt, 2, content, -1, SQLITE_STATIC);
+    assert(ret == SQLITE_OK);
+
+    ret = sqlite3_bind_text(stmt, 3, name, -1, SQLITE_STATIC);
     assert(ret == SQLITE_OK);
 
     ret = sqlite3_step(stmt);
@@ -82,7 +77,7 @@ static void test_router_handle_simple(void)
     hbf_qjs_ctx_t *ctx;
 
     /* router.js is already in schema, just override server.js for this test */
-    insert_script(db, "server.js", server_js_non_recursive);
+    update_script(db, "server.js", server_js_non_recursive);
 
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
@@ -119,7 +114,7 @@ static void test_router_no_stack_overflow_on_404(void)
     hbf_qjs_ctx_t *ctx;
 
     /* router.js is already in schema, just override server.js for this test */
-    insert_script(db, "server.js", server_js_faulty);
+    update_script(db, "server.js", server_js_faulty);
 
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
@@ -156,7 +151,7 @@ static void test_router_next_middleware_chain(void)
     hbf_qjs_ctx_t *ctx;
 
     /* router.js is already in schema, just override server.js for this test */
-    insert_script(db, "server.js", server_js_with_next);
+    update_script(db, "server.js", server_js_with_next);
 
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);

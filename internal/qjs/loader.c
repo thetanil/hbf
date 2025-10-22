@@ -83,3 +83,31 @@ int hbf_qjs_load_server_js(hbf_qjs_ctx_t *ctx, sqlite3 *db)
 {
 	return hbf_qjs_load_script(ctx, db, "server.js");
 }
+
+/* Initialize context with router.js and server.js from database */
+int hbf_qjs_ctx_init_with_scripts(hbf_qjs_ctx_t *ctx, sqlite3 *db)
+{
+	int rc;
+
+	if (!ctx || !db) {
+		hbf_log_error("Invalid arguments to hbf_qjs_ctx_init_with_scripts");
+		return -1;
+	}
+
+	/* Load router.js first (provides Express-style API) */
+	rc = hbf_qjs_load_script(ctx, db, "router.js");
+	if (rc != 0) {
+		hbf_log_error("Failed to load router.js into context");
+		return -1;
+	}
+
+	/* Load server.js into context */
+	rc = hbf_qjs_load_server_js(ctx, db);
+	if (rc != 0) {
+		hbf_log_error("Failed to load server.js into context");
+		return -1;
+	}
+
+	hbf_log_debug("QuickJS context initialized with router.js and server.js");
+	return 0;
+}

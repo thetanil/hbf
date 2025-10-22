@@ -72,21 +72,21 @@ int hbf_qjs_pool_init(int pool_size, size_t mem_limit_mb, int timeout_ms,
 			return -1;
 		}
 
-		/* Load router.js first (provides Express-style API) */
+		/* Initialize context with router.js and server.js from database */
 		if (db) {
-			rc = hbf_qjs_load_script(ctx, db, "router.js");
+			rc = hbf_qjs_ctx_init_with_scripts(ctx, db);
 			if (rc != 0) {
-				hbf_log_warn("Failed to load router.js into context %d", i);
-				/* Continue anyway - might not exist yet */
-			}
-		}
-
-		/* Load server.js into context */
-		if (db) {
-			rc = hbf_qjs_load_server_js(ctx, db);
-			if (rc != 0) {
-				hbf_log_warn("Failed to load server.js into context %d (will retry per-request)", i);
-				/* Continue anyway - server.js might not exist yet */
+				hbf_log_error("Failed to initialize context %d with scripts", i);
+				/* Clean up partial pool */
+				hbf_qjs_ctx_destroy(ctx);
+				while (i > 0) {
+					i--;
+					hbf_qjs_ctx_destroy(g_pool.entries[i].ctx);
+				}
+				pthread_mutex_destroy(&g_pool.mutex);
+				pthread_cond_destroy(&g_pool.cond);
+				hbf_qjs_shutdown();
+				return -1;
 			}
 		}
 
