@@ -63,10 +63,25 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 
 	/* Get global.app.handle */
 	global = JS_GetGlobalObject(ctx);
+
+	/* Debug: check what's in global */
+	hbf_log_debug("Getting 'app' from global object");
+
 	app = JS_GetPropertyStr(ctx, global, "app");
 
-	if (JS_IsUndefined(app) || JS_IsNull(app)) {
-		hbf_log_warn("app object not found - server.js not loaded?");
+	if (JS_IsUndefined(app)) {
+		hbf_log_error("app is undefined in global context");
+		JS_FreeValue(ctx, res);
+		JS_FreeValue(ctx, req);
+		JS_FreeValue(ctx, global);
+		hbf_qjs_pool_release(qjs_ctx);
+		mg_send_http_error(conn, 503, "Service Unavailable");
+		return 503;
+	}
+
+	if (JS_IsNull(app)) {
+		hbf_log_error("app is null in global context");
+		JS_FreeValue(ctx, app);
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
@@ -77,8 +92,20 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 
 	handle_func = JS_GetPropertyStr(ctx, app, "handle");
 
+	if (JS_IsUndefined(handle_func)) {
+		hbf_log_error("app.handle is undefined");
+		JS_FreeValue(ctx, handle_func);
+		JS_FreeValue(ctx, app);
+		JS_FreeValue(ctx, res);
+		JS_FreeValue(ctx, req);
+		JS_FreeValue(ctx, global);
+		hbf_qjs_pool_release(qjs_ctx);
+		mg_send_http_error(conn, 500, "Internal Server Error");
+		return 500;
+	}
+
 	if (!JS_IsFunction(ctx, handle_func)) {
-		hbf_log_error("app.handle is not a function");
+		hbf_log_error("app.handle is not a function (type check failed)");
 		JS_FreeValue(ctx, handle_func);
 		JS_FreeValue(ctx, app);
 		JS_FreeValue(ctx, res);

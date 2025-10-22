@@ -103,6 +103,7 @@ cc_test(
 cc_test(
     name = "router_test",
     srcs = ["router_test.c"],
+    data = ["//:static/lib/router.js"],
     deps = [
         ":engine",
         ":loader",

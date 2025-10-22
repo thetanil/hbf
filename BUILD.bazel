@@ -1,6 +1,9 @@
 # HBF - Web Compute Environment
 # Root build file
 
+# Export static files for tests
+exports_files(["static/lib/router.js"])
+
 # Stripped binary (smaller, production-ready)
 genrule(
     name = "hbf",
