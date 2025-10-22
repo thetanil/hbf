@@ -1,3 +1,54 @@
+read internal/db/BUILD.bazel
+
+make instructions for claude about how the static content build works
+there are files in static/
+they should be appended to the schema.sql 
+the file object names are json with the name property being the path relative to ./static/)
+schema is translated into c code, so that it is compiled into the bin (bazel)
+when the bin is started, it looks for a database if one is given on the cli
+otherwise, it opens the last database written to in ./henvs
+otherwise it exits
+
+ensure that a database with nodes table is available before proceding to any
+module which includes db.
+
+> no do not manually run the inject_content.sh script. this is handled in db internal/db/BUILD.bazel
+
+the 
+
+
+● Summary
+
+  I've successfully diagnosed and fixed all the issues you requested:
+
+  ✅ Completed Tasks:
+
+  1. Removed hardcoded /tmp/hbf_test.db path - No more references to /tmp filesystem
+  2. Implemented proper database path generation - Uses ./henvs/{random_id}.db pattern with DNS-safe hash
+  3. Added --db_path CLI argument - Database path can be specified from command line
+  4. Uncommented and fixed schema initialization - hbf_db_init_schema() now runs on startup
+  5. Added detailed error logging in pool.c - Script loading failures now show the actual JavaScript error and fail fast with clear messages
+  6. Created standalone test (internal/qjs/standalone_test.c) - Proves that context reuse is safe and global variables persist correctly across multiple JS_Eval() calls
+
+  🔍 Root Cause Analysis:
+
+  The original error "app is undefined in global context" was caused by:
+  - Schema initialization was commented out in main.c
+  - Database had no nodes table
+  - Script loading failed silently with "no such table: nodes"
+  - Contexts were initialized but app was never defined
+  - Requests failed with 503 because app was undefined
+
+  📊 Current Status:
+
+  BEFORE: 503 Service Unavailable (app undefined)NOW: Scripts load successfully! ✅REMAINING: "Maximum call stack size exceeded" error (re-entrancy bug in handler)
+
+run tools/integration_test.sh and see the following: The "Maximum call stack
+size exceeded" is a separate issue related to how app.handle() is being called
+from the C code, which matches the git commit messages you saw earlier about
+handling re-entrancy.
+
+
 # HBF - Web Compute Environment
 
 A single, statically linked C99 web compute environment embedding SQLite, CivetWeb, and QuickJS-NG for runtime extensibility. HBF provides isolated user pods with programmable routing, document storage, and full-text search—all in one self-contained binary with zero runtime dependencies.

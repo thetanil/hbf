@@ -124,22 +124,52 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		args[0] = req;
 		args[1] = res;
 
+		hbf_log_debug("About to call app.handle()");
+
+		/* Check if req and res are valid */
+		if (JS_IsNull(req) || JS_IsUndefined(req)) {
+			hbf_log_error("req is null or undefined!");
+		}
+		if (JS_IsNull(res) || JS_IsUndefined(res)) {
+			hbf_log_error("res is null or undefined!");
+		}
+
 		/* Reset execution timeout timer before JS entry point */
 		hbf_qjs_begin_exec(qjs_ctx);
 
+		hbf_log_debug("Calling JS_Call...");
 		result = JS_Call(ctx, handle_func, app, 2, args);
+		hbf_log_debug("JS_Call returned");
 	}
 
 	/* Check for JavaScript error */
 	if (JS_IsException(result)) {
 		JSValue exception = JS_GetException(ctx);
 		const char *err_str = JS_ToCString(ctx, exception);
+		JSValue stack = JS_GetPropertyStr(ctx, exception, "stack");
+		const char *stack_str = NULL;
+
+		if (!JS_IsUndefined(stack)) {
+			stack_str = JS_ToCString(ctx, stack);
+		}
 
 		hbf_log_error("JavaScript error in request handler: %s",
 			      err_str ? err_str : "unknown");
 
+		if (stack_str) {
+			hbf_log_error("Stack trace: %s", stack_str);
+			JS_FreeCString(ctx, stack_str);
+		}
+
+		JS_FreeValue(ctx, stack);
 		if (err_str) {
 			JS_FreeCString(ctx, err_str);
+		}
+
+		/* Reset re-entrancy flag before releasing context back to pool */
+		{
+			JSValue false_val = JS_FALSE;
+			JS_SetPropertyStr(ctx, app, "_inHandle", false_val);
 		}
 
 		JS_FreeValue(ctx, exception);
@@ -159,6 +189,12 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	/* Send response */
 	status = response.status_code;
 	hbf_send_response(conn, &response);
+
+	/* Reset re-entrancy flag before releasing context back to pool */
+	{
+		JSValue false_val = JS_FALSE;
+		JS_SetPropertyStr(ctx, app, "_inHandle", false_val);
+	}
 
 	/* Cleanup */
 	JS_FreeValue(ctx, result);

@@ -82,65 +82,72 @@ Router.prototype.handle = function (req, res) {
     var method = req.method || 'GET';
     var path = req.path || '/';
     var idx = 0;
+    var nextCalled = false;
+    var callNext = true;
 
     // Prevent accidental recursion like app.use(app.handle) or nested app.handle()
     if (this._inHandle) {
-        throw new Error('Re-entrant app.handle() detected');
+        throw new Error('Re-entrant app.handle() detected (path=' + path + ')');
     }
     this._inHandle = true;
 
     // Initialize params
     req.params = req.params || {};
 
-    // next() function - iterates through stack sequentially
+    // next() function - allows middleware to continue the chain
     function next(err) {
         if (err) {
             // Error handling
             throw err;
         }
-
-        // Check if we've exhausted the stack
-        if (idx >= self.stack.length) {
-            return; // End of chain
-        }
-
-        // Get next layer from stack
-        var layer = self.stack[idx++];
-
-        // Check if this layer matches the request
-        var methodMatch = layer.method === null || layer.method === method;
-        var pathMatch = false;
-        var match = null;
-
-        if (layer.path === null) {
-            // Middleware - matches all paths
-            pathMatch = true;
-        } else {
-            // Route - check if path matches
-            match = path.match(layer.path.regex);
-            pathMatch = match !== null;
-
-            if (pathMatch && match) {
-                // Extract route parameters
-                for (var j = 0; j < layer.path.keys.length; j++) {
-                    req.params[layer.path.keys[j]] = match[j + 1];
-                }
-            }
-        }
-
-        // If layer doesn't match, skip to next
-        if (!methodMatch || !pathMatch) {
-            return next();
-        }
-
-        // Call the handler
-        // Handler may call next() to continue, or not (to end the chain)
-        layer.handler(req, res, next);
+        nextCalled = true;
     }
 
-    // Start the middleware/routing chain
+    // Iterative middleware/routing chain (avoids stack overflow)
     try {
-        next();
+        while (callNext && idx < self.stack.length) {
+            nextCalled = false;
+            callNext = false;
+
+            // Get next layer from stack
+            var layer = self.stack[idx++];
+
+            // Check if this layer matches the request
+            var methodMatch = layer.method === null || layer.method === method;
+            var pathMatch = false;
+            var match = null;
+
+            if (layer.path === null) {
+                // Middleware - matches all paths
+                pathMatch = true;
+            } else {
+                // Route - check if path matches
+                match = path.match(layer.path.regex);
+                pathMatch = match !== null;
+
+                if (pathMatch && match) {
+                    // Extract route parameters
+                    for (var j = 0; j < layer.path.keys.length; j++) {
+                        req.params[layer.path.keys[j]] = match[j + 1];
+                    }
+                }
+            }
+
+            // If layer doesn't match, continue to next
+            if (!methodMatch || !pathMatch) {
+                callNext = true;
+                continue;
+            }
+
+            // Call the handler
+            // Handler may call next() to continue, or not (to end the chain)
+            layer.handler(req, res, next);
+
+            // If handler called next(), continue the chain
+            if (nextCalled) {
+                callNext = true;
+            }
+        }
     } finally {
         // Always clear the reentrancy flag
         this._inHandle = false;
