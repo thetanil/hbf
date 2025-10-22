@@ -30,7 +30,7 @@ cc_library(
 cc_test(
     name = "handler_test",
     srcs = ["handler_test.c"],
-    data = ["//:static/lib/router.js"],
+    data = ["//static/lib:router.js"],
     deps = [
         ":handler",
         "//internal/core:log",

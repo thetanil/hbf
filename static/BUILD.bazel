@@ -1,0 +1,5 @@
+# Static content for HBF
+
+exports_files([
+    "server.js",
+])

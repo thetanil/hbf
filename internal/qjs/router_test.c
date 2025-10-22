@@ -28,11 +28,22 @@ static sqlite3 *setup_test_db(void)
 
 static void insert_script(sqlite3 *db, const char *name, const char *content)
 {
-    const char *sql =
-        "INSERT INTO nodes (type, body) VALUES ('script', json_object('name', ?, 'content', ?))";
     sqlite3_stmt *stmt;
     int ret;
 
+    /* Delete any existing script with this name (from schema or previous test) */
+    const char *delete_sql = "DELETE FROM nodes WHERE type='script' AND json_extract(body, '$.name') = ?";
+    ret = sqlite3_prepare_v2(db, delete_sql, -1, &stmt, NULL);
+    assert(ret == SQLITE_OK);
+    ret = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    assert(ret == SQLITE_OK);
+    ret = sqlite3_step(stmt);
+    assert(ret == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+
+    /* Insert test script */
+    const char *sql =
+        "INSERT INTO nodes (type, body) VALUES ('script', json_object('name', ?, 'content', ?))";
     ret = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     assert(ret == SQLITE_OK);
 
@@ -48,33 +59,7 @@ static void insert_script(sqlite3 *db, const char *name, const char *content)
     sqlite3_finalize(stmt);
 }
 
-/* Load the actual router.js from filesystem for testing */
-static char *load_router_js(void)
-{
-    FILE *f = fopen("static/lib/router.js", "r");
-    char *content;
-    long size;
-
-    if (!f) {
-        return NULL;
-    }
-
-    fseek(f, 0, SEEK_END);
-    size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    content = malloc((size_t)size + 1);
-    if (!content) {
-        fclose(f);
-        return NULL;
-    }
-
-    fread(content, 1, (size_t)size, f);
-    content[size] = '\0';
-    fclose(f);
-
-    return content;
-}
+/* router.js is now loaded from the database schema, no need to load from filesystem */
 
 /* server with non-recursive route */
 static const char *server_js_non_recursive =
@@ -93,16 +78,11 @@ static const char *server_js_with_next =
 static void test_router_handle_simple(void)
 {
     sqlite3 *db = setup_test_db();
-    char *router_content;
     int ret;
     hbf_qjs_ctx_t *ctx;
 
-    router_content = load_router_js();
-    assert(router_content != NULL);
-
-    insert_script(db, "router.js", router_content);
+    /* router.js is already in schema, just override server.js for this test */
     insert_script(db, "server.js", server_js_non_recursive);
-    free(router_content);
 
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
@@ -110,7 +90,7 @@ static void test_router_handle_simple(void)
     ctx = hbf_qjs_ctx_create();
     assert(ctx);
 
-    /* load router then server */
+    /* load router (from schema) then server (our test version) */
     ret = hbf_qjs_load_script(ctx, db, "router.js");
     assert(ret == 0);
     ret = hbf_qjs_load_server_js(ctx, db);
@@ -135,16 +115,11 @@ static void test_router_handle_simple(void)
 static void test_router_no_stack_overflow_on_404(void)
 {
     sqlite3 *db = setup_test_db();
-    char *router_content;
     int ret;
     hbf_qjs_ctx_t *ctx;
 
-    router_content = load_router_js();
-    assert(router_content != NULL);
-
-    insert_script(db, "router.js", router_content);
+    /* router.js is already in schema, just override server.js for this test */
     insert_script(db, "server.js", server_js_faulty);
-    free(router_content);
 
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);
@@ -177,16 +152,11 @@ static void test_router_no_stack_overflow_on_404(void)
 static void test_router_next_middleware_chain(void)
 {
     sqlite3 *db = setup_test_db();
-    char *router_content;
     int ret;
     hbf_qjs_ctx_t *ctx;
 
-    router_content = load_router_js();
-    assert(router_content != NULL);
-
-    insert_script(db, "router.js", router_content);
+    /* router.js is already in schema, just override server.js for this test */
     insert_script(db, "server.js", server_js_with_next);
-    free(router_content);
 
     ret = hbf_qjs_init(64, 2000);
     assert(ret == 0);

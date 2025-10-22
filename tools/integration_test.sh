@@ -23,8 +23,9 @@ cleanup() {
         echo -e "${GREEN}Server stopped${NC}"
     fi
 
-    # Clean up temp files
+    # Clean up temp files and test database
     rm -f "$STDOUT_LOG" "$STDERR_LOG"
+    rm -f /tmp/hbf_test.db /tmp/hbf_test.db-shm /tmp/hbf_test.db-wal
 }
 
 trap cleanup EXIT INT TERM
@@ -110,6 +111,12 @@ main() {
     echo "=================================="
     echo "HBF Integration Test"
     echo "=================================="
+    echo ""
+
+    # Delete test database to ensure fresh state
+    echo -e "${YELLOW}Cleaning up test database...${NC}"
+    rm -f /tmp/hbf_test.db /tmp/hbf_test.db-shm /tmp/hbf_test.db-wal
+    echo -e "${GREEN}Test database cleaned${NC}"
     echo ""
 
     # Find available port

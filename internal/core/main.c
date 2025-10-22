@@ -57,15 +57,14 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* Initialize database schema (skip if already exists for Phase 3.2 testing) */
-	/* TODO: Add proper schema version checking */
-	/* ret = hbf_db_init_schema(g_default_db);
+	/* Initialize database schema (skip if already exists) */
+	ret = hbf_db_init_schema(g_default_db);
 	if (ret != 0) {
 		hbf_log_error("Failed to initialize database schema");
 		hbf_db_close(g_default_db);
 		hbf_henv_shutdown();
 		return 1;
-	} */
+	}
 
 	/* Initialize QuickJS context pool (16 contexts, 64MB each, 5s timeout) */
 	ret = hbf_qjs_pool_init(16, 64, 5000, g_default_db);

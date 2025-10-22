@@ -12,6 +12,12 @@ sh_binary(
     visibility = ["//visibility:public"],
 )
 
+sh_binary(
+    name = "inject_content",
+    srcs = ["inject_content.sh"],
+    visibility = ["//visibility:public"],
+)
+
 cc_binary(
     name = "test_qjs",
     srcs = ["test_qjs.c"],

@@ -1,11 +1,50 @@
 # Database utilities
 
-# Convert schema.sql to C source file
+# Generate SQL inserts for static content (router.js, server.js, etc.)
+genrule(
+    name = "static_content_sql_gen",
+    srcs = [
+        "//static:server.js",
+        "//static/lib:router.js",
+        "//static/www:index.html",
+        "//static/www:style.css",
+    ],
+    outs = ["static_content.sql"],
+    cmd = """
+        # Create temp directory structure matching static/
+        TMPDIR=$$(mktemp -d)
+        trap "rm -rf $$TMPDIR" EXIT
+        mkdir -p $$TMPDIR/static/lib $$TMPDIR/static/www
+
+        # Copy files to temp directory with correct structure
+        cp $(location //static:server.js) $$TMPDIR/static/server.js
+        cp $(location //static/lib:router.js) $$TMPDIR/static/lib/router.js
+        cp $(location //static/www:index.html) $$TMPDIR/static/www/index.html
+        cp $(location //static/www:style.css) $$TMPDIR/static/www/style.css
+
+        # Run inject_content script
+        $(location //tools:inject_content) $$TMPDIR/static $(location static_content.sql)
+    """,
+    tools = ["//tools:inject_content"],
+)
+
+# Merge schema.sql with static content SQL
+genrule(
+    name = "schema_with_content_gen",
+    srcs = [
+        "schema.sql",
+        ":static_content_sql_gen",
+    ],
+    outs = ["schema_with_content.sql"],
+    cmd = "cat $(location schema.sql) $(location :static_content_sql_gen) > $(location schema_with_content.sql)",
+)
+
+# Convert merged schema to C source file
 genrule(
     name = "schema_sql_gen",
-    srcs = ["schema.sql"],
+    srcs = [":schema_with_content_gen"],
     outs = ["schema_sql.c"],
-    cmd = "$(location //tools:sql_to_c) $(location schema.sql) $(location schema_sql.c)",
+    cmd = "$(location //tools:sql_to_c) $(location :schema_with_content_gen) $(location schema_sql.c)",
     tools = ["//tools:sql_to_c"],
 )
 

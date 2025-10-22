@@ -36,11 +36,22 @@ static void teardown_test_db(sqlite3 *db)
 static void insert_test_script(sqlite3 *db, const char *name,
 				const char *content)
 {
-	const char *sql =
-		"INSERT INTO nodes (type, body) VALUES ('script', json_object('name', ?, 'content', ?))";
 	sqlite3_stmt *stmt;
 	int ret;
 
+	/* Delete any existing script with this name (from schema or previous test) */
+	const char *delete_sql = "DELETE FROM nodes WHERE type='script' AND json_extract(body, '$.name') = ?";
+	ret = sqlite3_prepare_v2(db, delete_sql, -1, &stmt, NULL);
+	assert(ret == SQLITE_OK);
+	ret = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+	assert(ret == SQLITE_OK);
+	ret = sqlite3_step(stmt);
+	assert(ret == SQLITE_DONE);
+	sqlite3_finalize(stmt);
+
+	/* Insert test script */
+	const char *sql =
+		"INSERT INTO nodes (type, body) VALUES ('script', json_object('name', ?, 'content', ?))";
 	ret = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
 	assert(ret == SQLITE_OK);
 
@@ -61,11 +72,9 @@ static void test_load_server_js(void)
 	sqlite3 *db;
 	hbf_qjs_ctx_t *ctx;
 	int ret;
-	const char *script_content = "var x = 42; // server.js loaded";
 
-	/* Setup */
+	/* Setup - database is already initialized with schema (including server.js) */
 	db = setup_test_db();
-	insert_test_script(db, "server.js", script_content);
 
 	ret = hbf_qjs_init(64, 5000);
 	assert(ret == 0);
@@ -73,7 +82,11 @@ static void test_load_server_js(void)
 	ctx = hbf_qjs_ctx_create();
 	assert(ctx != NULL);
 
-	/* Test loading server.js */
+	/* Test: router.js should be available in schema */
+	ret = hbf_qjs_load_script(ctx, db, "router.js");
+	assert(ret == 0);
+
+	/* Test: server.js should be available in schema */
 	ret = hbf_qjs_load_server_js(ctx, db);
 	assert(ret == 0);
 
@@ -82,7 +95,7 @@ static void test_load_server_js(void)
 	hbf_qjs_shutdown();
 	teardown_test_db(db);
 
-	printf("  ✓ Load server.js from database\n");
+	printf("  ✓ Load router.js and server.js from database schema\n");
 }
 
 static void test_load_missing_script(void)
@@ -91,7 +104,7 @@ static void test_load_missing_script(void)
 	hbf_qjs_ctx_t *ctx;
 	int ret;
 
-	/* Setup without inserting script */
+	/* Setup */
 	db = setup_test_db();
 
 	ret = hbf_qjs_init(64, 5000);
@@ -100,8 +113,8 @@ static void test_load_missing_script(void)
 	ctx = hbf_qjs_ctx_create();
 	assert(ctx != NULL);
 
-	/* Should fail - script not found */
-	ret = hbf_qjs_load_server_js(ctx, db);
+	/* Should fail - nonexistent.js not in schema */
+	ret = hbf_qjs_load_script(ctx, db, "nonexistent.js");
 	assert(ret != 0);
 
 	/* Cleanup */
