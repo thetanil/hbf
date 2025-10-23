@@ -16,26 +16,66 @@ var app = {
 };
 
 function handleRequest(req) {
-    // Minimal response object
-    var res = {
-        status: function (code) { this.status = code; return this; },
-        send: function (body) { this.body = body; return this; }
-    };
-    // Simple hello endpoint
-    if (req.uri === '/' || req.path === '/') {
-        res.status(200);
-        res.send('Hello from JavaScript!');
-    } else if (req.uri === '/qjshealth' || req.path === '/qjshealth') {
-        res.status(200);
-        res.send('{"status":"ok"}');
-    } else if (req.uri === '/echo' || req.path === '/echo') {
-        res.status(200);
-        res.send('{"received":' + JSON.stringify(req.body || '') + '}');
-    } else {
-        res.status(404);
-        res.send('Not Found');
+    // Diagnostic logging
+    if (typeof print === 'function') {
+        print('handleRequest: incoming req = ' + JSON.stringify(req));
     }
-    return res;
+    var status = 200;
+    var body = '';
+    var headers = {};
+    if (req.uri === '/' || req.path === '/') {
+        status = 200;
+        body = 'Hello from JavaScript!';
+    } else if (req.uri === '/qjshealth' || req.path === '/qjshealth') {
+        status = 200;
+        body = '{"status":"ok"}';
+        headers['Content-Type'] = 'application/json';
+    } else if (req.uri === '/echo' || req.path === '/echo') {
+        status = 200;
+        body = '{"received":' + JSON.stringify(req.body || '') + '}';
+        headers['Content-Type'] = 'application/json';
+    } else {
+        status = 404;
+        body = 'Not Found';
+    }
+    var resObj = {
+        status: status,
+        body: body,
+        headers: headers
+    };
+    if (typeof print === 'function') {
+        print('handleRequest: outgoing res = ' + JSON.stringify(resObj));
+    }
+    return resObj;
+}
+
+
+
+function handleRequest(req) {
+    var status = 200;
+    var body = '';
+    var headers = {};
+    if (req.uri === '/' || req.path === '/') {
+        status = 200;
+        body = 'Hello from JavaScript!';
+    } else if (req.uri === '/qjshealth' || req.path === '/qjshealth') {
+        status = 200;
+        body = '{"status":"ok"}';
+        headers['Content-Type'] = 'application/json';
+    } else if (req.uri === '/echo' || req.path === '/echo') {
+        status = 200;
+        body = '{"received":' + JSON.stringify(req.body || '') + '}';
+        headers['Content-Type'] = 'application/json';
+    } else {
+        status = 404;
+        body = 'Not Found';
+    }
+    var resObj = {
+        status: status,
+        body: body,
+        headers: headers
+    };
+    return resObj;
 }
 
 globalThis.handleRequest = handleRequest;

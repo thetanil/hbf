@@ -184,7 +184,7 @@ int qjs_init(void)
 	/* Load server.js */
 	hbf_log_info("Loading server.js (%zu bytes)", server_js_source_len);
 	JSValue result = JS_Eval(ctx, server_js_source, server_js_source_len,
-	                         "server.js", JS_EVAL_TYPE_MODULE);
+							 "server.js", JS_EVAL_TYPE_GLOBAL);
 
 	if (JS_IsException(result)) {
 			   hbf_log_error("Failed to load server.js");
@@ -222,23 +222,74 @@ error:
 
 int qjs_handle_request(const qjs_request *req, qjs_response *resp)
 {
-	if (!ctx || !req || !resp) {
+	if (!req || !resp) {
 		return -1;
 	}
 
-	/* Create request object */
-	JSValue req_obj = create_request_object(ctx, req);
+	JSRuntime *local_rt = JS_NewRuntime();
+	if (!local_rt) {
+		return -1;
+	}
+	JS_SetMemoryLimit(local_rt, 64 * 1024 * 1024);
+	JSContext *local_ctx = JS_NewContext(local_rt);
+	if (!local_ctx) {
+		JS_FreeRuntime(local_rt);
+		return -1;
+	}
 
-	/* Call handleRequest(req) */
-	JSValue result = JS_Call(ctx, handle_request_func, JS_UNDEFINED, 1, &req_obj);
-	JS_FreeValue(ctx, req_obj);
-
+	// Load server.js
+	JSValue result = JS_Eval(local_ctx, server_js_source, server_js_source_len,
+							 "server.js", JS_EVAL_TYPE_GLOBAL);
 	if (JS_IsException(result)) {
-			   hbf_log_error("JavaScript execution failed in handleRequest");
-		log_js_exception(ctx);
-		JS_FreeValue(ctx, result);
+		log_js_exception(local_ctx);
+		JS_FreeValue(local_ctx, result);
+		JS_FreeContext(local_ctx);
+		JS_FreeRuntime(local_rt);
+		memset(resp, 0, sizeof(*resp));
+		resp->status_code = 500;
+		resp->body = strdup("Internal Server Error: JS load failed");
+		resp->body_len = strlen(resp->body);
+		return -1;
+	}
+	JS_FreeValue(local_ctx, result);
 
-		/* Return 500 error */
+	// Get handleRequest
+	JSValue global = JS_GetGlobalObject(local_ctx);
+	JSValue local_handle_request_func = JS_GetPropertyStr(local_ctx, global, "handleRequest");
+	JS_FreeValue(local_ctx, global);
+	if (!JS_IsFunction(local_ctx, local_handle_request_func)) {
+		JS_FreeValue(local_ctx, local_handle_request_func);
+		JS_FreeContext(local_ctx);
+		JS_FreeRuntime(local_rt);
+		memset(resp, 0, sizeof(*resp));
+		resp->status_code = 500;
+		resp->body = strdup("Internal Server Error: handleRequest missing");
+		resp->body_len = strlen(resp->body);
+		return -1;
+	}
+
+	// Diagnostic logging: dump request object
+	hbf_log_info("qjs_handle_request: method=%s uri=%s query=%s httpVersion=%s body_len=%zu", req->method, req->uri, req->query_string ? req->query_string : "", req->http_version, req->body_len);
+	for (int i = 0; i < req->num_headers; ++i) {
+		hbf_log_info("  header[%d]: %s: %s", i, req->headers[i].name, req->headers[i].value);
+	}
+	if (req->body && req->body_len > 0) {
+		hbf_log_info("  body: %.100s", req->body); // Print up to 100 chars
+	}
+
+	// Create request object
+	JSValue req_obj = create_request_object(local_ctx, req);
+
+	// Call handleRequest(req)
+	JSValue js_result = JS_Call(local_ctx, local_handle_request_func, JS_UNDEFINED, 1, &req_obj);
+	JS_FreeValue(local_ctx, req_obj);
+	JS_FreeValue(local_ctx, local_handle_request_func);
+
+	if (JS_IsException(js_result)) {
+		log_js_exception(local_ctx);
+		JS_FreeValue(local_ctx, js_result);
+		JS_FreeContext(local_ctx);
+		JS_FreeRuntime(local_rt);
 		memset(resp, 0, sizeof(*resp));
 		resp->status_code = 500;
 		resp->body = strdup("Internal Server Error: JavaScript execution failed");
@@ -246,9 +297,12 @@ int qjs_handle_request(const qjs_request *req, qjs_response *resp)
 		return -1;
 	}
 
-	/* Extract response object */
-	int rc = extract_response_object(ctx, result, resp);
-	JS_FreeValue(ctx, result);
+	// Extract response object
+	int rc = extract_response_object(local_ctx, js_result, resp);
+	JS_FreeValue(local_ctx, js_result);
+
+	JS_FreeContext(local_ctx);
+	JS_FreeRuntime(local_rt);
 
 	return rc;
 }
