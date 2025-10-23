@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
 	// Query for router.js
 	{
 		sqlite3_stmt *stmt = NULL;
-		const char *sql = "SELECT body FROM nodes WHERE name = 'router.js' AND type = 'js'";
+		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'router.js' AND type = 'js'";
 		ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
 		if (ret == SQLITE_OK) {
 			if (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
 	// Query for server.js
 	{
 		sqlite3_stmt *stmt = NULL;
-		const char *sql = "SELECT body FROM nodes WHERE name = 'server.js' AND type = 'js'";
+		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'server.js' AND type = 'js'";
 		ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
 		if (ret == SQLITE_OK) {
 			if (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -205,7 +205,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Start HTTP server */
-	g_server = hbf_server_start(&config);
+	g_server = hbf_server_start(&config, default_db_path);
 	if (!g_server) {
 		hbf_log_error("Failed to start server");
 		return 1;

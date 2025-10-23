@@ -98,6 +98,7 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 		return NULL;
 	}
 
+	hbf_log_debug("Creating QuickJS runtime");
 	/* Create runtime */
 	rt = JS_NewRuntime();
 	if (!rt) {
@@ -106,17 +107,20 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 		return NULL;
 	}
 
+	hbf_log_debug("Setting memory limit");
 	/* Set memory limit */
 	if (g_qjs_config.mem_limit_bytes > 0) {
 		JS_SetMemoryLimit(rt, g_qjs_config.mem_limit_bytes);
 	}
 
+	hbf_log_debug("Setting interrupt handler");
 	/* Set interrupt handler for timeout */
 	if (g_qjs_config.timeout_ms > 0) {
 		JS_SetInterruptHandler(rt, hbf_qjs_interrupt_handler, ctx);
 	}
 
-	/* Create context */
+	hbf_log_debug("Creating QuickJS context");
+	/* Create context with standard library */
 	js_ctx = JS_NewContext(rt);
 	if (!js_ctx) {
 		hbf_log_error("Failed to create QuickJS context");
@@ -124,6 +128,7 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 		free(ctx);
 		return NULL;
 	}
+	hbf_log_debug("QuickJS context created, now setting up");
 
 	ctx->rt = rt;
 	ctx->ctx = js_ctx;
@@ -148,16 +153,32 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 		ctx->own_db = 1; /* Close on destroy */
 	}
 
+	hbf_log_debug("Setting context opaque");
 	/* Set context opaque to allow DB access from JS modules */
 	JS_SetContextOpaque(js_ctx, ctx);
 
-	/* Register db module (db.query, db.execute) */
+	hbf_log_debug("Adding intrinsics - BaseObjects");
+	/* Initialize standard builtin objects */
+	/* IMPORTANT: Add intrinsics AFTER setting up context but BEFORE registering modules */
+	JS_AddIntrinsicBaseObjects(js_ctx);  /* Object, Function, Array, etc. */
+
+	hbf_log_debug("Adding intrinsics - Date");
+	JS_AddIntrinsicDate(js_ctx);         /* Date.now() needed by server.js */
+
+	hbf_log_debug("Adding intrinsics - RegExp");
+	JS_AddIntrinsicRegExp(js_ctx);       /* RegExp needed for router.js path matching */
+
+	hbf_log_debug("Adding intrinsics - JSON");
+	JS_AddIntrinsicJSON(js_ctx);         /* JSON.stringify() needed for res.json() */
+
+	hbf_log_debug("Registering db module");
+	/* Register custom modules */
 	hbf_qjs_init_db_module(js_ctx);
 
-	/* Register console module (console.log, console.warn, etc.) */
+	hbf_log_debug("Registering console module");
 	hbf_qjs_init_console_module(js_ctx);
 
-	hbf_log_debug("QuickJS context created");
+	hbf_log_debug("QuickJS context created successfully");
 	return ctx;
 }
 

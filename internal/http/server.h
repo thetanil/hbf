@@ -15,9 +15,10 @@ typedef struct hbf_server hbf_server_t;
  * Create and start HTTP server.
  *
  * @param config: Configuration including port and log level
+ * @param db_path: Path to default database for static file serving
  * @return Server instance on success, NULL on error
  */
-hbf_server_t *hbf_server_start(const hbf_config_t *config);
+hbf_server_t *hbf_server_start(const hbf_config_t *config, const char *db_path);
 
 /*
  * Stop and destroy HTTP server.

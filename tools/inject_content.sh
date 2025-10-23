@@ -34,20 +34,21 @@ find "$STATIC_DIR" -type f | sort | while read -r file; do
 	# Get relative path from static dir
 	rel_path="${file#$STATIC_DIR/}"
 
-	# Determine type based on extension
-	if [[ "$rel_path" == *.js ]]; then
-		type="script"
-	else
-		type="static"
-	fi
-
-	# Extract just filename for server.js and router.js
+	# Determine type and name based on file
 	if [[ "$rel_path" == "server.js" ]]; then
+		type="js"
 		name="server.js"
 	elif [[ "$rel_path" == "lib/router.js" ]]; then
+		type="js"
 		name="router.js"
+	elif [[ "$rel_path" == www/* ]]; then
+		# Static web content
+		type="static"
+		# Remove www/ prefix for cleaner paths (www/index.html -> index.html)
+		name="${rel_path#www/}"
 	else
-		name="/$rel_path"
+		type="static"
+		name="$rel_path"
 	fi
 
 	# Read file content and create proper JSON object
@@ -58,7 +59,7 @@ with open(sys.argv[1], 'r') as f:
 body = json.dumps({'name': sys.argv[3], 'content': content})
 # Escape single quotes for SQL by doubling them
 body_escaped = body.replace("'", "''")
-print(f"INSERT INTO nodes (type, body) VALUES ('{sys.argv[2]}', '{body_escaped}');\n")
+print(f"INSERT INTO nodes (type, body) VALUES ('{sys.argv[2]}', '{body_escaped}');")
 PYTHON_SCRIPT
 done
 
