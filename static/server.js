@@ -1,81 +1,59 @@
-// Minimal server.js - single endpoint test
-// No router, no framework, just a simple request handler
+// HBF server.js - Express.js-compatible routing
+// Loaded from database on each request for complete isolation
 
 // Global app object that C code will call
 var app = {
     handle: function (req, res) {
-        // Simple hello endpoint
+        // Add custom header for all responses (middleware simulation)
+        res.set('X-Powered-By', 'HBF');
+
+        // Route: Homepage
+        if (req.path === '/') {
+            res.status(200);
+            res.send('<html><body><h1>HBF Server</h1><p>Available Routes:</p><ul>' +
+                     '<li>GET /hello - Hello World JSON</li>' +
+                     '<li>GET /user/:id - User info with parameter</li>' +
+                     '<li>GET /echo - Echo request info</li>' +
+                     '</ul></body></html>');
+            return;
+        }
+
+        // Route: /hello - Hello World JSON
+        if (req.path === '/hello') {
+            res.status(200);
+            res.json({ message: 'Hello World', status: 'ok' });
+            return;
+        }
+
+        // Route: /user/:id - User with parameter extraction
+        var userMatch = req.path.match(/^\/user\/([^\/]+)$/);
+        if (userMatch) {
+            var userId = userMatch[1];
+            res.status(200);
+            res.json({ userId: userId, message: 'User retrieved' });
+            return;
+        }
+
+        // Route: /echo - Echo request info
+        if (req.path === '/echo') {
+            res.status(200);
+            res.json({
+                method: req.method,
+                path: req.path,
+                headers: req.headers || {}
+            });
+            return;
+        }
+
+        // Route: /hellojs - Legacy endpoint for backward compatibility
         if (req.path === '/hellojs') {
             res.status(200);
             res.send('Hello from JavaScript!');
-        } else {
-            res.status(404);
-            res.send('Not Found');
+            return;
         }
+
+        // 404 - Not Found
+        res.status(404);
+        res.send('Not Found');
     }
 };
-
-function handleRequest(req) {
-    // Diagnostic logging
-    if (typeof print === 'function') {
-        print('handleRequest: incoming req = ' + JSON.stringify(req));
-    }
-    var status = 200;
-    var body = '';
-    var headers = {};
-    if (req.uri === '/' || req.path === '/') {
-        status = 200;
-        body = 'Hello from JavaScript!';
-    } else if (req.uri === '/qjshealth' || req.path === '/qjshealth') {
-        status = 200;
-        body = '{"status":"ok"}';
-        headers['Content-Type'] = 'application/json';
-    } else if (req.uri === '/echo' || req.path === '/echo') {
-        status = 200;
-        body = '{"received":' + JSON.stringify(req.body || '') + '}';
-        headers['Content-Type'] = 'application/json';
-    } else {
-        status = 404;
-        body = 'Not Found';
-    }
-    var resObj = {
-        status: status,
-        body: body,
-        headers: headers
-    };
-    if (typeof print === 'function') {
-        print('handleRequest: outgoing res = ' + JSON.stringify(resObj));
-    }
-    return resObj;
-}
-
-
-
-function handleRequest(req) {
-    var status = 200;
-    var body = '';
-    var headers = {};
-    if (req.uri === '/' || req.path === '/') {
-        status = 200;
-        body = 'Hello from JavaScript!';
-    } else if (req.uri === '/qjshealth' || req.path === '/qjshealth') {
-        status = 200;
-        body = '{"status":"ok"}';
-        headers['Content-Type'] = 'application/json';
-    } else if (req.uri === '/echo' || req.path === '/echo') {
-        status = 200;
-        body = '{"received":' + JSON.stringify(req.body || '') + '}';
-        headers['Content-Type'] = 'application/json';
-    } else {
-        status = 404;
-        body = 'Not Found';
-    }
-    var resObj = {
-        status: status,
-        body: body,
-        headers: headers
-    };
-    return resObj;
-}
-
-globalThis.handleRequest = handleRequest;

@@ -7,7 +7,12 @@
 
 #include "internal/core/log.h"
 
-/* Class ID for response objects */
+/*
+ * Class ID for response objects.
+ * NOTE: This MUST be re-initialized for each JSRuntime since class IDs
+ * are runtime-specific. When using per-request runtimes, we reset this
+ * to 0 and re-register the class for each new runtime.
+ */
 static JSClassID hbf_response_class_id = 0;
 
 /* Helper: Get response_t from JS object using opaque pointer */
@@ -180,23 +185,30 @@ static JSValue js_res_set(JSContext *ctx, JSValueConst this_val,
 	return JS_UNDEFINED;
 }
 
-/* Initialize response class (call once at startup) */
+/*
+ * Initialize response class for a new JSRuntime.
+ * IMPORTANT: Must be called for EACH new runtime when using per-request runtimes.
+ * Class IDs are runtime-specific and cannot be shared across runtimes.
+ */
 void hbf_qjs_init_response_class(JSContext *ctx)
 {
 	JSRuntime *rt = JS_GetRuntime(ctx);
 
-	/* Create class ID if not already created */
-	if (hbf_response_class_id == 0) {
-		JS_NewClassID(rt, &hbf_response_class_id);
+	/*
+	 * Always reset and re-register the class for the new runtime.
+	 * The static variable is just used to pass the ID between functions
+	 * within a single runtime's lifetime.
+	 */
+	hbf_response_class_id = 0;
+	JS_NewClassID(rt, &hbf_response_class_id);
 
-		/* Define class (no finalizer since we don't own the response_t) */
-		JSClassDef response_class_def = {
-			.class_name = "HbfResponse",
-			.finalizer = NULL, /* We don't own the response data */
-		};
+	/* Define class (no finalizer since we don't own the response_t) */
+	JSClassDef response_class_def = {
+		.class_name = "HbfResponse",
+		.finalizer = NULL, /* We don't own the response data */
+	};
 
-		JS_NewClass(rt, hbf_response_class_id, &response_class_def);
-	}
+	JS_NewClass(rt, hbf_response_class_id, &response_class_def);
 }
 
 /* Create JavaScript response object */
@@ -209,10 +221,10 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 		return JS_NULL;
 	}
 
-	/* Ensure class is initialized */
-	if (hbf_response_class_id == 0) {
-		hbf_qjs_init_response_class(ctx);
-	}
+	/*
+	 * Assume class is already initialized by hbf_qjs_init_response_class()
+	 * which is called from engine.c during context creation.
+	 */
 
 	/* Initialize response data */
 	res_data->status_code = 200;

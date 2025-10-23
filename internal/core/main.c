@@ -19,9 +19,7 @@
 
 static volatile bool g_shutdown = false;
 static hbf_server_t *g_server = NULL;
-static sqlite3 *g_default_db = NULL;
-hbf_qjs_ctx_t *g_qjs_ctx = NULL;
-pthread_mutex_t g_qjs_mutex = PTHREAD_MUTEX_INITIALIZER;
+sqlite3 *g_default_db = NULL; /* Exported for per-request context creation */
 
 static void signal_handler(int signum)
 {
@@ -116,7 +114,13 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	// Initialize QuickJS engine (memory limit: 64MB, timeout: 5000ms)
+	/*
+	 * Initialize QuickJS engine with global settings (memory limit: 64MB, timeout: 5000ms).
+	 * Note: We no longer create a global context here. Instead, each HTTP request
+	 * will create its own fresh JSRuntime + JSContext, load server.js, handle the
+	 * request, and then destroy the runtime/context. This prevents stack overflow
+	 * errors and ensures complete isolation between requests.
+	 */
 	ret = hbf_qjs_init(64, 5000);
 	if (ret != 0) {
 		hbf_log_error("Failed to initialize QuickJS engine");
@@ -125,41 +129,22 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	// Create global QuickJS context with the main database
-	g_qjs_ctx = hbf_qjs_ctx_create_with_db(g_default_db);
-	if (!g_qjs_ctx) {
-		hbf_log_error("Failed to create QuickJS context");
-		hbf_qjs_shutdown();
-		hbf_db_close(g_default_db);
-		hbf_henv_shutdown();
-		return 1;
-	}
-
-	// Load server.js from database (nodes table)
-	hbf_log_info("Loading server.js...");
-
-	// Query for server.js
+	/* Verify server.js exists in database (fail fast if missing) */
+	hbf_log_info("Verifying server.js in database...");
 	{
 		sqlite3_stmt *stmt = NULL;
 		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'server.js' AND type = 'js'";
 		ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
 		if (ret == SQLITE_OK) {
 			if (sqlite3_step(stmt) == SQLITE_ROW) {
-				const char *code = (const char *)sqlite3_column_text(stmt, 0);
 				int code_len = sqlite3_column_bytes(stmt, 0);
-				if (code && code_len > 0) {
-					ret = hbf_qjs_eval(g_qjs_ctx, code, (size_t)code_len, "server.js");
-					if (ret != 0) {
-						hbf_log_error("Failed to load server.js: %s",
-							     hbf_qjs_get_error(g_qjs_ctx));
-					} else {
-						hbf_log_info("Loaded server.js (%d bytes)", code_len);
-					}
-				}
+				hbf_log_info("Found server.js (%d bytes) - will load per-request", code_len);
 			} else {
-				hbf_log_warn("server.js not found in database - no routes configured");
+				hbf_log_warn("server.js not found in database - requests will fail");
 			}
 			sqlite3_finalize(stmt);
+		} else {
+			hbf_log_error("Failed to query for server.js");
 		}
 	}
 
@@ -199,11 +184,7 @@ int main(int argc, char *argv[])
 	hbf_server_stop(g_server);
 	g_server = NULL;
 
-	// Shutdown global QuickJS context and engine
-	if (g_qjs_ctx) {
-		hbf_qjs_ctx_destroy(g_qjs_ctx);
-		g_qjs_ctx = NULL;
-	}
+	/* Shutdown QuickJS engine (no global context to destroy) */
 	hbf_qjs_shutdown();
 
 	/* Close default database */

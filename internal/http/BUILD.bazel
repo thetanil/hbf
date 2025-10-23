@@ -19,11 +19,12 @@ cc_library(
     hdrs = ["handler.h"],
     deps = [
         "//internal/core:log",
+        "//internal/db:db",
         "//internal/qjs:bindings",
         "//internal/qjs:engine",
-    # pool removed
         "@civetweb//:civetweb",
         "@quickjs-ng//:quickjs",
+        "@sqlite3",
     ],
     visibility = ["//visibility:public"],
 )

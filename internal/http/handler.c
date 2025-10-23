@@ -2,11 +2,12 @@
 #include "internal/http/handler.h"
 
 #include "internal/core/log.h"
+#include "internal/db/db.h"
 #include "internal/qjs/bindings/request.h"
 #include "internal/qjs/bindings/response.h"
 #include "internal/qjs/engine.h"
-// #include "internal/qjs/pool.h" // pool removed
 #include "quickjs.h"
+#include "sqlite3.h"
 
 /* QuickJS request handler */
 int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
@@ -17,6 +18,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	JSValue global, app, handle_func, req, res, result;
 	hbf_response_t response;
 	int status;
+	extern sqlite3 *g_default_db; /* Global database from main.c */
 
 	(void)cbdata;
 
@@ -28,28 +30,67 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 
 	hbf_log_debug("QuickJS handler: %s %s", ri->request_method, ri->local_uri);
 
-	// Pool removed: use global QuickJS context
-	extern hbf_qjs_ctx_t *g_qjs_ctx; // TODO: define global context in main
-	qjs_ctx = g_qjs_ctx;
+	/*
+	 * CRITICAL: Create a fresh JSRuntime + JSContext for each request.
+	 * This prevents stack overflow errors and ensures complete isolation.
+	 * DO NOT reuse contexts between requests - this is a QuickJS best practice.
+	 */
+	qjs_ctx = hbf_qjs_ctx_create_with_db(g_default_db);
 	if (!qjs_ctx) {
-		hbf_log_error("Global QuickJS context not initialized");
-		mg_send_http_error(conn, 503, "Service Unavailable");
-		return 503;
+		hbf_log_error("Failed to create QuickJS context for request");
+		mg_send_http_error(conn, 500, "Internal Server Error");
+		return 500;
 	}
 
 	ctx = (JSContext *)hbf_qjs_get_js_context(qjs_ctx);
 	if (!ctx) {
 		hbf_log_error("Failed to get JS context");
-		// Pool removed: no release needed for global context
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
+	}
+
+	/* Load server.js from database into this fresh context */
+	{
+		sqlite3_stmt *stmt = NULL;
+		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'server.js' AND type = 'js'";
+		int ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
+		if (ret == SQLITE_OK) {
+			if (sqlite3_step(stmt) == SQLITE_ROW) {
+				const char *code = (const char *)sqlite3_column_text(stmt, 0);
+				int code_len = sqlite3_column_bytes(stmt, 0);
+				if (code && code_len > 0) {
+					ret = hbf_qjs_eval(qjs_ctx, code, (size_t)code_len, "server.js");
+					if (ret != 0) {
+						hbf_log_error("Failed to load server.js: %s",
+							     hbf_qjs_get_error(qjs_ctx));
+						sqlite3_finalize(stmt);
+						hbf_qjs_ctx_destroy(qjs_ctx);
+						mg_send_http_error(conn, 500, "Internal Server Error");
+						return 500;
+					}
+				}
+			} else {
+				hbf_log_error("server.js not found in database");
+				sqlite3_finalize(stmt);
+				hbf_qjs_ctx_destroy(qjs_ctx);
+				mg_send_http_error(conn, 503, "Service Unavailable");
+				return 503;
+			}
+			sqlite3_finalize(stmt);
+		} else {
+			hbf_log_error("Failed to query for server.js");
+			hbf_qjs_ctx_destroy(qjs_ctx);
+			mg_send_http_error(conn, 500, "Internal Server Error");
+			return 500;
+		}
 	}
 
 	/* Create request and response objects */
 	req = hbf_qjs_create_request(ctx, conn);
 	if (JS_IsException(req) || JS_IsNull(req)) {
 		hbf_log_error("Failed to create request object");
-				// pool removed: no release needed
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -58,7 +99,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	if (JS_IsException(res) || JS_IsNull(res)) {
 		hbf_log_error("Failed to create response object");
 		JS_FreeValue(ctx, req);
-	// pool removed: no release needed
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -70,6 +111,8 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		hbf_log_error("Failed to get global object!");
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
+		hbf_response_free(&response);
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -85,7 +128,8 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-	// pool removed: no release needed
+		hbf_response_free(&response);
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -96,7 +140,8 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-	// pool removed: no release needed
+		hbf_response_free(&response);
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -111,7 +156,8 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-	// pool removed: no release needed
+		hbf_response_free(&response);
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -124,40 +170,19 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, res);
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
-	// pool removed: no release needed
+		hbf_response_free(&response);
+		hbf_qjs_ctx_destroy(qjs_ctx);
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
-	/* Call app.handle(req, res) with mutex protection */
+	/* Call app.handle(req, res) - no mutex needed (isolated context) */
 	{
 		JSValue args[2];
 		args[0] = req;
 		args[1] = res;
 
 		hbf_log_debug("About to call app.handle()");
-
-		/* Check if req and res are valid */
-		hbf_log_debug("Validating req and res objects");
-		if (JS_IsNull(req) || JS_IsUndefined(req)) {
-			hbf_log_error("req is null or undefined!");
-		}
-		if (JS_IsNull(res) || JS_IsUndefined(res)) {
-			hbf_log_error("res is null or undefined!");
-		}
-
-		JSValue test_method = JS_GetPropertyStr(ctx, req, "method");
-		hbf_log_debug("req has method: %d", !JS_IsUndefined(test_method));
-		JS_FreeValue(ctx, test_method);
-
-		JSValue test_path = JS_GetPropertyStr(ctx, req, "path");
-		hbf_log_debug("req has path: %d", !JS_IsUndefined(test_path));
-		JS_FreeValue(ctx, test_path);
-
-		/* Lock mutex to serialize JS execution (single-threaded model) */
-		extern pthread_mutex_t g_qjs_mutex;
-		hbf_log_debug("Locking mutex");
-		pthread_mutex_lock(&g_qjs_mutex);
 
 		/* Reset execution timeout timer before JS entry point */
 		hbf_log_debug("Resetting exec timer");
@@ -166,9 +191,6 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		hbf_log_debug("Calling JS_Call (handle_func=%p, app=%p, argc=2)...", (void*)handle_func.u.ptr, (void*)app.u.ptr);
 		result = JS_Call(ctx, handle_func, app, 2, args);
 		hbf_log_debug("JS_Call returned (result=%p)", (void*)result.u.ptr);
-
-		/* Unlock mutex */
-		pthread_mutex_unlock(&g_qjs_mutex);
 	}
 
 	/* Check for JavaScript error */
@@ -213,12 +235,6 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			JS_FreeCString(ctx, err_str);
 		}
 
-		/* Reset re-entrancy flag before releasing context back to pool */
-		{
-			JSValue false_val = JS_FALSE;
-			JS_SetPropertyStr(ctx, app, "_inHandle", false_val);
-		}
-
 		JS_FreeValue(ctx, exception);
 		JS_FreeValue(ctx, result);
 		JS_FreeValue(ctx, handle_func);
@@ -227,7 +243,9 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, req);
 		JS_FreeValue(ctx, global);
 		hbf_response_free(&response);
-	// pool removed: no release needed
+
+		/* Destroy context after error */
+		hbf_qjs_ctx_destroy(qjs_ctx);
 
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
@@ -237,13 +255,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	status = response.status_code;
 	hbf_send_response(conn, &response);
 
-	/* Reset re-entrancy flag before releasing context back to pool */
-	{
-		JSValue false_val = JS_FALSE;
-		JS_SetPropertyStr(ctx, app, "_inHandle", false_val);
-	}
-
-	/* Cleanup */
+	/* Cleanup - free all JS values before destroying context */
 	JS_FreeValue(ctx, result);
 	JS_FreeValue(ctx, handle_func);
 	JS_FreeValue(ctx, app);
@@ -252,8 +264,8 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	JS_FreeValue(ctx, global);
 	hbf_response_free(&response);
 
-	/* Release context back to pool */
-	// pool removed: no release needed
+	/* Destroy the context and runtime (per-request isolation) */
+	hbf_qjs_ctx_destroy(qjs_ctx);
 
 	return status;
 }

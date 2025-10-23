@@ -1,1227 +1,1010 @@
 # HBF Implementation Guide (C99 + Bazel)
 
-This document proposes a pragmatic, phased plan to build HBF: a single,
+**Last Updated**: 2025-10-23 **Current Status**: Phase 3.0 Complete (Per-Request
+Context Isolation Fixed) ✅
+
+This document provides a pragmatic, phased plan to build HBF: a single,
 statically linked C99 web compute environment that embeds SQLite as the
-application/data store, CivetWeb for HTTP + WebSockets, and QuickJS-NG for runtime
-extensibility.
-
-**Design Philosophy**: Single-instance deployment (localhost or single k3s pod) with programmable routing via JavaScript. All HTTP requests handled by user-defined `server.js` loaded from SQLite database.
-
-- Language: Strict C99 (no C++)
-- Binary: Single statically linked executable with musl toolchain (100% static, no glibc)
-- HTTP: CivetWeb (HTTP, no HTTPS in scope), WebSockets supported
-- DB: SQLite3 amalgamation with WAL + FTS5; Simple-graph for document store
-- Scripting: QuickJS-NG embedded, sandboxed (memory/timeout limits)
-- Programmable Routing: Express.js-compatible API in JavaScript (`server.js` from database)
-- Static Content: Served from SQLite nodes table (injected at build time)
-- Templates: EJS-compatible renderer running inside QuickJS
-- Modules: Node-compatible JS module shim (CommonJS + minimal ESM), fs shim backed by SQLite
-- Build: Bazel (cc_binary), vendored third_party sources; no GPL dependencies (MIT/BSD/Apache-2/PD only)
-
-
-## Phase 0: Foundation & Constraints
-
-Goals
-- Freeze licensing, build, and dependency constraints
-- Establish project layout and Bazel scaffolding
-
-Decisions & Constraints
-- Licenses: SQLite (public domain), CivetWeb (MIT), QuickJS-NG (MIT), Simple-graph (MIT),
-  EJS (MIT), Argon2 (Apache-2.0), in-house JWT/HMAC (MIT), in-house shims (MIT). No GPL.
-- Static linking: Use musl toolchain exclusively to produce a 100% static
-  binary; no glibc builds.
-- C99 only: compile with `-std=c99`, no extensions; keep warnings-as-errors
-  later.
-- Security posture: No HTTPS, but WebSockets allowed; strong password hashing
-  (Argon2id) and signed JWT (HS256) with small self-contained crypto.
-
-Deliverables
-- Directory structure
-- DNS-safe hash generator for usernames
-- MODULE.bazel (bzlmod, Bazel 8) and Bazel `BUILD` files that compile a hello-world `hbf` cc_binary
-
-Structure
-```
-/third_party/
-  quickjs-ng/        (vendored, MIT - https://quickjs-ng.github.io/quickjs/)
-  sqlite/            (amalgamation or pinned source, PD)
-  simple_graph/      (vendored, MIT - https://github.com/dpapathanasiou/simple-graph)
-  civetweb/          (vendored, MIT)
-  argon2/            (ref impl, Apache-2)
-  sha256_hmac/       (single-file SHA-256 + HMAC, MIT – Brad Conte style)
-/internal/
-  core/              (logging, config, cli, hash generator)
-  http/              (civetweb server, request handler, websockets)
-  henv/              (henv manager, user pods, db files)
-  db/                (sqlite glue, schema, statements)
-  auth/              (argon2, jwt, sessions, middleware)
-  authz/             (table perms, row policies, query rewrite)
-  document/          (simple-graph integration + FTS5)
-  qjs/               (quickjs-ng engine, module loader, context pool, bindings/)
-    bindings/        (request, response, db, ws host modules)
-  templates/         (ejs integration helpers)
-  ws/                (websocket handlers)
-  api/               (REST endpoints, admin endpoints)
-/static/             (build-time content injected into database)
-  server.js          (Express-style routing script)
-  lib/               (router.js, static.js middleware)
-  www/               (index.html, style.css, client-side assets)
-/tools/
-  inject_content.sh  (static/ -> SQL INSERT statements)
-  sql_to_c.sh        (schema.sql -> C byte array)
-  pack_js/           (Bazel helper to bundle JS -> C array/SQLite blob)
-
-hbf_impl.md
-CLAUDE.md
-README.md
-MODULE.bazel
-BUILD.bazel (root)
-.bazelrc
-```
-
-Bazel Notes (Bazel 8, bzlmod)
-- Use `cc_library` for each third_party and subsystem; `cc_binary(name = "hbf")` linking fully static against musl.
-- musl toolchain is the only supported toolchain; glibc builds are not produced.
-- Suggested flags:
-  - copts: `-std=c99 -O2 -fdata-sections -ffunction-sections -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1`
-  - linkopts: `-static -Wl,--gc-sections`
-- Provide a Bazel C/C++ toolchain that targets musl and set it as default via `MODULE.bazel` (bzlmod).
- - WarningsAsErrors: '*' – treat all warnings as errors across all targets.
-
-Test/CI
-- Bazel `bazel test //...` with a consistent minunit-style C test harness (assert.h-based macros) and black-box HTTP tests.
-
-### Coding Standards & Quality Gates (always-on)
-
-- Standards to follow (documented in `DOCS/coding-standards.md`):
-  - CERT C Coding Standard (applicable rules for C99)
-  - Linux kernel coding style (tabs, 8-space indent, 80–100 cols) – approximated via .clang-format
-  - musl/libc style principles (minimalism, defined behavior, no UB, simple macros)
-- Enforcement (Bazel + tooling):
-  - Compiler flags (both clang and gcc compatible where possible):
-    - `-std=c99 -Wall -Wextra -Werror -Wpedantic -Wconversion -Wdouble-promotion -Wshadow -Wformat=2 -Wstrict-prototypes -Wold-style-definition -Wmissing-prototypes -Wmissing-declarations -Wcast-qual -Wwrite-strings -Wcast-align -Wundef -Wswitch-enum -Wswitch-default -Wbad-function-cast`
-  - `.clang-tidy` configured to enable CERT checks and core C checks (example):
-    - Checks: `cert-*,bugprone-*,portability-*,readability-*,clang-analyzer-*,performance-*,-cppcoreguidelines-*,-modernize-*`
-    - Language: C (no C++)
-  - `.clang-format` approximating Linux kernel style (tabs, indent width 8, continuation indent 8, column limit 100, keep simple blocks on one line disabled).
-  - Bazel lint target `//:lint` running clang-tidy over all C sources and failing on any warning.
-  - Pre-commit hook to run `clang-format --dry-run --Werror` and `clang-tidy` on staged files.
-  - CI: run `//:lint`, then build with `-Werror`, then tests.
-
-
-## Phase 1: HTTP Server Bootstrap (CivetWeb Only)
-
-Goal
-- Minimal HTTP server with CivetWeb, process lifecycle, config, and basic routing. **NO database work in this phase.**
-
-Tasks
-- Vendor CivetWeb source in `third_party/civetweb/`
-- CLI/config: `--port` (default 5309), `--log_level`, `--dev`
-- CivetWeb integration: start server, request logger, timeouts
-- Signal handling for graceful shutdown (SIGINT, SIGTERM)
-- Register handlers for:
-  - `GET /health` - returns JSON health status
-  - Placeholder 404 handler for all other routes
-- Logging infrastructure (`internal/core/log.c|h`) with levels (debug, info, warn, error)
-
-Deliverables
-- `internal/core/config.c|h` - CLI parsing and config struct
-- `internal/core/log.c|h` - Logging with levels and timestamps
-- `internal/http/server.c|h` - CivetWeb server lifecycle and callbacks
-- `third_party/civetweb/BUILD.bazel` - CivetWeb cc_library
-- `GET /health` returns 200 JSON: `{"status": "ok", "version": "0.1.0", "uptime_seconds": N}`
-
-Tests
-- Start/stop server without errors
-- `/health` endpoint returns expected JSON
-- Signal handling (graceful shutdown on SIGINT)
-- Invalid port handling
-- Concurrent request handling (10+ simultaneous requests)
-
-Acceptance
-- `bazel build //:hbf` compiles with CivetWeb linked
-- `bazel test //...` passes all tests
-- `bazel run //:lint` passes with no warnings
-- Server starts, responds to `/health`, shuts down cleanly
-
-
-## Phase 2a: SQLite Integration & Database Schema
-
-Goal
-- Integrate SQLite3 with Bazel and define complete database schema based on document-graph model.
-
-Note: This phase focuses solely on SQLite integration and schema definition. User pod management is deferred to Phase 2b.
-
-Tasks
-- Integrate SQLite3 from Bazel registry (or vendored amalgamation if not available)
-- SQLite database wrapper (`internal/db/db.c|h`):
-  - Open/close database connections
-  - Set pragmas: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`
-  - Execute SQL statements with prepared statements
-  - Basic error handling and result mapping
-- Schema initialization (`internal/db/schema.c|h`):
-  - Document-graph core tables (nodes, edges, tags) from `DOCS/schema_doc_graph.md`
-  - System tables for HBF (`_hbf_*` prefix)
-  - FTS5 virtual table for full-text search
-  - Indexes for performance
-  - Schema versioning
-
-### Database Schema (Detailed)
-
-**Document-Graph Core Tables** (based on `DOCS/schema_doc_graph.md`):
-
-```sql
--- Nodes: atomic or composite entities (functions, modules, scenes, documents, etc.)
-CREATE TABLE nodes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,                    -- e.g., "function", "module", "scene", "document"
-    body TEXT NOT NULL,                    -- JSON content and metadata
-    name TEXT GENERATED ALWAYS AS (json_extract(body, '$.name')) VIRTUAL,
-    version TEXT GENERATED ALWAYS AS (json_extract(body, '$.version')) VIRTUAL,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    modified_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_nodes_type ON nodes(type);
-CREATE INDEX idx_nodes_name ON nodes(name);
-CREATE INDEX idx_nodes_created ON nodes(created_at);
-
--- Edges: directed relationships between nodes
-CREATE TABLE edges (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    src INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    dst INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    rel TEXT NOT NULL,                     -- relationship type: "includes", "calls", "depends-on", "follows", "branch-to", etc.
-    props TEXT,                            -- JSON properties: ordering, weights, conditions, etc.
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_edges_src ON edges(src);
-CREATE INDEX idx_edges_dst ON edges(dst);
-CREATE INDEX idx_edges_rel ON edges(rel);
-CREATE INDEX idx_edges_src_rel ON edges(src, rel);
-
--- Tags: hierarchical labeling for composable documents
-CREATE TABLE tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tag TEXT NOT NULL,                     -- tag identifier
-    node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    parent_tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
-    order_num INTEGER NOT NULL DEFAULT 0,  -- ordering among siblings
-    metadata TEXT,                         -- JSON metadata
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_tags_tag ON tags(tag);
-CREATE INDEX idx_tags_node ON tags(node_id);
-CREATE INDEX idx_tags_parent ON tags(parent_tag_id);
-CREATE INDEX idx_tags_parent_order ON tags(parent_tag_id, order_num);
-```
-
-**HBF System Tables**:
-
-```sql
--- User accounts with Argon2id password hashes
-CREATE TABLE _hbf_users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,           -- Argon2id PHC string format
-    email TEXT,
-    role TEXT NOT NULL DEFAULT 'user',     -- 'owner', 'admin', 'user'
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    modified_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_hbf_users_username ON _hbf_users(username);
-CREATE INDEX idx_hbf_users_role ON _hbf_users(role);
-
--- JWT session tracking with token hashes
-CREATE TABLE _hbf_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES _hbf_users(id) ON DELETE CASCADE,
-    token_hash TEXT NOT NULL UNIQUE,       -- SHA-256 hash of JWT
-    expires_at INTEGER NOT NULL,
-    last_used INTEGER NOT NULL DEFAULT (unixepoch()),
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_hbf_sessions_user ON _hbf_sessions(user_id);
-CREATE INDEX idx_hbf_sessions_token ON _hbf_sessions(token_hash);
-CREATE INDEX idx_hbf_sessions_expires ON _hbf_sessions(expires_at);
-
--- Table-level access control
-CREATE TABLE _hbf_table_permissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES _hbf_users(id) ON DELETE CASCADE,
-    table_name TEXT NOT NULL,
-    can_select INTEGER NOT NULL DEFAULT 0,
-    can_insert INTEGER NOT NULL DEFAULT 0,
-    can_update INTEGER NOT NULL DEFAULT 0,
-    can_delete INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE UNIQUE INDEX idx_hbf_perms_user_table ON _hbf_table_permissions(user_id, table_name);
-
--- Row-level security policies (SQL conditions)
-CREATE TABLE _hbf_row_policies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_name TEXT NOT NULL,
-    policy_name TEXT NOT NULL,
-    role TEXT NOT NULL,                    -- 'owner', 'admin', 'user'
-    operation TEXT NOT NULL,               -- 'SELECT', 'INSERT', 'UPDATE', 'DELETE'
-    condition TEXT NOT NULL,               -- SQL WHERE clause (e.g., "user_id = $user_id")
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_hbf_policies_table ON _hbf_row_policies(table_name);
-CREATE UNIQUE INDEX idx_hbf_policies_name ON _hbf_row_policies(table_name, policy_name);
-
--- Per-henv configuration key-value store
-CREATE TABLE _hbf_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,                   -- JSON value
-    description TEXT,
-    modified_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
--- Audit trail for admin actions
-CREATE TABLE _hbf_audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER REFERENCES _hbf_users(id) ON DELETE SET NULL,
-    action TEXT NOT NULL,                  -- 'CREATE_USER', 'GRANT_PERMISSION', etc.
-    table_name TEXT,
-    record_id INTEGER,
-    details TEXT,                          -- JSON details
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
-CREATE INDEX idx_hbf_audit_user ON _hbf_audit_log(user_id);
-CREATE INDEX idx_hbf_audit_created ON _hbf_audit_log(created_at);
-CREATE INDEX idx_hbf_audit_action ON _hbf_audit_log(action);
-
--- Schema version tracking
-CREATE TABLE _hbf_schema_version (
-    version INTEGER PRIMARY KEY,
-    applied_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    description TEXT
-);
-```
-
-**Full-Text Search**:
-
-```sql
--- FTS5 virtual table for searching node content
-CREATE VIRTUAL TABLE nodes_fts USING fts5(
-    node_id UNINDEXED,
-    type UNINDEXED,
-    content,
-    content=nodes,
-    content_rowid=id,
-    tokenize='porter unicode61'
-);
-
--- Triggers to keep FTS index synchronized
-CREATE TRIGGER nodes_fts_insert AFTER INSERT ON nodes BEGIN
-    INSERT INTO nodes_fts(node_id, type, content)
-    VALUES (new.id, new.type, json_extract(new.body, '$.content'));
-END;
-
-CREATE TRIGGER nodes_fts_update AFTER UPDATE ON nodes BEGIN
-    UPDATE nodes_fts SET content = json_extract(new.body, '$.content')
-    WHERE node_id = new.id;
-END;
-
-CREATE TRIGGER nodes_fts_delete AFTER DELETE ON nodes BEGIN
-    DELETE FROM nodes_fts WHERE node_id = old.id;
-END;
-```
-
-**Default Configuration Values**:
-
-```sql
--- Insert default config values
-INSERT INTO _hbf_config (key, value, description) VALUES
-    ('qjs_mem_mb', '64', 'QuickJS memory limit in MB'),
-    ('qjs_timeout_ms', '5000', 'QuickJS execution timeout in milliseconds'),
-    ('session_lifetime_hours', '168', 'Session lifetime in hours (default: 7 days)'),
-    ('max_upload_size_mb', '10', 'Maximum upload size in MB'),
-    ('enable_audit_log', 'true', 'Enable audit logging for admin actions');
-
--- Insert schema version
-INSERT INTO _hbf_schema_version (version, description) VALUES
-    (1, 'Initial schema: document-graph + HBF system tables');
-```
-
-Deliverables
-- ✅ SQLite3 from Bazel Central Registry (version 3.50.4)
-- ✅ `internal/db/db.c|h` - SQLite wrapper with connection management
-- ✅ `internal/db/schema.c|h` - Complete schema DDL and initialization
-- ✅ `internal/db/schema.sql` - SQL schema file (embedded as C byte array via tools/sql_to_c.sh)
-- ✅ `tools/sql_to_c.sh` - Script to convert SQL to C byte array (avoids C99 string literal limits)
-
-Tests (All Passing ✅)
-- ✅ Open database and set pragmas correctly (WAL, foreign_keys, synchronous)
-- ✅ Schema initialization creates all tables (11 tables: nodes, edges, tags, _hbf_*)
-- ✅ Foreign key constraints enforced
-- ✅ WAL mode enabled and verified
-- ✅ FTS5 virtual table created and functional with external content
-- ✅ Config defaults inserted correctly (5 default values)
-- ✅ Schema version tracking works (version 1)
-- ✅ Transaction management (begin, commit, rollback)
-- ✅ Last insert ID and row change count
-- ✅ FTS5 triggers (insert, update, delete) maintain index synchronization
-- ✅ Document-graph operations (insert nodes, create edges, add tags, traverse graph)
-- ✅ FTS5 full-text search with porter stemming
-
-Acceptance (All Met ✅)
-- ✅ `bazel build //internal/db:schema` succeeds with SQLite linked
-- ✅ `bazel test //...` passes all tests (4 test targets, 41+ test cases)
-  - hash_test: 5 tests
-  - config_test: 25 tests
-  - db_test: 7 tests
-  - schema_test: 9 tests
-- ✅ `bazel run //:lint` passes (all 7 C source files clean)
-- ✅ Schema creates successfully in empty database
-- ✅ All indexes and triggers created
-- ✅ Document-graph queries work (nodes, edges, tags verified)
-- ✅ FTS5 search functional with content synchronization
-
-**Status: Phase 2a COMPLETE** ✅
-
-Notes:
-- SQLite compile-time options configured in `.bazelrc`: SQLITE_THREADSAFE=1, SQLITE_ENABLE_FTS5, SQLITE_OMIT_LOAD_EXTENSION, SQLITE_DEFAULT_WAL_SYNCHRONOUS=1, SQLITE_ENABLE_JSON1
-- FTS5 external content table uses `content=nodes, content_rowid=id` with special delete syntax in triggers
-- Schema SQL embedded as byte array to avoid C99 4095-char string literal limit
-- Database libraries available but not yet integrated into main binary (will be used in Phase 2b for user pod management)
-
-
-## Phase 2b: User Pod & Connection Management
-
-Goal
-- Implement user pod directory management and database connection caching.
-
-Note: This phase builds on Phase 2a's database schema and focuses on multi-tenancy infrastructure.
-
-Tasks
-- User pod manager (`internal/henv/manager.c|h`):
-  - `hbf_henv_create_user_pod(user_hash)` - Create directory and initialize DB
-  - `hbf_henv_user_exists(user_hash)` - Check if user pod exists
-  - `hbf_henv_open(user_hash)` - Open database with connection caching
-  - `hbf_henv_close_all()` - Close all cached connections
-  - Hash collision detection
-- File structure:
-  - User directory: `storage_dir/{user-hash}/` mode 0700
-  - Default henv: `storage_dir/{user-hash}/index.db` mode 0600
-- Database connection cache (in `internal/henv/manager.c`):
-  - LRU cache for open connections
-  - Mutex protection for thread safety
-  - Max connections limit (configurable, default: 100)
-- CLI argument: `--storage_dir <path>` (default: ./henvs)
-
-Deliverables
-- ✅ `internal/henv/manager.c|h` - User pod management (378 lines)
-- ✅ `internal/henv/manager_test.c` - Test suite (12 tests, 372 lines)
-- ✅ `internal/henv/BUILD.bazel` - Build configuration
-- ✅ CLI integration in `internal/core/config.c|h` and `internal/core/main.c`
-
-Tests (All Passing ✅)
-- ✅ Initialize and shutdown henv manager
-- ✅ Create user pod with correct directory/file permissions (0700/0600)
-- ✅ Hash collision detection
-- ✅ User existence checking
-- ✅ Open user pod database
-- ✅ Connection caching (same handle returned for repeated opens)
-- ✅ Open non-existent user pod (error handling)
-- ✅ Multiple user pods simultaneously
-- ✅ Close all connections
-- ✅ Invalid user hash length validation
-- ✅ Get database path formatting
-- ✅ Schema initialization verification
-
-Acceptance (All Met ✅)
-- ✅ `bazel build //:hbf` succeeds (binary size: 1.1 MB statically linked)
-- ✅ `bazel test //...` passes all tests (5 test targets, 53+ test cases)
-  - hash_test: 5 tests
-  - config_test: 25 tests
-  - db_test: 7 tests
-  - schema_test: 9 tests
-  - manager_test: 12 tests
-- ✅ `bazel run //:lint` passes (8 source files, 0 issues)
-- ✅ User pod creation and database initialization works
-- ✅ Connection caching functional and thread-safe
-- ✅ Multiple henvs can be opened simultaneously
-- ✅ All tests pass with proper cleanup
-
-**Status: Phase 2b COMPLETE** ✅
-
-Notes:
-- Connection cache uses linked list with LRU eviction policy
-- Thread safety provided by pthread mutex around all cache operations
-- Automatic schema initialization via `hbf_db_init_schema()` on pod creation
-- File permissions enforced: directories 0700, database files 0600
-- Binary size increased from 205 KB to 1.1 MB due to SQLite integration (expected)
-- Manager integrated into main application lifecycle (init on startup, shutdown on exit)
-- Storage directory created automatically if not exists
-- See `DOCS/phase2b-completion.md` for detailed completion report
-
-
-## Phase 3: JavaScript Runtime & Express-Style Routing
-
-**Status**: 🔄 Planning
-**Dependencies**: Phase 2b (User pod & connection management)
-**Goal**: Embed QuickJS-NG and implement Express.js-style routing for dynamic request handling
-
-### Overview
-
-Phase 3 introduces programmable request handling via a JavaScript runtime. Instead of static routes, HBF loads a `server.js` from the database and uses it to handle all HTTP requests through an Express.js-compatible API.
-
-**Key Architectural Shift**:
-- **Original Plan**: Authentication first, then routing, then QuickJS (Phases 3→6)
-- **Revised Plan**: QuickJS runtime first, with routing and static content serving
-- **Reasoning**: Single-instance deployment model initially (localhost or single k3s pod), user-programmable routing is core value proposition, static content database-backed from start
-
-**Single-Instance Model**:
-```
-HTTP Request → CivetWeb → HBF Request Handler → QuickJS (server.js) → Response
-                                                      ↓
-                                              Document Database
-                                              (nodes table)
-```
-
-**Key Components**:
-1. **Default Database**: `{storage_dir}/henvs/index.db` (loaded at startup)
-2. **Server Script**: Node with `name='server.js'` (loaded into QuickJS)
-3. **Static Files**: Nodes with paths like `/www/index.html`
-4. **Express.js Clone**: Minimal routing API compatible with QuickJS
-
-### Phase 3.1: QuickJS Integration & Basic Runtime
-
-**Goal**: Embed QuickJS-NG, load `server.js` from database, handle basic requests
-
-Tasks
-- Vendor QuickJS-NG in `third_party/quickjs-ng/`
-  - Static linking
-  - No filesystem access (we provide shims)
-  - No network access (we provide shims)
-  - Configurable memory limit (default: 64 MB)
-  - Interrupt handler for timeout (default: 5000 ms)
-- QuickJS engine wrapper (`internal/qjs/engine.c|h`):
-  - `hbf_qjs_init(mem_limit_mb, timeout_ms)` - Initialize QuickJS engine
-  - `hbf_qjs_shutdown()` - Shutdown engine
-  - `hbf_qjs_ctx_create()` - Create runtime context (per-request or pooled)
-  - `hbf_qjs_ctx_destroy(ctx)` - Destroy context
-  - `hbf_qjs_eval(ctx, code, len)` - Evaluate JavaScript code
-  - `hbf_qjs_call_function(ctx, func_name, args_json, result_json)` - Call JS function
-  - `hbf_qjs_load_server_js(ctx, db)` - Load server.js from database
-- Database loader (`internal/qjs/loader.c|h`):
-  - Load server.js from `nodes` table where `json_extract(body, '$.name') = 'server.js'`
-  - Cache compiled script for subsequent requests
-- Build-time static content injection:
-  - Tool: `tools/inject_content.sh` (similar to `tools/sql_to_c.sh`)
-  - Generate SQL INSERT statements from `static/` directory
-  - Inject into database during schema initialization
-  - Directory structure: `static/server.js`, `static/www/index.html`, etc.
-- Context pooling (`internal/qjs/pool.c|h`):
-  - Pre-create contexts at startup (default: 16 contexts)
-  - Acquire/release for request handling
-  - Thread-safe via mutex
-
-Deliverables
-- `third_party/quickjs-ng/BUILD.bazel` - QuickJS build configuration
-- `internal/qjs/engine.c|h` - Runtime wrapper with memory limits
-- `internal/qjs/loader.c|h` - Database loader for server.js
-- `internal/qjs/pool.c|h` - Context pool for request handling
-- `tools/inject_content.sh` - Static content to SQL converter
-- `static/server.js` - Minimal server script (hello world)
-- `static/www/index.html` - Default homepage
-- Build system integration (genrules for content injection)
-- Main.c integration (load server.js at startup)
-
-Tests
-- QuickJS init/shutdown
-- Evaluate simple expression
-- Memory limit enforcement (context creation fails at limit)
-- Timeout enforcement (long-running scripts interrupted)
-- Error handling (JavaScript exceptions caught)
-- Load server.js from database
-- Load missing server.js (error handling)
-- Cache server.js (subsequent loads use cached version)
-- Context pool acquire/release
-
-Acceptance
-- QuickJS-NG compiles and links statically
-- Memory limit enforced (context creation fails at limit)
-- Timeout enforced (long-running scripts interrupted)
-- server.js loads from `index.db` at startup
-- Static content injected into database at build time
-- All tests pass (10+ test cases)
-
-### Phase 3.2: Express.js-Compatible Router
-
-**Goal**: Implement minimal Express.js API for route handling in QuickJS
-
-Tasks
-- C-to-JS bindings (`internal/qjs/bindings/`):
-  - Request object (`bindings/request.c|h`):
-    - Create JavaScript request object from CivetWeb request
-    - Properties: `method`, `path`, `query`, `params`, `headers`, `body`
-    - Parse query string into `req.query` object
-    - Parse headers into `req.headers` object
-  - Response object (`bindings/response.c|h`):
-    - Create JavaScript response object
-    - Methods: `res.status(code)`, `res.send(body)`, `res.json(obj)`, `res.set(name, value)`
-    - Accumulate response in C struct (`hbf_response_t`)
-    - Send to CivetWeb after handler completes
-- Router module (`static/lib/router.js`):
-  - Express-style routing API in pure JavaScript
-  - Methods: `app.get(path, handler)`, `app.post(path, handler)`, `app.put(path, handler)`, `app.delete(path, handler)`, `app.use(handler)`
-  - Parameter extraction: `/user/:id` → `req.params.id`
-  - Route matching with regex compilation
-  - Middleware support for fallback handlers
-- Built-in module registration (`internal/qjs/modules.c|h`):
-  - Register `hbf:router` as built-in module
-  - Load router.js into QuickJS context
-  - Export as CommonJS module
-- CivetWeb handler integration (`internal/http/handler.c`):
-  - Main HTTP handler that delegates to QuickJS
-  - Create request/response objects
-  - Call `app.handle(req, res)` in JavaScript
-  - Handle JavaScript exceptions (500 error)
-  - Send response to CivetWeb
-
-Deliverables
-- `internal/qjs/bindings/request.c|h` - Request object creation
-- `internal/qjs/bindings/response.c|h` - Response object creation
-- `static/lib/router.js` - Express-style router implementation
-- `internal/qjs/modules.c|h` - Built-in module registration
-- `internal/http/handler.c|h` - CivetWeb→QuickJS bridge
-- Example `static/server.js` with `/hello` endpoint
-- Tests for routing, parameters, middleware
-
-Tests
-- Create request object
-- Create response object
-- Response status/send/json methods
-- Route matching: `GET /hello` → handler
-- Route parameters: `/user/123` → `req.params.id === "123"`
-- Middleware fallback
-- 404 handling
-
-Acceptance
-- `GET /hello` returns "Hello, World!"
-- Route parameters work (`/user/123` → `req.params.id === "123"`)
-- Response methods work (`res.status(404).send("Not Found")`)
-- Middleware fallback works
-- All tests pass (15+ test cases)
-
-### Phase 3.3: Static File Serving from Database
-
-**Goal**: Serve static files from `nodes` table with path-based lookup
-
-Tasks
-- Database binding (`internal/qjs/bindings/db.c|h`):
-  - `hbf:db` module for database access from JavaScript
-  - `db.query(sql, params)` → array of objects
-  - `db.execute(sql, params)` → `{rows_affected, last_insert_id}`
-  - Convert SQLite types to JavaScript types
-  - Prepared statements for SQL injection prevention
-- Static file middleware (`static/lib/static.js`):
-  - Query database for static files by path
-  - Content-Type detection from file extension
-  - 404 handling for missing files
-  - Integration with router as fallback handler
-- Example server.js with static files:
-  - Dynamic routes (e.g., `/hello`, `/api/user/:id`)
-  - Static file fallback (serves from `/www/*` in database)
-  - 404 handler
-
-Deliverables
-- `internal/qjs/bindings/db.c|h` - Database query from JS
-- `static/lib/static.js` - Static file middleware
-- `static/www/index.html` - Example homepage
-- `static/www/style.css` - Example stylesheet
-- Complete `static/server.js` with all features
-- Tests for static file serving
-
-Tests
-- Serve static HTML
-- Serve static CSS with correct Content-Type
-- Static file 404
-- Database query from JS
-- Content-Type headers
-
-Acceptance
-- `GET /` serves `index.html` from database
-- `GET /style.css` serves CSS with correct Content-Type
-- `GET /nonexistent` returns 404
-- Database queries work from JavaScript (`hbf:db`)
-- All tests pass (10+ test cases)
-
-**Status: Phase 3 READY FOR IMPLEMENTATION** 🔄
-
-Notes:
-- QuickJS context pooling: 16 contexts × 64 MB = 1 GB max (configurable)
-- Binary size expected: < 2 MB (QuickJS adds ~800 KB)
-- Request latency target: < 5ms for simple routes
-- Memory limit enforced per-context via `JS_NewRuntime()`
-- Timeout enforced via `JS_SetInterruptHandler()`
-- Security: No filesystem access, no network access (only `hbf:db` and request/response)
-- Authentication and multi-tenant routing deferred to Phase 4
-
-
-## Phase 4: Authentication & Authorization
-
-Goal
-- Implement authentication (Argon2id + JWT HS256) and authorization (table/row-level policies).
-
-Note: Authentication moved from original Phase 3, now builds on top of Phase 3's QuickJS runtime.
-
-### Phase 4.1: Authentication (Argon2id + JWT HS256)
-
-Tasks
-- Vendor Argon2 reference implementation in `third_party/argon2/`
-- Vendor SHA-256 + HMAC single-file (Brad Conte style, MIT) in `third_party/sha256_hmac/`
-- Password hashing: Argon2id (Apache-2.0 ref impl) with parameters tuned for target box; encode hash with PHC string format
-- JWT: Implement HS256 using MIT SHA-256 + HMAC (single-file, Brad Conte style) and base64url encode/decode (pure C, no external deps)
-  - Use HMAC_SHA256 for the HS256 signature over `base64url(header).base64url(payload)`
-  - Implement base64url encoder/decoder in-house (pure C)
-  - JWT payload includes `user_id` (not user_hash, since we're single-instance)
-- Session store: insert session on login with token hash (SHA-256 of the full JWT), expiry from config, rolling `last_used` and expiry updates
-- Endpoints (exposed via QuickJS server.js):
-  - POST `/register` {username, password, email}:
-    - Create new user in `_hbf_users` table with Argon2id password hash
-    - Return `{user_id, username, role}`
-  - POST `/login` {username, password}:
-    - Verify credentials against `_hbf_users` table
-    - Return `{token, expires_at, user}`
-- Request auth middleware (C layer before QuickJS):
-  - Extract Bearer token from Authorization header
-  - Verify signature + expiry
-  - Check session exists in `_hbf_sessions`
-  - Inject `req.user` into JavaScript request object
-
-Deliverables
-- `internal/auth/argon2.c|h` - Argon2id password hashing wrapper
-- `internal/auth/jwt.c|h` - JWT HS256 signing and verification
-- `internal/auth/session.c|h` - Session management
-- `internal/auth/base64url.c|h` - Base64url encoding/decoding
-- `third_party/argon2/BUILD.bazel` - Argon2 build configuration
-- `third_party/sha256_hmac/` - Vendored single-file SHA-256 + HMAC (MIT)
-- HTTP handlers in `internal/api/auth.c` for `/register` and `/login`
-- Auth middleware in `internal/http/auth_middleware.c|h`
-- Update `static/server.js` example with auth routes
-
-Tests
-- Argon2id hash/verify cycles
-- JWT sign/verify including expiry
-- Base64url encode/decode round-trip
-- `/register` creates user with hashed password
-- `/login` success/failure, disabled user handling
-- Auth middleware extracts and verifies JWT
-- Session management (create, validate, expire)
-
-Acceptance
-- Password hashing works with Argon2id PHC format
-- JWT tokens signed and verified correctly
-- `/register` endpoint creates users
-- `/login` endpoint returns valid JWT
-- Auth middleware validates tokens before passing to QuickJS
-- Sessions tracked in database
-- All tests pass (20+ test cases)
-
-### Phase 4.2: Authorization & Row Policies
-
-Goal
-- Enforce table-level permissions and row-level policies by query rewriting.
-
-Tasks
-- `authz_check_*` helpers (owner/admin implicit full access)
-- Store table permissions and policies in DB; CRUD admin endpoints
-- Query rewriter: append WHERE fragments for SELECT/UPDATE/DELETE using policies; substitute `$user_id` with caller
-- Protect database queries from JavaScript (`hbf:db` module) with permission checks
-- Admin endpoints (exposed via QuickJS server.js):
-  - `GET/POST/DELETE /admin/permissions` - Manage table permissions
-  - `GET/POST /admin/policies` - Manage row-level policies
-
-Deliverables
-- `internal/authz/authz.c|h` - Permission checking
-- `internal/authz/query_rewrite.c|h` - Query rewriting for row policies
-- Admin endpoints in `internal/api/authz.c`
-- Integration with `hbf:db` module (permission checks before query execution)
-- Update `static/server.js` example with admin routes
-
-Tests
-- Unit tests for query rewrite (with existing WHERE/ORDER/LIMIT)
-- Permission matrix (user roles vs. table operations)
-- Row policy enforcement (query rewriting)
-- Admin endpoints (grant/revoke permissions, create policies)
-
-
-## Phase 5: Document Store + Search (Simple-graph Integration)
-
-Goal
-- CRUD documents using simple-graph, with optional FTS5 search; support binary content and Monaco editor serving.
-
-Tasks
-- Integrate simple-graph API for document operations
-- REST endpoints: list/create/get/update/delete; hierarchical IDs like `pages/home`, `api/users`
-- FTS5 search with BM25 ranking (extend simple-graph if needed)
-- Content types: `application/json`, `text/markdown`, `text/html`, `text/ejs`, `text/javascript`, `text/css`, `application/octet-stream` (binary as blob or base64)
-- Special document IDs with `_system/` prefix for Monaco editor and admin UI:
-  - `_system/monaco/editor.main.js`
-  - `_system/monaco/editor.main.css`
-  - `_system/admin.html`
-  - `_system/router.js` (user's custom router)
-- Serve documents with appropriate Content-Type headers
-
-Deliverables
-- `internal/document/document.c|h` wrapping simple-graph API
-- `internal/api/documents.c` for REST endpoints
-- Document serving handler (GET /path → document lookup)
-- Monaco editor files embedded as SQL inserts or C arrays
-
-Tests
-- CRUD roundtrip, hierarchical ID support
-- Search relevance (if FTS5 integrated)
-- Binary content path (blob storage)
-- Serve Monaco editor files from database
-- Content-Type header mapping
-
-
-## Phase 6: QuickJS-NG Embedding + User Router
-
-Goal
-- Sandboxed JS runtime with DB access, HTTP context, and user-owned router.js for custom routing.
-
-Tasks
-- Initialize QuickJS-NG runtime/context per request (or a pool) with:
-  - Memory limit (e.g., 32–128MB) from `_hbf_config.qjs_mem_mb`
-  - Interrupt handler for timeout (from `_hbf_config.qjs_timeout_ms`)
-  - Disable dangerous host bindings; no raw file or network by default
-- Built-in host modules:
-  - `hbf:db` with `query(sql, params)` and `execute(sql, params)` using prepared statements; converts SQLite types to JS
-  - `hbf:http` request object (method, path, query, headers, body JSON or raw), and `response(status, headers, body)` builder
-  - `hbf:util` JSON helpers, base64, time
-  - `hbf:router` Express-like routing API:
-    - `router.get(path, handler)`
-    - `router.post(path, handler)`
-    - `router.put(path, handler)`
-    - `router.delete(path, handler)`
-    - `router.use(handler)` for middleware/default handler
-    - Parameter extraction (e.g., `/posts/:id`)
-- User router.js:
-  - Load `router.js` from documents (ID: `_system/router.js`)
-  - Execute in QuickJS-NG context on each request
-  - If no router.js exists, use default handler (serve from document database by path)
-  - Errors surfaced as 500 with sanitized message; include `line:col` when possible
-- Admin editor endpoint `/_admin` for editing router.js and other documents
-
-Deliverables
-- `internal/qjs/engine.c|h` for QuickJS-NG initialization
-- `internal/qjs/modules/db.c`, `http.c`, `util.c`, `router.c` for host modules
-- `internal/http/router_handler.c` for router.js execution
-- Admin UI page (`_system/admin.html`) with Monaco editor
-
-Tests
-- Simple router: `router.get('/hello', () => res.json({msg: 'hi'}))`
-- DB access from router handler
-- Parameter extraction: `/posts/:id`
-- Timeout enforced (long-running script aborted)
-- Default handler fallback (no router.js → serve documents)
-- Monaco editor loads and displays in admin UI
-
-
-## Phase 6.1: EJS Template Support (in QuickJS-NG)
-
-Goal
-- Render EJS templates inside QuickJS-NG, loading templates from SQLite.
-
-Tasks
-- Bundle a minimal EJS-compatible engine (MIT) adapted for QuickJS-NG and no Node APIs. If using upstream, vendor a small pure-JS subset; otherwise implement a compact EJS renderer supporting:
-  - `<% %>` script, `<%= %>` escape, `<%- %>` raw, includes (`<% include file %>`), locals, partials.
-- `templates.render(id | source, data, loader)` where loader reads from simple-graph documents by id or provided source.
-- Auto-escape HTML by default; allow raw with `<%- %>`.
-- Map `text/ejs` (or `text/html+ejs`) documents to renderer.
-- Integrate with router.js: allow templates to be served via router handlers.
-
-Deliverables
-- `internal/qjs/modules/ejs.js` (vendored), `internal/templates/ejs.c|h` (glue), DB-backed loader.
-- `hbf:templates` module for template rendering from JS
-
-Tests
-- Render variables, loops/conditionals, include parent; error messages with line numbers.
-- Template rendering from router.js handler
-
-
-## Phase 6.2: Node-Compatible Module System (No npm/node at runtime)
-
-Goal
-- Load pure JS "Node modules" as QuickJS-NG modules with shims and a DB-backed filesystem.
-
-Tasks
-- Module loader strategy:
-  - Prefer ES modules when available.
-  - Provide CommonJS compatibility by wrapping source: `(function(exports, require, module, __filename, __dirname){ ... })` inside QuickJS-NG; maintain module cache.
-- `fs` shim backed by SQLite: virtual filesystem that resolves `require('pkg/file')` by reading simple-graph documents under `modules/{pkg}/...` or a packaged module table; also support in-memory C-embedded JS for core shims.
-- Provide minimal shims: `fs` (readFileSync, existsSync, stat), `path`, `buffer` (basic), `util`, `events`, `timers` (setTimeout/clearTimeout mapped to QuickJS job queue), `process` (env, cwd, versions minimal).
-- Bazel packer: a rule that takes a list of JS sources (from vendor or project) and produces either:
-  - a C array (compiled into the binary) addressable by virtual paths, or
-  - a bootstrap SQLite image inserted into documents on first init.
-- Policy: Only pure JS modules that do not require native addons or Node runtime.
-
-Deliverables
-- `internal/qjs/node_compat.js` (require, module cache, shims)
-- `tools/pack_js` Bazel rule + small packer (C or Python) to emit C array/SQLite blob
-- Integration with simple-graph for module storage
-
-Tests
-- Load a simple npm-like package (vendored source) without npm
-- Require graph and caching
-- fs shim loads from DB (simple-graph documents)
-- CommonJS and ES module interop
-
-
-## Phase 7: HTTP API Surface
-
-Goal
-- Implement REST endpoints for document and user management, with server.js handling custom routes.
-
-Note: All endpoints exposed via QuickJS server.js (no multi-tenant routing).
-
-Endpoints
-- System:
-  - GET `/health` - Health check (already implemented in Phase 1)
-  - POST `/register` - User registration (from Phase 4.1)
-  - POST `/login` - User authentication (from Phase 4.1)
-- Admin API (owner/admin only):
-  - `GET/POST/DELETE /_api/permissions` - Manage table permissions
-  - `GET/POST /_api/policies` - Manage row-level policies
-  - `GET/POST/PUT/DELETE /_api/documents/{docID...}` - Document CRUD
-  - `GET /_api/documents/search?q=...` - FTS5 search
-  - GET `/_api/templates` - List template docs
-  - POST `/_api/templates/preview` - Render with provided data
-- Developer UI:
-  - GET `/_admin` - Monaco editor UI for editing server.js
-- User Routes (via server.js):
-  - All other paths handled by user's server.js
-  - Default handler serves from documents by path
-
-Deliverables
-- `internal/api/*.c` handlers, shared JSON utilities, request parsing, uniform error responses
-- Admin API handlers (documents, permissions, policies, templates)
-- Monaco editor UI (HTML + JavaScript embedded in database)
-- server.js integration (all requests → server.js → response)
-
-Tests
-- Black-box HTTP tests for happy paths and auth failures
-- System endpoints (health, register, login)
-- Admin API (document CRUD, search, permissions, policies)
-- server.js handling (custom routes + default fallback)
-- Monaco editor serving and editing
-
-
-## Phase 8: WebSockets
-
-Goal
-- Provide WS endpoint(s) with CivetWeb, dispatch messages into QuickJS-NG handlers, and optional auth.
-
-Tasks
-- Route: `/ws/{channel}` with token query `?token=...` or Authorization header during upgrade
-- On open/close/message events, call JS handler from server.js or dedicated WebSocket handler
-- Broadcast helper and per-channel subscriptions in C, with backpressure
-- `hbf:ws` module for server-initiated sends from JS
-- Auth integration: verify JWT before accepting WebSocket connection
-
-Deliverables
-- `internal/ws/ws.c|h` for WebSocket management
-- QuickJS-NG glue `hbf:ws` for server-initiated sends from JavaScript
-- WebSocket integration with server.js (route handlers for WebSocket events)
-- Auth middleware for WebSocket upgrade
-
-Tests
-- Connect with valid JWT, auth failure with invalid/missing token
-- Echo test (client sends message, receives same message back)
-- Broadcast to N clients (message sent to all connected clients in channel)
-- Resilience on disconnect (cleanup, no memory leaks)
-- WebSocket handlers in server.js
-
-
-## Phase 9: Packaging, Static Linking, and Ops
-
-Goal
-- Produce small, statically linked binary with reproducible builds.
-
-Tasks
-- Bazel configs:
-  - `:hbf` (musl 100% static) target; ship a single fully static binary
-  - Strip symbols; embed build info/version
-- CLI flags (update from Phase 1):
-  - `--port` (default: 5309)
-  - `--storage_dir` (default: ./henvs)
-  - `--log_level` (default: info)
-  - `--dev` (development mode)
-  - `--db_max_open` (default: 100) - Max database connections
-  - `--qjs_pool_size` (default: 16) - QuickJS context pool size
-  - `--qjs_mem_mb` (default: 64) - QuickJS memory limit per context
-  - `--qjs_timeout_ms` (default: 5000) - QuickJS execution timeout
-- Logging: levels, structured JSON logs option
-- Default security headers (except HTTPS); CORS toggle
-- Environment variables for secrets (JWT secret, etc.)
-
-Deliverables
-- `//:hbf` (musl 100% static) Bazel target
-- Release docs with size expectations
-- Deployment guide (systemd unit, Docker container, k3s manifests, self-hosting instructions)
-- Litestream configuration for SQLite replication
-
-Tests
-- Smoke test binary on a clean container; verify no runtime deps when using musl
-- Binary size check (target: <5MB including QuickJS)
-- Startup time measurement (target: <500ms)
-- Memory footprint check
-
-
-## Phase 10: Hardening & Perf
-
-Goal
-- Stability, safety, and throughput improvements.
-
-Tasks
-- Connection cache/LRU for SQLite handles; close idle DBs (already implemented in Phase 2b, tune parameters)
-- Rate limiting and request body size limits; template and JS execution quotas
-- Precompiled SQL statements for hot paths; WAL checkpointing tuning
-- CivetWeb tuning (num threads, queue len, keep-alive settings)
-- Metrics collection (requests, DB queries, JS execution times, memory usage)
-- Security hardening:
-  - Input validation (SQL injection, XSS, path traversal)
-  - Resource limits (max request size, max connections, max query time)
-  - Error message sanitization
-- Performance tuning:
-  - QuickJS bytecode caching
-  - Prepared statement caching
-  - Response caching for static content
-
-Deliverables
-- Config toggles and metrics endpoint (`/_api/metrics` for system stats)
-- Rate limiting middleware (requests per IP, per user)
-- Resource quota enforcement
-- Performance benchmarks and tuning guide
-- Security audit and hardening checklist
-
-Tests
-- Load tests (target: 1000 req/s on moderate hardware)
-- Memory leak checks (ASan/Valgrind)
-- Fuzz parsers (URLs, JSON, EJS, server.js)
-- Concurrent request handling (100+ simultaneous connections)
-- Database connection pooling under load
-- Rate limiting enforcement (block after threshold)
-- SQL injection attempts (all blocked)
-- XSS attempts (all sanitized)
-
-
-## QuickJS-NG Integration Details (Reference)
-
-- Runtime/context lifecycle: pre-create context pool at startup; acquire context per request, release after response sent; set interrupt handler to abort long scripts
-- Module loader hook: implement `JSModuleLoaderFunc` to resolve `import` from DB (simple-graph documents) or embedded C arrays. For CommonJS, use a bootstrap `require` implemented in JS using `eval` in a new function scope
-- Host bindings should validate SQL and parameters; always use sqlite prepared statements; convert NULL/int64/double/text/blob properly
-- Error reporting: surface JS stack traces to logs; client sees sanitized messages (no stack traces exposed)
-- server.js execution: load script from nodes table (name='server.js'), compile once at startup, execute route handlers in sandboxed context per request, return response
-
-
-## SQLite Build Flags
-
-- `-DSQLITE_THREADSAFE=1`
-- `-DSQLITE_OMIT_LOAD_EXTENSION`
-- `-DSQLITE_ENABLE_FTS5`
-- `-DSQLITE_ENABLE_JSON1` (optional)
-- `-DSQLITE_DEFAULT_SYNCHRONOUS=1`
-- `-DSQLITE_DEFAULT_CACHE_SIZE=-16000` (optional tuning)
-
-
-## CivetWeb Configuration
-
-- Disable TLS (HTTPS out of scope)
-- Set `num_threads`, `request_timeout_ms`, `websocket_timeout_ms`, `enable_keep_alive`
-- Register request handlers via `mg_set_request_handler`
-- WebSockets via `mg_set_websocket_handler`
-
-
-## JSON Utilities
-
-- Use a small permissive JSON library (e.g., cJSON under MIT) or write a thin wrapper around QuickJS JSON.parse/stringify for request/response processing to minimize code size.
-
-
-## Bazel Overview (Sketch)
-
-Root `BUILD.bazel`
-```
-# Bazel 8 with bzlmod (MODULE.bazel), no WORKSPACE
-cc_binary(
-  name = "hbf",
-  srcs = [
-    "internal/core/main.c",
-    # ... other src groups
-  ],
-  deps = [
-    "//internal/http:server",
-    "//internal/henv:manager",
-    "//internal/db:schema",
-    "//internal/auth:auth",
-    "//internal/authz:authz",
-    "//internal/document:document",
-    "//internal/qjs:engine",
-    "//third_party/sqlite:sqlite3",
-    "//third_party/simple_graph:simple_graph",
-    "//third_party/civetweb:civetweb",
-    "//third_party/quickjs-ng:quickjs-ng",
-    "//third_party/argon2:argon2",
-    "//third_party/sha256_hmac:sha256_hmac",
-  ],
-  copts = ["-std=c99", "-O2", "-fdata-sections", "-ffunction-sections"],
-  linkopts = ["-static", "-Wl,--gc-sections"],
-  visibility = ["//visibility:public"],
-)
-```
-
-MODULE.bazel (sketch)
-```
-module(name = "hbf", version = "0.1.0")
-
-# Select a musl toolchain module or a custom toolchain defined in-repo
-# bazel_dep(name = "rules_cc", version = "...")
-# bazel_dep(name = "rules_musl", version = "...")
-
-# use_extension(...) to register the musl toolchain
-# use_repo(...) to expose toolchain repos if needed
-```
-
-Third-party (examples)
-```
-cc_library(
-  name = "sqlite3",
-  srcs = ["sqlite3.c"],
-  hdrs = ["sqlite3.h"],
-  copts = [
-    "-DSQLITE_THREADSAFE=1",
-    "-DSQLITE_ENABLE_FTS5",
-    "-DSQLITE_OMIT_LOAD_EXTENSION",
-    "-DSQLITE_ENABLE_JSON1",
-  ],
-)
-
-cc_library(
-  name = "simple_graph",
-  # Integrate simple-graph C code if available, or SQL schema only
-  hdrs = ["simple_graph.h"],
-)
-
-cc_library(
-  name = "civetweb",
-  srcs = glob(["src/*.c"]),
-  copts = ["-DUSE_WEBSOCKET"],
-)
-
-cc_library(
-  name = "quickjs-ng",
-  srcs = ["quickjs.c", "libregexp.c", "libunicode.c", "cutils.c"],
-  copts = ["-DCONFIG_BIGNUM"],
-)
-```
-
-JS packer rule (concept)
-```
-# Takes js sources and produces a C source with unsigned char[] blob
-# to embed into the binary; loader reads from this map by virtual path.
-# Used for Monaco editor, EJS templates, Node shims, etc.
-```
-
-
-## Security Notes
-
-- HTTPS is out of scope; recommend reverse proxy termination (Traefik, Caddy, nginx)
-- Use Argon2id for password hashing; configurable params; constant-time compare
-- JWT: Base64url encode/decode; sign with HMAC_SHA256; store only SHA256(JWT) in sessions for revocation; secrets per process (env override); rotate via restart
-- Strict query parameterization; reject raw string interpolation (always use prepared statements)
-- Sandbox QuickJS-NG: memory/time limits, no host FS/network except explicit shims (`hbf:db`, `hbf:http`, etc.)
-- server.js sandboxing: user code runs in isolated QuickJS context with no access to host system
-- Single database instance: `index.db` in storage directory (multi-tenancy not currently supported)
-
-
-## Milestone Cheatsheet
-
-- M1: Foundation + HTTP server + schema init (Phases 0–2a)
-- M2: User pod manager + connection caching (Phase 2b)
-- M3: QuickJS-NG runtime + Express.js router + static files from DB (Phase 3)
-- M4: Authentication (Argon2id, JWT) + authorization (table/row policies) (Phase 4)
-- M5: Simple-graph integration + FTS5 search + Monaco editor (Phase 5)
-- M6: EJS templates + admin UI (Phase 6.1)
-- M7: Node-compat loader + fs shim backed by documents (Phase 6.2)
-- M8: Full REST API + server.js routing (Phase 7)
-- M9: WebSockets (Phase 8)
-- M10: Static packaging + hardening + performance tuning (Phases 9–10)
-
-
-## Acceptance & Verification per Phase
-
-For each phase:
-- Build: PASS – Bazel builds `//:hbf` (musl toolchain, fully static)
-- Lint/Type: PASS – compile with `-Wall -Wextra` later phases
-- Tests: PASS – unit + integration suites for the touched components using a minunit-style macro harness
-
-
-## License Inventory (No GPL)
-
-- SQLite amalgamation – Public Domain
-- Simple-graph – MIT
-- CivetWeb – MIT
-- QuickJS-NG – MIT
-- EJS (vendored, trimmed) – MIT
-- Argon2 reference – Apache-2.0
-- cJSON (if used) – MIT
-- In-house code – MIT (recommended)
-- SHA-256/HMAC (single-file) – MIT (Brad Conte style)
-
-
-## Appendix: Minimal Contracts
-
-User Registration
-- Endpoint: POST `/register`
-- Inputs: username, password, email
-- Outputs: `{user_id, username, role}`
-- Errors: username taken, invalid input
-
-Authentication
-- Endpoint: POST `/login`
-- Inputs: username, password
-- Outputs: `{token, expires_at, user: {user_id, username, role}}`
-- Errors: invalid credentials, disabled user
-
-DB API (QuickJS-NG via `hbf:db`)
-- `query(sql:string, params:array)` → array<object>
-- `execute(sql:string, params:array)` → {rows_affected:int, last_insert_id:int|null}
-- Errors: SQL error (message suppressed/trimmed), permission denied
-
-Router API (QuickJS-NG via `hbf:router`)
-- `app.get(path, handler)` → register GET route
-- `app.post(path, handler)` → register POST route
-- `app.put(path, handler)` → register PUT route
-- `app.delete(path, handler)` → register DELETE route
-- `app.use(handler)` → register middleware/default handler
-- `req.method`, `req.path`, `req.query`, `req.params`, `req.headers`, `req.body` → request properties
-- `res.json(obj)`, `res.send(string)`, `res.status(code)`, `res.set(name, value)` → response builders
-
-EJS (QuickJS-NG via `hbf:templates`)
-- `render(id|string, data, loader?)` → html string
-- Errors: parse/render error with location
-
-WebSockets
-- Connect `/ws/{channel}?token=...`
-- JS handlers: `on_open(ctx)`, `on_message(ctx, data)`, `on_close(ctx)`
-
+application/data store, CivetWeb for HTTP + WebSockets, and QuickJS-NG for
+runtime extensibility.
+
+**Design Philosophy**: Single-instance deployment (localhost or single k3s pod)
+with programmable routing via JavaScript. All HTTP requests handled by
+user-defined `server.js` loaded from SQLite database.
+
+## Core Architecture
+
+- **Language**: Strict C99 (no C++)
+- **Binary**: Single statically linked executable with musl toolchain (100%
+  static, no glibc)
+- **HTTP**: CivetWeb (HTTP only, no HTTPS in binary), WebSockets supported
+- **DB**: SQLite3 amalgamation with WAL + FTS5
+- **Scripting**: QuickJS-NG embedded, sandboxed (memory/timeout limits)
+- **Programmable Routing**: Express.js-compatible API in JavaScript (`server.js`
+  from database)
+- **Per-Request Isolation**: Each HTTP request creates fresh JSRuntime +
+  JSContext (no reuse)
+- **Static Content**: Served from SQLite nodes table (injected at build time)
+- **Build**: Bazel 8 with bzlmod, vendored third_party sources
+- **Licensing**: MIT/BSD/Apache-2/PD only (NO GPL)
+
+## Implementation Phases Overview
+
+- ✅ **Phase 0**: Foundation (Bazel setup, musl toolchain, coding standards,
+  DNS-safe hash)
+- ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI, signal handling)
+- ✅ **Phase 2a**: SQLite Integration & Database Schema (document-graph, system
+  tables, FTS5)
+- ✅ **Phase 2b**: User Pod & Connection Management (connection caching, LRU
+  eviction)
+- ✅ **Phase 3.0**: **Per-Request Context Isolation Fix** (Critical QuickJS
+  runtime fix)
+- 🔄 **Phase 3.1**: Request/Response Bindings (NEXT - 2-3 days)
+- 🔄 **Phase 3.2**: Enhanced Router & Static Content (2-3 days)
+- 🔄 **Phase 4**: Authentication & Authorization (1 week)
+- 🔄 **Phase 5**: Document Store & Search (3-4 days)
+- 🔄 **Phase 6**: Templates & Node Compatibility (1 week)
+- 🔄 **Phase 7**: REST API & Admin UI (1 week)
+- 🔄 **Phase 8**: WebSockets (3-4 days)
+- 🔄 **Phase 9**: Packaging & Optimization (1 week)
+- 🔄 **Phase 10**: Hardening & Performance (1 week)
 
 ---
 
-That's the end-to-end plan to deliver HBF: a self-contained web compute environment with programmable routing via JavaScript, in-browser development with Monaco editor, and database-backed content storage—implemented in strict C99, statically linked with musl, and built with Bazel.
+## Phase 0: Foundation & Constraints ✅ COMPLETE
+
+### Status
+**Completed**: 2025-10-15 **Binary Size**: 1.1 MB (stripped, statically linked)
+
+### Deliverables
+- ✅ Directory structure established
+- ✅ DNS-safe hash generator (`internal/core/hash.c|h`) - SHA-256 → base36 (8
+  chars)
+- ✅ MODULE.bazel (bzlmod, Bazel 8) configured
+- ✅ musl toolchain setup (100% static linking)
+- ✅ Coding standards documented (`DOCS/coding-standards.md`)
+- ✅ clang-format and clang-tidy configurations
+
+### Directory Structure
+```
+/third_party/
+  civetweb/          ✅ MIT - CivetWeb v1.16
+  sqlite3/           ✅ Public Domain - SQLite 3.50.4
+  quickjs-ng/        ✅ MIT - QuickJS-NG (embedded)
+
+/internal/
+  core/              ✅ Logging, config, CLI, hash generator, main
+  http/              ✅ CivetWeb server wrapper, request handler
+  henv/              ✅ User pod management with connection caching
+  db/                ✅ SQLite wrapper, schema, embedded SQL
+  qjs/               ✅ QuickJS-NG engine, bindings, modules
+    bindings/        ✅ Request, response, db, console modules
+
+/static/             ✅ Build-time content (server.js, router.js)
+  server.js          ✅ Express-style routing script
+
+/tools/
+  lint.sh            ✅ clang-tidy wrapper
+  sql_to_c.sh        ✅ SQL to C byte array converter
+  inject_content.sh  ✅ Static content → SQL INSERT statements
+
+/DOCS/               ✅ Documentation
+  coding-standards.md
+  development-setup.md
+  phase0-completion.md
+  phase1-completion.md
+  phase2b-completion.md
+  revised_phase3_plan.md
+```
+
+### Tests
+- ✅ `internal/core/hash_test.c` - 5 test cases
+- ✅ All tests passing
+
+---
+
+## Phase 1: HTTP Server Bootstrap ✅ COMPLETE
+
+### Status
+**Completed**: 2025-10-16
+
+### Deliverables
+- ✅ `internal/core/config.c|h` - CLI parsing (port, log_level, storage_dir, dev
+mode) - ✅ `internal/core/log.c|h` - Logging with levels (DEBUG, INFO, WARN,
+ERROR) and UTC timestamps - ✅ `internal/http/server.c|h` - CivetWeb lifecycle
+and callbacks
+- ✅ `GET /health` - Returns JSON health status
+- ✅ Signal handling (SIGINT, SIGTERM)
+
+### CLI Arguments
+```bash
+hbf [options]
+  --port <num>         HTTP server port (default: 5309)
+  --storage_dir <path> Directory for user pod storage (default: ./henvs)
+  --log_level <level>  Log level: debug, info, warn, error (default: info)
+  --dev                Enable development mode
+  --help, -h           Show help message
+```
+
+### Tests
+- ✅ `internal/core/config_test.c` - 25 test cases
+
+---
+
+## Phase 2a: SQLite Integration & Database Schema ✅ COMPLETE
+
+### Status
+**Completed**: 2025-10-18
+
+### Deliverables
+- ✅ SQLite3 integration from Bazel Central Registry (v3.50.4)
+- ✅ `internal/db/db.c|h` - Database wrapper (open, close, execute, query) - ✅
+`internal/db/schema.c|h` - Schema initialization with embedded SQL
+- ✅ `internal/db/schema.sql` - Complete schema definition
+
+### Database Schema (11 Tables)
+
+**Document-Graph Core Tables**:
+- ✅ `nodes` - Document-graph nodes with JSON body (type, name, content)
+- ✅ `edges` - Directed relationships between nodes
+- ✅ `tags` - Hierarchical labeling system
+- ✅ `nodes_fts` - FTS5 full-text search with porter stemming
+
+**System Tables** (`_hbf_*` prefix):
+- ✅ `_hbf_users` - User accounts with Argon2id password hashes (schema ready)
+- ✅ `_hbf_sessions` - JWT session tracking with token hashes
+- ✅ `_hbf_table_permissions` - Table-level access control
+- ✅ `_hbf_row_policies` - Row-level security policies
+- ✅ `_hbf_config` - Per-environment configuration
+- ✅ `_hbf_audit_log` - Audit trail for admin actions
+- ✅ `_hbf_schema_version` - Schema versioning
+
+### SQLite Configuration
+**Compile-time flags**:
+```c
+-DSQLITE_THREADSAFE=0
+-DSQLITE_ENABLE_FTS5
+-DSQLITE_OMIT_LOAD_EXTENSION
+-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+-DSQLITE_ENABLE_JSON1
+```
+
+**Runtime pragmas**:
+```sql
+PRAGMA foreign_keys=ON;
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+```
+
+### Tests
+- ✅ `internal/db/db_test.c` - 7 test cases
+- ✅ `internal/db/schema_test.c` - 9 test cases
+
+---
+
+## Phase 2b: User Pod & Connection Management ✅ COMPLETE
+
+### Status
+**Completed**: 2025-10-19
+
+### Deliverables
+- ✅ `internal/henv/manager.c|h` - User pod lifecycle management
+- ✅ Connection caching with LRU eviction (max 100 connections)
+- ✅ Thread-safe connection pool (mutex-protected)
+- ✅ Automatic schema initialization on pod creation
+- ✅ Secure file permissions (directories 0700, databases 0600)
+- ✅ Hash collision detection
+
+### Architecture
+- **Storage**: `{storage_dir}/{hash}/index.db`
+- **Default DB**: Time-based hash `{storage_dir}/{hash(timestamp)}/index.db`
+  (unique per invocation)
+- **Connection Limit**: 100 cached connections (hardcoded in Phase 2b,
+  configurable in Phase 9)
+- **Eviction**: LRU (Least Recently Used)
+
+### Tests
+- ✅ `internal/henv/manager_test.c` - 12 test cases
+
+---
+
+## Phase 3.0: Per-Request Context Isolation Fix ✅ COMPLETE
+
+### Status
+**Completed**: 2025-10-23 **Critical Fix**: Resolved persistent "Maximum call
+stack size exceeded" error
+
+### Problem Identified
+1. **Stack Overflow**: Global context reuse caused stack buildup across requests
+2. **Segfault**: Static class ID reuse across different JSRuntimes caused
+   crashes after 2-3 requests
+
+### Root Cause
+- **Issue 1**: Global `JSContext` was shared across all HTTP requests, causing
+  stack frames to accumulate
+- **Issue 2**: `hbf_response_class_id` (static global) was initialized once for
+  first runtime, then reused for subsequent runtimes where it was invalid
+
+### Solution Implemented
+
+#### 1. Per-Request Runtime + Context (`internal/http/handler.c`)
+```c
+/* CRITICAL: Create a fresh JSRuntime + JSContext for each request.
+ * This prevents stack overflow errors and ensures complete isolation.
+ * DO NOT reuse contexts between requests - this is a QuickJS best practice.
+ */
+qjs_ctx = hbf_qjs_ctx_create_with_db(g_default_db);
+// ... handle request ...
+hbf_qjs_ctx_destroy(qjs_ctx);  // Destroy after each request
+```
+
+**Key Changes**:
+- Each HTTP request creates new `JSRuntime` + `JSContext`
+- Loads `server.js` from database into fresh context
+- Handles request with complete isolation
+- Destroys both runtime and context after response
+- Removed mutex locking (no longer needed with isolated contexts)
+
+#### 2. Removed Global Context (`internal/core/main.c`)
+```c
+// Before: Created global context at startup
+// g_qjs_ctx = hbf_qjs_ctx_create_with_db(g_default_db);
+
+// After: Only verify server.js exists, load per-request
+hbf_log_info("Found server.js (%d bytes) - will load per-request", code_len);
+```
+
+**Key Changes**:
+- Removed `g_qjs_ctx` global variable
+- Removed `g_qjs_mutex` global mutex
+- Engine initialization only sets global config (memory limit, timeout)
+- `server.js` verified at startup but loaded per-request
+
+#### 3. Fixed Class ID Registration (`internal/qjs/bindings/response.c`)
+```c
+/*
+ * Initialize response class for a new JSRuntime.
+ * IMPORTANT: Must be called for EACH new runtime when using per-request runtimes.
+ * Class IDs are runtime-specific and cannot be shared across runtimes.
+ */
+void hbf_qjs_init_response_class(JSContext *ctx)
+{
+    JSRuntime *rt = JS_GetRuntime(ctx);
+
+    /* Always reset and re-register the class for the new runtime */
+    hbf_response_class_id = 0;
+    JS_NewClassID(rt, &hbf_response_class_id);
+
+    JSClassDef response_class_def = {
+        .class_name = "HbfResponse",
+        .finalizer = NULL,
+    };
+
+    JS_NewClass(rt, hbf_response_class_id, &response_class_def);
+}
+```
+
+**Key Changes**:
+- Always reset `hbf_response_class_id = 0` for each new runtime
+- Re-register class for every new runtime (class IDs are runtime-specific)
+- Removed conditional check that prevented re-initialization
+- Added extensive documentation
+
+### Testing Results
+✅ **All issues resolved**:
+- No stack overflow errors under load
+- No segfaults after multiple requests
+- Successfully handles 6+ sequential requests
+- Both C endpoints (`/health`) and JS endpoints (`/hellojs`, `/`) work
+- All unit tests pass (7/7 test suites)
+
+### Core Dump Analysis
+Used GDB with unstripped binary (`bazel-bin/internal/core/hbf`) to identify:
+```
+#0  JS_SetPropertyInternal2()      <- QuickJS internal (crash point)
+#1  JS_SetPropertyStr()             <- QuickJS API
+#2  hbf_qjs_create_response()      <- Our code (using stale class ID)
+#3  hbf_qjs_request_handler()      <- HTTP handler
+```
+
+**Diagnosis**: Stale class ID from destroyed runtime was being used in new
+runtime, causing invalid memory access.
+
+### Documentation Added
+- Code comments in `handler.c` explaining per-request isolation requirement
+- Code comments in `response.c` explaining class ID registration requirement
+- Warning comments to prevent future regressions
+
+### Deliverables
+- ✅ `internal/http/handler.c` - Per-request context creation
+- ✅ `internal/core/main.c` - Removed global context
+- ✅ `internal/qjs/bindings/response.c` - Fixed class registration
+- ✅ `internal/http/BUILD.bazel` - Added SQLite dependency
+- ✅ All tests passing
+- ✅ Core dump analysis documented
+
+### Performance Notes
+- **Per-request overhead**: ~0.5-1ms for runtime/context creation (acceptable
+  for web requests)
+- **Memory**: Each runtime uses ~64MB limit (configurable)
+- **Concurrency**: CivetWeb handles multi-threading; each thread gets isolated
+  JS execution
+- **Future optimization**: Could cache compiled bytecode if needed (Phase 10)
+
+---
+
+## Phase 3.1: Request/Response Bindings (NEXT - 2-3 Days) 🔄
+
+### Status
+**In Progress**: Partially implemented **Target Completion**: 2-3 days
+
+### Current State
+- ✅ `internal/qjs/bindings/request.c|h` - Basic request object (method, path,
+headers) - ✅ `internal/qjs/bindings/response.c|h` - Basic response object
+(status, send, json, set)
+- ✅ Request/response objects created and passed to JS
+- ⚠️ Missing: Request body parsing (POST/PUT)
+- ⚠️ Missing: Response redirect
+- ⚠️ Missing: Comprehensive tests
+
+### Goals
+- Complete POST/PUT body parsing (JSON only initially)
+- Add `res.redirect(url)` support
+- Add query parameter parsing to request object
+- Write comprehensive unit tests for bindings
+- End-to-end integration tests
+
+### Tasks Breakdown
+
+#### Day 1: Request Body Parsing
+1. **Implement POST/PUT body reading** (`internal/qjs/bindings/request.c`):
+   - Use CivetWeb's `mg_read()` API to read request body
+   - Parse JSON body (use QuickJS JSON parser)
+   - Set `req.body` property with parsed object
+   - Handle parse errors gracefully (return 400 Bad Request)
+   - Add Content-Length validation
+
+2. **Add query parameter parsing**:
+   - Parse URL query string (`?key=value&foo=bar`)
+   - Populate `req.query` object
+   - Handle URL decoding
+   - Support array parameters (`?id=1&id=2` → `req.query.id = [1, 2]`)
+
+3. **Write tests**:
+   - Test JSON body parsing (valid/invalid JSON)
+   - Test query parameter parsing
+   - Test Content-Length handling
+   - Test request with no body
+
+#### Day 2: Response Enhancements
+1. **Implement `res.redirect()`** (`internal/qjs/bindings/response.c`):
+   - Set Location header
+   - Set status code (302 by default, or custom)
+   - Mark response as sent
+   - Example: `res.redirect('/login')` or `res.redirect(301, '/new-url')`
+
+2. **Add response status text**:
+   - Map status codes to standard text (200 → "OK", 404 → "Not Found")
+   - Include in HTTP response line
+
+3. **Add Content-Type helpers**:
+   - `res.type(type)` - Set Content-Type header
+   - Common shortcuts: `res.json()`, `res.html()`, `res.text()`
+
+4. **Write tests**:
+   - Test redirect with various status codes
+   - Test Content-Type setting
+   - Test response chaining
+   - Test error cases (sending twice)
+
+#### Day 3: Integration & Testing
+1. **Integration tests** (`internal/qjs/engine_test.c` or new file):
+   - End-to-end request → JS → response cycle
+   - Test with actual server.js
+   - Test error handling (JS exceptions → 500)
+   - Test timeout handling
+
+2. **HTTP integration tests**:
+   - Create test script that starts server and makes real HTTP requests
+   - Test POST with JSON body
+   - Test query parameters
+   - Test redirects
+   - Test error responses
+
+3. **Documentation**:
+   - Update code comments
+   - Document request/response API
+   - Add examples to DOCS/
+
+### Success Criteria
+- ✅ POST/PUT requests can send JSON body
+- ✅ Request body is accessible as `req.body` in JavaScript
+- ✅ Query parameters accessible as `req.query`
+- ✅ `res.redirect()` works correctly
+- ✅ All unit tests pass
+- ✅ Integration tests pass
+- ✅ No memory leaks (verify with valgrind if needed)
+
+### Deliverables
+- Enhanced `internal/qjs/bindings/request.c` with body parsing
+- Enhanced `internal/qjs/bindings/response.c` with redirect support
+- Comprehensive test suite
+- Documentation updates
+
+---
+
+## Phase 3.2: Enhanced Router & Static Content (2-3 Days) 🔄
+
+### Status
+**Not Started** **Target Completion**: 2-3 days after Phase 3.1
+
+### Current State
+- ✅ `static/server.js` - Minimal routing script in database
+- ✅ `tools/inject_content.sh` - Static content injection tool
+- ⚠️ Router is minimal (only handles `/hellojs`)
+- ⚠️ No static file serving
+- ⚠️ No middleware chain
+
+### Goals
+- Create full Express.js-compatible router in `static/lib/router.js`
+- Implement static file serving middleware
+- Support middleware chains with `next()`
+- Error handling middleware
+- Load all static content from database
+
+### Tasks Breakdown
+
+#### Day 1: Router Implementation
+1. **Create `static/lib/router.js`**:
+   - Express.js-compatible routing API
+   - Route registration: `app.get()`, `app.post()`, `app.put()`, `app.delete()`
+   - Middleware support: `app.use()`
+   - Parameter extraction: `/user/:id` → `req.params.id`
+   - Route matching with wildcards
+   - Middleware chain with `next()` function
+
+2. **Implement route matching**:
+   - Pattern matching for paths (`/user/:id`, `/post/:slug`)
+   - Support for wildcards (`/api/*`)
+   - Route priority (specific routes before wildcards)
+   - Case-insensitive matching (optional)
+
+3. **Test router**:
+   - Test route registration
+   - Test parameter extraction
+   - Test middleware chain
+   - Test route priority
+
+#### Day 2: Static File Serving
+1. **Create static file middleware**:
+   - Query database for static files
+   - Content-Type detection based on file extension
+   - Caching headers (ETag, Last-Modified)
+   - 404 handling for missing files
+
+2. **Update `tools/inject_content.sh`**:
+   - Scan `static/www/` directory
+   - Generate SQL INSERT statements
+   - Proper JSON encoding
+   - File type detection
+   - MIME type mapping
+
+3. **Build integration**:
+   - Update `internal/db/BUILD.bazel` to run inject_content.sh
+   - Inject static content at build time
+   - Include in schema initialization
+
+4. **Test static serving**:
+   - Test serving HTML files
+   - Test serving CSS files
+   - Test serving JavaScript files
+   - Test 404 for missing files
+   - Test Content-Type headers
+
+#### Day 3: Error Handling & Middleware
+1. **Implement error handling**:
+   - Error middleware: `app.use((err, req, res, next) => {})`
+   - Default 500 error handler
+   - JavaScript exception → HTTP 500
+   - Stack trace in development mode
+
+2. **Middleware enhancements**:
+   - Route-specific middleware: `app.get('/path', middleware, handler)`
+   - Multiple middleware per route
+   - Middleware can modify req/res
+   - Early response termination
+
+3. **Update `server.js`**:
+   - Use router.js for routing
+   - Add static file middleware
+   - Add error handling middleware
+   - Example routes for demonstration
+
+4. **Integration testing**:
+   - Test full request/response cycle
+   - Test error handling
+   - Test middleware chain
+   - Test static file serving
+
+### Success Criteria
+- ✅ Express.js-compatible router works
+- ✅ Parameter extraction works (`/user/:id`)
+- ✅ Middleware chains work with `next()`
+- ✅ Static files served from database
+- ✅ Error handling catches JS exceptions
+- ✅ All tests pass
+
+### Deliverables
+- `static/lib/router.js` - Full router implementation
+- Updated `static/server.js` - Using router and middleware
+- Updated `tools/inject_content.sh` - Working content injection
+- Static file serving middleware
+- Error handling middleware
+- Comprehensive tests
+- Documentation
+
+---
+
+## Phase 4: Authentication & Authorization (1 Week) 🔄
+
+### Status
+**Not Started** **Target Completion**: 1 week after Phase 3.2
+
+### Subtasks
+
+#### Phase 4.1: Password Hashing & JWT (2-3 Days)
+1. **Vendor Argon2** (`third_party/argon2/`):
+   - Reference implementation (Apache-2.0)
+   - Bazel build integration
+   - C wrapper: `hbf_argon2_hash()`, `hbf_argon2_verify()`
+   - Constant-time comparison
+
+2. **JWT Implementation** (in-house, no external libs):
+   - SHA-256 HMAC (vendor single-file MIT implementation)
+   - Base64url encoding/decoding
+   - JWT structure: header.payload.signature
+   - Functions: `hbf_jwt_sign()`, `hbf_jwt_verify()`
+   - Token expiry validation
+
+3. **Session Management** (`internal/auth/sessions.c|h`):
+   - Session creation on login
+   - Session lookup by token hash (SHA-256)
+   - Session expiry/cleanup
+   - Revocation support
+
+4. **API Endpoints**:
+   - `POST /register` - Create user with Argon2id hash
+   - `POST /login` - Verify password, return JWT
+   - `POST /logout` - Invalidate session
+   - `GET /me` - Get current user info (requires auth)
+
+5. **Tests**:
+   - Test Argon2 hashing/verification
+   - Test JWT signing/verification
+   - Test session management
+   - Test authentication endpoints
+
+#### Phase 4.2: Authorization (2-3 Days)
+1. **Table-level permissions** (`internal/authz/table_perms.c|h`):
+   - Read `_hbf_table_permissions` table
+   - Check permissions before query execution
+   - Admin-only endpoints
+   - User-based access control
+
+2. **Row-level security** (`internal/authz/row_policies.c|h`):
+   - Read `_hbf_row_policies` table
+   - Inject WHERE clauses into queries
+   - Per-user data isolation
+   - Policy evaluation
+
+3. **Auth Middleware** (JavaScript):
+   - Check JWT in Authorization header
+   - Validate token
+   - Set `req.user` from token payload
+   - Protect routes with middleware
+
+4. **Tests**:
+   - Test table permissions
+   - Test row policies
+   - Test auth middleware
+   - Test unauthorized access
+
+### Deliverables
+- `internal/auth/argon2.c|h` - Password hashing - `internal/auth/jwt.c|h` - JWT
+implementation - `internal/auth/sessions.c|h` - Session management -
+`internal/authz/table_perms.c|h` - Table permissions -
+`internal/authz/row_policies.c|h` - Row-level security
+- Auth/authz middleware in JavaScript
+- Authentication endpoints
+- Comprehensive tests
+- Documentation
+
+---
+
+## Phase 5: Document Store & Search (3-4 Days) 🔄
+
+### Status
+**Not Started**
+
+### Tasks
+1. **Vendor simple-graph** (`third_party/simple_graph/`):
+   - MIT-licensed graph library
+   - Bazel integration
+   - Wrapper for document CRUD
+
+2. **Document API** (`internal/document/`):
+   - `GET /api/documents` - List documents
+   - `GET /api/documents/:id` - Get document
+   - `POST /api/documents` - Create document
+   - `PUT /api/documents/:id` - Update document
+   - `DELETE /api/documents/:id` - Delete document
+
+3. **FTS5 Search**:
+   - Index documents in `nodes_fts` table
+   - Search API: `GET /api/documents/search?q=query`
+   - Ranking and snippet generation
+   - Tag-based filtering
+
+4. **Tests**:
+   - Test document CRUD operations
+   - Test full-text search
+   - Test tag management
+   - Test search ranking
+
+### Deliverables
+- Document API endpoints
+- Full-text search implementation
+- Tag management
+- Comprehensive tests
+- Documentation
+
+---
+
+## Phase 6: Templates & Node Compatibility (1 Week) 🔄
+
+### Status
+**Not Started**
+
+### Subtasks
+
+#### Phase 6.1: EJS Templates (2-3 Days)
+1. **Vendor EJS or implement minimal version**
+2. **Template rendering** (`internal/templates/`):
+   - Load templates from database
+   - Render with data
+   - Caching for performance
+3. **JavaScript integration**:
+   - `res.render(template, data)` function
+   - Template helpers
+
+#### Phase 6.2: Node.js Compatibility (2-3 Days)
+1. **CommonJS module loader**:
+   - `require()` function
+   - Load modules from database
+   - Module caching
+2. **Node.js API shims**:
+   - `process` global
+   - `Buffer` class
+   - `fs` module (backed by SQLite)
+   - Minimal path/util modules
+3. **NPM module vendoring strategy**
+
+### Deliverables
+- EJS template rendering
+- CommonJS module system
+- Node.js API shims
+- Documentation
+
+---
+
+## Phase 7: REST API & Admin UI (1 Week) 🔄
+
+### Status
+**Not Started**
+
+### Tasks
+1. **Admin API endpoints**:
+   - `GET /_api/users` - List users (admin only)
+   - `POST /_api/users` - Create user (admin only)
+   - `GET /_api/permissions` - List permissions
+   - `POST /_api/permissions` - Update permissions
+   - `GET /_api/audit` - Audit log
+
+2. **Monaco Editor UI**:
+   - `GET /_admin` - Admin dashboard
+   - Code editor for JavaScript
+   - Database browser
+   - Log viewer
+
+3. **System metrics**:
+   - `GET /_api/metrics` - System stats
+   - Connection pool status
+   - Memory usage
+   - Request statistics
+
+### Deliverables
+- Admin API endpoints
+- Admin web UI
+- System metrics
+- Documentation
+
+---
+
+## Phase 8: WebSockets (3-4 Days) 🔄
+
+### Status
+**Not Started**
+
+### Tasks
+1. **WebSocket handler** (`internal/ws/`):
+   - CivetWeb WebSocket integration
+   - Connection management
+   - Message routing
+
+2. **JavaScript API**:
+   - `ws.send()` function
+   - `ws.on('message', callback)`
+   - Connection events
+
+3. **Channel support**:
+   - `/ws/:channel` routing
+   - Broadcast messages
+   - Private messages
+
+### Deliverables
+- WebSocket handler
+- JavaScript WebSocket API
+- Channel support
+- Tests and documentation
+
+---
+
+## Phase 9: Packaging & Optimization (1 Week) 🔄
+
+### Status
+**Not Started**
+
+### Tasks
+1. **Make connection limit configurable**:
+   - Add `--db_max_open` CLI argument
+   - Currently hardcoded to 100 in Phase 2b
+
+2. **Binary optimization**:
+   - Strip unused symbols
+   - Dead code elimination
+   - Size optimization
+
+3. **Configuration options**:
+   - Environment variable support
+   - Configuration file support
+   - Runtime configuration API
+
+4. **Deployment packaging**:
+   - Docker container (optional)
+   - Systemd service file
+   - Installation script
+
+### Deliverables
+- Optimized binary
+- Configuration system
+- Deployment packages
+- Installation documentation
+
+---
+
+## Phase 10: Hardening & Performance (1 Week) 🔄
+
+### Status
+**Not Started**
+
+### Tasks
+1. **Security hardening**:
+   - Input validation
+   - SQL injection prevention
+   - XSS prevention
+   - Rate limiting
+
+2. **Performance tuning**:
+   - Connection pool optimization
+   - Query optimization
+   - Caching strategies
+   - Benchmarking
+
+3. **Memory leak detection**:
+   - Valgrind analysis
+   - AddressSanitizer (ASan)
+   - Fix any leaks
+
+4. **Load testing**:
+   - Stress testing with many concurrent requests
+   - Memory usage under load
+   - Performance profiling
+
+### Deliverables
+- Hardened security
+- Performance optimizations
+- Memory leak fixes
+- Load testing results
+- Performance documentation
+
+---
+
+## Current Implementation Status
+
+### Completed Components ✅
+
+**Core Infrastructure**:
+- ✅ Bazel 8 build system with bzlmod
+- ✅ musl toolchain (100% static linking)
+- ✅ Coding standards (CERT C, Linux kernel style)
+- ✅ DNS-safe hash generator (SHA-256 → base36)
+- ✅ Logging system (4 levels, UTC timestamps)
+- ✅ CLI argument parsing
+- ✅ Signal handling (graceful shutdown)
+
+**HTTP Server**:
+- ✅ CivetWeb integration
+- ✅ Request routing
+- ✅ `GET /health` endpoint
+- ✅ Multi-threaded request handling
+- ✅ Per-request JS context isolation (Phase 3.0 fix)
+
+**Database**:
+- ✅ SQLite3 integration (v3.50.4)
+- ✅ Complete schema (11 tables)
+- ✅ WAL mode + FTS5
+- ✅ Connection caching (LRU, max 100)
+- ✅ Thread-safe access
+- ✅ User pod management
+
+**JavaScript Runtime**:
+- ✅ QuickJS-NG integration
+- ✅ Per-request runtime + context creation
+- ✅ Memory limits (64 MB default)
+- ✅ Execution timeouts (5000ms default)
+- ✅ Database module (`db.query()`, `db.execute()`)
+- ✅ Console module (`console.log/warn/error/debug`)
+- ✅ Request/response bindings (basic)
+- ✅ server.js loaded from database
+
+**Static Content**:
+- ✅ `tools/inject_content.sh` - Content injection
+- ✅ `static/server.js` - Minimal routing script
+- ✅ Content stored in database
+
+**Tests**:
+- ✅ 7 test suites (53+ test cases total)
+- ✅ All tests passing
+- ✅ Build verification (no warnings with `-Werror`)
+- ✅ Lint checks (clang-tidy CERT rules)
+
+**Binary**:
+- ✅ Size: 1.1 MB (stripped, statically linked)
+- ✅ Zero runtime dependencies
+- ✅ Fully static with musl libc 1.2.3
+
+### Next Steps (Immediate Focus)
+
+**Week 1-2: Phase 3.1 - Request/Response Bindings**
+- Day 1-2: POST/PUT body parsing
+- Day 3-4: Response enhancements (redirect, etc.)
+- Day 5-6: Integration testing
+
+**Week 3-4: Phase 3.2 - Enhanced Router & Static Content**
+- Day 1-2: Router implementation
+- Day 3-4: Static file serving
+- Day 5-6: Error handling and middleware
+
+**Week 5-6: Phase 4 - Authentication & Authorization**
+- Week 5: Password hashing, JWT, sessions
+- Week 6: Table/row permissions, auth middleware
+
+### Quality Gates (All Passing) ✅
+
+```bash
+# Build
+$ bazel build //:hbf
+✅ Build completed successfully (1.1 MB binary)
+
+# Test
+$ bazel test //...
+✅ 7 test suites, 53+ test cases, all passing
+
+# Lint
+$ bazel run //:lint
+✅ 8 source files checked, 0 issues
+```
+
+---
+
+## Critical Design Decisions
+
+### 1. Per-Request Context Isolation (Phase 3.0)
+**Decision**: Create fresh JSRuntime + JSContext for each HTTP request.
+
+**Rationale**:
+- Prevents stack overflow from context reuse
+- Ensures complete isolation between requests
+- Matches QuickJS best practices
+- Prevents memory/state leaks between requests
+- Class IDs are runtime-specific and cannot be shared
+
+**Trade-offs**:
+- ~0.5-1ms overhead per request (acceptable)
+- Higher memory usage during concurrent requests
+- Cannot share compiled bytecode between requests (could optimize later)
+
+### 2. Single-Instance Deployment
+**Decision**: Design for single-instance deployment initially (localhost or
+single k3s pod).
+
+**Rationale**:
+- Simpler architecture
+- No distributed state management
+- Easier to debug and maintain
+- Can scale later with multiple instances + load balancer
+
+**Trade-offs**:
+- Limited horizontal scalability initially
+- Single point of failure (mitigated by container orchestration)
+
+### 3. Database-Backed Routing
+**Decision**: Load `server.js` from SQLite database, not filesystem.
+
+**Rationale**:
+- Dynamic routing without recompilation
+- Version control in database
+- Hot-reload capability (future)
+- Single source of truth
+
+**Trade-offs**:
+- Slightly slower startup (acceptable)
+- Database becomes critical dependency
+
+### 4. No HTTPS in Binary
+**Decision**: Expect reverse proxy (nginx, Traefik, Caddy) for TLS termination.
+
+**Rationale**:
+- Smaller binary
+- Simpler code
+- Standard practice for backend services
+- Certificate management handled by proxy
+
+### 5. Static Content in Database
+**Decision**: Inject static files into SQLite at build time.
+
+**Rationale**:
+- Single deployment artifact
+- Version control for all content
+- Simplified deployment
+- No filesystem dependencies
+
+**Trade-offs**:
+- Larger database file
+- Build-time injection required
+- Binary content needs Base64 encoding
+
+---
+
+## References
+
+- **Implementation Guide**: `hbf_impl.md` (this file)
+- **Coding Standards**: `DOCS/coding-standards.md`
+- **Development Setup**: `DOCS/development-setup.md`
+- **Completion Reports**:
+  - `DOCS/phase0-completion.md`
+  - `DOCS/phase1-completion.md`
+  - `DOCS/phase2b-completion.md`
+- **Phase Plans**: `DOCS/revised_phase3_plan.md`
+- **Project Instructions**: `CLAUDE.md`
+
+---
+
+## Change Log
+
+- **2025-10-23**: Phase 3.0 complete - Per-request context isolation fix (stack
+  overflow + segfault resolved)
+- **2025-10-19**: Phase 2b complete - User pod & connection management
+- **2025-10-18**: Phase 2a complete - SQLite integration & schema
+- **2025-10-16**: Phase 1 complete - HTTP server bootstrap
+- **2025-10-15**: Phase 0 complete - Foundation established
