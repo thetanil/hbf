@@ -128,7 +128,7 @@ bazel test //internal/core:config_test --test_output=all
 
 Critical compile-time flags:
 ```c
--DSQLITE_THREADSAFE=1
+-DSQLITE_THREADSAFE=0
 -DSQLITE_ENABLE_FTS5
 -DSQLITE_OMIT_LOAD_EXTENSION
 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
