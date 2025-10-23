@@ -10,6 +10,7 @@ cc_library(
         "//internal/core:log",
         "@quickjs-ng//:quickjs",
         "//internal/db:db",
+        ":bindings",
     ],
 )
 
@@ -30,19 +31,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "modules",
-    srcs = ["modules.c"],
-    hdrs = ["modules.h"],
-    deps = [
-        ":engine",
-        "//internal/core:log",
-        "@sqlite3",
-    ],
-)
-
-
-
 cc_test(
     name = "engine_test",
     srcs = ["engine_test.c"],
@@ -53,5 +41,20 @@ cc_test(
     linkstatic = 1,
 )
 
+cc_test(
+    name = "stack_overflow_test",
+    srcs = ["stack_overflow_test.c"],
+    deps = [
+        "@quickjs-ng//:quickjs",
+        ":engine",
+        ":bindings",
+        "//internal/core:log",
+        "@civetweb//:civetweb",
+    ],
+    data = [
+        "//static:server.js",
+    ],
+    linkstatic = 1,
+)
 
 

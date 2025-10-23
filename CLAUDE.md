@@ -375,3 +375,4 @@ $ bazel run //:lint
 - **Completion reports**: `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, `DOCS/phase2b-completion.md`
 - **Coding standards**: `DOCS/coding-standards.md`
 - **Development setup**: `DOCS/development-setup.md`
+- there is no router.js, it is removed. there is only server.js

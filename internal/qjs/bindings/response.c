@@ -7,27 +7,22 @@
 
 #include "internal/core/log.h"
 
-/* Helper: Get response_t from JS object */
+/* Class ID for response objects */
+static JSClassID hbf_response_class_id = 0;
+
+/* Helper: Get response_t from JS object using opaque pointer */
 static hbf_response_t *get_response_data(JSContext *ctx, JSValueConst this_val)
 {
-	JSValue ptr_val;
-	int64_t ptr_int;
+	hbf_response_t *res;
 
-	ptr_val = JS_GetPropertyStr(ctx, this_val, "__hbf_response_ptr__");
-	if (JS_IsException(ptr_val) || JS_IsUndefined(ptr_val)) {
-		JS_FreeValue(ctx, ptr_val);
-		hbf_log_error("Failed to get response pointer from object");
+	/* Use JS_GetOpaque2 for type-safe pointer retrieval */
+	res = (hbf_response_t *)JS_GetOpaque2(ctx, this_val, hbf_response_class_id);
+	if (!res) {
+		hbf_log_error("Failed to get response opaque pointer");
 		return NULL;
 	}
 
-	if (JS_ToInt64(ctx, &ptr_int, ptr_val) < 0) {
-		JS_FreeValue(ctx, ptr_val);
-		hbf_log_error("Failed to convert response pointer to integer");
-		return NULL;
-	}
-
-	JS_FreeValue(ctx, ptr_val);
-	return (hbf_response_t *)((uintptr_t)ptr_int);
+	return res;
 }
 
 /* res.status(code) - Set HTTP status code */
@@ -50,8 +45,8 @@ static JSValue js_res_status(JSContext *ctx, JSValueConst this_val,
 
 	res->status_code = status;
 
-	/* Return this for chaining */
-	return JS_DupValue(ctx, this_val);
+	/* Return undefined (method chaining not needed for status) */
+	return JS_UNDEFINED;
 }
 
 /* res.send(body) - Send text response */
@@ -185,15 +180,38 @@ static JSValue js_res_set(JSContext *ctx, JSValueConst this_val,
 	return JS_UNDEFINED;
 }
 
+/* Initialize response class (call once at startup) */
+void hbf_qjs_init_response_class(JSContext *ctx)
+{
+	JSRuntime *rt = JS_GetRuntime(ctx);
+
+	/* Create class ID if not already created */
+	if (hbf_response_class_id == 0) {
+		JS_NewClassID(rt, &hbf_response_class_id);
+
+		/* Define class (no finalizer since we don't own the response_t) */
+		JSClassDef response_class_def = {
+			.class_name = "HbfResponse",
+			.finalizer = NULL, /* We don't own the response data */
+		};
+
+		JS_NewClass(rt, hbf_response_class_id, &response_class_def);
+	}
+}
+
 /* Create JavaScript response object */
 JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 {
 	JSValue res;
-	JSValue ptr_val;
 
 	if (!ctx || !res_data) {
 		hbf_log_error("Invalid arguments to hbf_qjs_create_response");
 		return JS_NULL;
+	}
+
+	/* Ensure class is initialized */
+	if (hbf_response_class_id == 0) {
+		hbf_qjs_init_response_class(ctx);
 	}
 
 	/* Initialize response data */
@@ -203,17 +221,16 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 	res_data->body_len = 0;
 	res_data->sent = 0;
 
-	/* Create response object */
-	res = JS_NewObject(ctx);
+	/* Create response object with proper class */
+	res = JS_NewObjectClass(ctx, (int)hbf_response_class_id);
 	if (JS_IsException(res)) {
 		return res;
 	}
 
-	/* Store response pointer as hidden property (as int64) */
-	ptr_val = JS_NewInt64(ctx, (int64_t)((uintptr_t)res_data));
-	JS_SetPropertyStr(ctx, res, "__hbf_response_ptr__", ptr_val);
+	/* Store response pointer as opaque data */
+	JS_SetOpaque(res, res_data);
 
-	/* Bind methods */
+	/* Bind methods directly to instance */
 	JS_SetPropertyStr(ctx, res, "status",
 			  JS_NewCFunction(ctx, js_res_status, "status", 1));
 	JS_SetPropertyStr(ctx, res, "send",

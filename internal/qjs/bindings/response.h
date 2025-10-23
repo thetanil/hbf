@@ -16,6 +16,9 @@ typedef struct {
 	int sent;  /* Flag to prevent double-send */
 } hbf_response_t;
 
+/* Initialize response class (call once at startup before creating responses) */
+void hbf_qjs_init_response_class(JSContext *ctx);
+
 /* Create a JavaScript response object
  * Methods created:
  *   - res.status(code): Set HTTP status code

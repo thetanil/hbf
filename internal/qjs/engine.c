@@ -11,6 +11,7 @@
 #include "internal/db/db.h"
 #include "internal/qjs/db_module.h"
 #include "internal/qjs/console_module.h"
+#include "internal/qjs/bindings/response.h"
 
 /* Global engine configuration */
 static struct {
@@ -159,6 +160,9 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 	/* Register custom modules */
 	hbf_qjs_init_db_module(js_ctx);
 	hbf_qjs_init_console_module(js_ctx);
+
+	/* Initialize response class for proper opaque pointer handling */
+	hbf_qjs_init_response_class(js_ctx);
 
 	hbf_log_debug("QuickJS context created");
 	return ctx;
