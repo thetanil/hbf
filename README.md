@@ -1,5 +1,7 @@
 read internal/db/BUILD.bazel
 
+not done: DOCS/revised_phase3_plan.md
+
 make instructions for claude about how the static content build works
 there are files in static/
 they should be appended to the schema.sql 
@@ -14,8 +16,17 @@ module which includes db.
 
 > no do not manually run the inject_content.sh script. this is handled in db internal/db/BUILD.bazel
 
-the 
-
+let's make a variant of our hbf app which does not use any database. hbf_simple
+could be the bazel target name. it should use civet to handle the http
+connection. on a new request, civet request info should be copied into a request
+object for the quickjs runtime. the qjs_request is passed to a new context which
+loads server.js and processes the request according to the server.js and returns
+the qjs response binding. this is them transformed into a civetweb response and
+passed back to the civetweb conn. we will use this as a simple way to debug this
+very persistent stack size exceeded error. i think something which is missing,
+is the request.h in qjs/bindings doesn't have any alignment with the civetweb
+mg_request_info data. maybe we could mock that and simplify all the way to just
+using qjs? anyway. make a plan in hbf_simple.md
 
 ● Summary
 
