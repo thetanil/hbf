@@ -3,10 +3,9 @@
 Before starting Phase 3, ensure the persistent "Maximum call stack size exceeded" bug is fully resolved in hbf itself:
 
 
-**Step 0: JS Context Isolation**
-- Refactor the HTTP handler so that each request creates a new QuickJS context (JSContext), loads server.js, and destroys the context after the response is sent.
-- The QuickJS runtime (JSRuntime) should be initialized once at startup and shared across all requests for efficiency.
-- Do NOT reuse JS contexts between requests. This is critical to avoid stack overflow and matches QuickJS best practices.
+**Step 0: JS Runtime & Context Isolation**
+- Refactor the HTTP handler so that each request creates a new QuickJS runtime (JSRuntime) and context (JSContext), loads server.js, and destroys both after the response is sent.
+- Do NOT reuse JSRuntime or JSContext between requests. This is critical to avoid stack overflow and matches QuickJS best practices for robust isolation.
 - Validate by running the full integration test suite (tools/hbf_simple_integration.sh) and confirming all endpoints pass with no stack overflow errors.
 - Document this requirement in code comments and developer docs to prevent future regressions.
 
