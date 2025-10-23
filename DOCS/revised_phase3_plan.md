@@ -1,3 +1,27 @@
+# Pre-Phase 3 Starter: JS Context Reuse Bugfix
+
+Before starting Phase 3, ensure the persistent "Maximum call stack size exceeded" bug is fully resolved in hbf itself:
+
+
+**Step 0: JS Context Isolation**
+- Refactor the HTTP handler so that each request creates a new QuickJS context (JSContext), loads server.js, and destroys the context after the response is sent.
+- The QuickJS runtime (JSRuntime) should be initialized once at startup and shared across all requests for efficiency.
+- Do NOT reuse JS contexts between requests. This is critical to avoid stack overflow and matches QuickJS best practices.
+- Validate by running the full integration test suite (tools/hbf_simple_integration.sh) and confirming all endpoints pass with no stack overflow errors.
+- Document this requirement in code comments and developer docs to prevent future regressions.
+
+Only proceed to Phase 3 after this bug is fixed and verified in hbf_simple and hbf.
+# Pre-Phase 3 Starter: JS Context Reuse Bugfix
+
+Before starting Phase 3, ensure the persistent "Maximum call stack size exceeded" bug is fully resolved in hbf itself:
+
+**Step 0: JS Context Isolation**
+- Refactor the HTTP handler so that each request creates a new QuickJS runtime and context, loads server.js, and destroys the context after the response is sent.
+- Do NOT reuse JS contexts between requests. This is critical to avoid stack overflow and matches QuickJS best practices.
+- Validate by running the full integration test suite (tools/hbf_simple_integration.sh) and confirming all endpoints pass with no stack overflow errors.
+- Document this requirement in code comments and developer docs to prevent future regressions.
+
+Only proceed to Phase 3 after this bug is fixed and verified in hbf_simple and hbf.
 # Revised Phase 3 Implementation Plan
 
 **Date**: 2025-10-22
@@ -30,6 +54,8 @@ We've successfully migrated from the planned "context pool" architecture to a si
 
 **Status**: Partially implemented
 **Goal**: Complete HTTP request/response object bindings for JavaScript
+
+**IMPORTANT:** For each HTTP request, create a new JSContext, load server.js, and invoke the handler. Destroy the context after the response is sent. The JSRuntime should be shared across all requests. Do not reuse JS contexts between requests.
 
 **What Exists**:
 - `internal/qjs/bindings/request.h` (interface defined)
@@ -103,6 +129,9 @@ We've successfully migrated from the planned "context pool" architecture to a si
 **Status**: Not implemented
 **Goal**: Serve static files (HTML, CSS, JS) from database via JS middleware
 
+**Note:** When serving static files via JS, ensure each request uses a fresh JS
+context (but the JSRuntime is shared).
+
 **Tasks**:
 1. **Static middleware** (in `static/lib/static.js` or inline in server.js):
    ```javascript
@@ -140,6 +169,8 @@ We've successfully migrated from the planned "context pool" architecture to a si
 
 **Status**: Basic routing works, needs enhancements
 **Goal**: Production-ready Express.js-compatible routing
+
+**Note:** Middleware and error handling should operate within a per-request JS context (with a shared JSRuntime).
 
 **What Exists**:
 - `static/lib/router.js` with GET/POST/PUT/DELETE/USE
@@ -306,17 +337,21 @@ We've successfully migrated from the planned "context pool" architecture to a si
 - ✅ Error handling works (JS exceptions → HTTP 500)
 - ✅ All existing tests pass + new integration tests
 - ✅ Documentation updated
+- ✅ No stack overflow errors under load; each request is handled in a fresh JS context
 
 ## Risk Mitigation
 
 **Known Challenges**:
-1. **Request body parsing**: POST/PUT body reading from CivetWeb
+1. **Stack overflow due to JS context reuse**
+   - *Solution*: Always create a new JS context per request. Never pool or reuse contexts for multiple requests.
+
+2. **Request body parsing**: POST/PUT body reading from CivetWeb
    - *Solution*: Use `mg_read()` API, parse JSON in C or JS
 
-2. **Binary content**: Serving images, fonts, etc.
+3. **Binary content**: Serving images, fonts, etc.
    - *Solution*: Base64 encode in database, decode on serve
 
-3. **Performance**: Single-threaded JS might be slow
+4. **Performance**: Single-threaded JS might be slow
    - *Solution*: Profile first, optimize later (async I/O future)
 
 **Fallback Plans**:
@@ -343,5 +378,8 @@ We've successfully migrated from the planned "context pool" architecture to a si
 ## Conclusion
 
 The pool removal was a major simplification that aligns with QuickJS-NG best practices. Moving forward, Phase 3 completion is within reach - the foundation is solid, we just need to finish request/response bindings and static content serving.
+
+**Implementation Notes:**
+- Document the per-request JS context requirement in code comments and developer docs to prevent future regressions.
 
 **Next commit should be**: Request/Response bindings implementation ✅
