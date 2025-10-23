@@ -1,11 +1,10 @@
 # Database utilities
 
-# Generate SQL inserts for static content (router.js, server.js, etc.)
+# Generate SQL inserts for static content (server.js, static files)
 genrule(
     name = "static_content_sql_gen",
     srcs = [
         "//static:server.js",
-        "//static/lib:router.js",
         "//static/www:index.html",
         "//static/www:style.css",
     ],
@@ -14,11 +13,10 @@ genrule(
         # Create temp directory structure matching static/
         TMPDIR=$$(mktemp -d)
         trap "rm -rf $$TMPDIR" EXIT
-        mkdir -p $$TMPDIR/static/lib $$TMPDIR/static/www
+        mkdir -p $$TMPDIR/static/www
 
         # Copy files to temp directory with correct structure
         cp $(location //static:server.js) $$TMPDIR/static/server.js
-        cp $(location //static/lib:router.js) $$TMPDIR/static/lib/router.js
         cp $(location //static/www:index.html) $$TMPDIR/static/www/index.html
         cp $(location //static/www:style.css) $$TMPDIR/static/www/style.css
 

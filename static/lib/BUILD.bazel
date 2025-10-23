@@ -1,5 +1,0 @@
-# JavaScript library files
-
-exports_files([
-    "router.js",
-])

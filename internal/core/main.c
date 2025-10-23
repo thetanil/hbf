@@ -135,33 +135,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	// Load router.js and server.js from database (nodes table)
-	hbf_log_info("Loading router.js and server.js...");
-
-	// Query for router.js
-	{
-		sqlite3_stmt *stmt = NULL;
-		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'router.js' AND type = 'js'";
-		ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
-		if (ret == SQLITE_OK) {
-			if (sqlite3_step(stmt) == SQLITE_ROW) {
-				const char *code = (const char *)sqlite3_column_text(stmt, 0);
-				int code_len = sqlite3_column_bytes(stmt, 0);
-				if (code && code_len > 0) {
-					ret = hbf_qjs_eval(g_qjs_ctx, code, (size_t)code_len, "router.js");
-					if (ret != 0) {
-						hbf_log_error("Failed to load router.js: %s",
-							     hbf_qjs_get_error(g_qjs_ctx));
-					} else {
-						hbf_log_info("Loaded router.js (%d bytes)", code_len);
-					}
-				}
-			} else {
-				hbf_log_warn("router.js not found in database");
-			}
-			sqlite3_finalize(stmt);
-		}
-	}
+	// Load server.js from database (nodes table)
+	hbf_log_info("Loading server.js...");
 
 	// Query for server.js
 	{

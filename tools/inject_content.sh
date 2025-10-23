@@ -38,17 +38,14 @@ find "$STATIC_DIR" -type f | sort | while read -r file; do
 	if [[ "$rel_path" == "server.js" ]]; then
 		type="js"
 		name="server.js"
-	elif [[ "$rel_path" == "lib/router.js" ]]; then
-		type="js"
-		name="router.js"
 	elif [[ "$rel_path" == www/* ]]; then
 		# Static web content
 		type="static"
 		# Remove www/ prefix for cleaner paths (www/index.html -> index.html)
 		name="${rel_path#www/}"
 	else
-		type="static"
-		name="$rel_path"
+		# Skip other files (like lib/router.js which we're not using now)
+		continue
 	fi
 
 	# Read file content and create proper JSON object

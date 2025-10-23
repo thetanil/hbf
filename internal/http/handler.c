@@ -64,7 +64,15 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	}
 
 	/* Get global.app.handle */
+	hbf_log_debug("Getting global object");
 	global = JS_GetGlobalObject(ctx);
+	if (JS_IsException(global) || JS_IsNull(global) || JS_IsUndefined(global)) {
+		hbf_log_error("Failed to get global object!");
+		JS_FreeValue(ctx, res);
+		JS_FreeValue(ctx, req);
+		mg_send_http_error(conn, 500, "Internal Server Error");
+		return 500;
+	}
 
 	/* Debug: check what's in global */
 	hbf_log_debug("Getting 'app' from global object");
@@ -93,6 +101,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 503;
 	}
 
+	hbf_log_debug("Getting 'handle' property from app");
 	handle_func = JS_GetPropertyStr(ctx, app, "handle");
 
 	if (JS_IsUndefined(handle_func)) {
@@ -107,6 +116,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 500;
 	}
 
+	hbf_log_debug("Checking if handle is a function");
 	if (!JS_IsFunction(ctx, handle_func)) {
 		hbf_log_error("app.handle is not a function (type check failed)");
 		JS_FreeValue(ctx, handle_func);
@@ -128,6 +138,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		hbf_log_debug("About to call app.handle()");
 
 		/* Check if req and res are valid */
+		hbf_log_debug("Validating req and res objects");
 		if (JS_IsNull(req) || JS_IsUndefined(req)) {
 			hbf_log_error("req is null or undefined!");
 		}
@@ -135,16 +146,26 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			hbf_log_error("res is null or undefined!");
 		}
 
+		JSValue test_method = JS_GetPropertyStr(ctx, req, "method");
+		hbf_log_debug("req has method: %d", !JS_IsUndefined(test_method));
+		JS_FreeValue(ctx, test_method);
+
+		JSValue test_path = JS_GetPropertyStr(ctx, req, "path");
+		hbf_log_debug("req has path: %d", !JS_IsUndefined(test_path));
+		JS_FreeValue(ctx, test_path);
+
 		/* Lock mutex to serialize JS execution (single-threaded model) */
 		extern pthread_mutex_t g_qjs_mutex;
+		hbf_log_debug("Locking mutex");
 		pthread_mutex_lock(&g_qjs_mutex);
 
 		/* Reset execution timeout timer before JS entry point */
+		hbf_log_debug("Resetting exec timer");
 		hbf_qjs_begin_exec(qjs_ctx);
 
-		hbf_log_debug("Calling JS_Call...");
+		hbf_log_debug("Calling JS_Call (handle_func=%p, app=%p, argc=2)...", (void*)handle_func.u.ptr, (void*)app.u.ptr);
 		result = JS_Call(ctx, handle_func, app, 2, args);
-		hbf_log_debug("JS_Call returned");
+		hbf_log_debug("JS_Call returned (result=%p)", (void*)result.u.ptr);
 
 		/* Unlock mutex */
 		pthread_mutex_unlock(&g_qjs_mutex);
@@ -156,6 +177,12 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		const char *err_str = JS_ToCString(ctx, exception);
 		JSValue stack = JS_GetPropertyStr(ctx, exception, "stack");
 		const char *stack_str = NULL;
+		JSValue message = JS_GetPropertyStr(ctx, exception, "message");
+		const char *message_str = NULL;
+
+		if (!JS_IsUndefined(message)) {
+			message_str = JS_ToCString(ctx, message);
+		}
 
 		if (!JS_IsUndefined(stack)) {
 			stack_str = JS_ToCString(ctx, stack);
@@ -164,12 +191,24 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		hbf_log_error("JavaScript error in request handler: %s",
 			      err_str ? err_str : "unknown");
 
-		if (stack_str) {
-			hbf_log_error("Stack trace: %s", stack_str);
-			JS_FreeCString(ctx, stack_str);
+		if (message_str && message_str[0] != '\0') {
+			hbf_log_error("Error message: %s", message_str);
 		}
 
+		if (stack_str && stack_str[0] != '\0') {
+			hbf_log_error("Stack trace: %s", stack_str);
+		} else {
+			hbf_log_error("Stack trace: (empty - possible native code error)");
+		}
+
+		JS_FreeValue(ctx, message);
 		JS_FreeValue(ctx, stack);
+		if (message_str) {
+			JS_FreeCString(ctx, message_str);
+		}
+		if (stack_str) {
+			JS_FreeCString(ctx, stack_str);
+		}
 		if (err_str) {
 			JS_FreeCString(ctx, err_str);
 		}
