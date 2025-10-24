@@ -1,29 +1,55 @@
 
 // Minimal server.js for HBF integration test
-const app = {};
+app = {};
 
-app.handle = async function (req, res) {
-    const { method, url } = req;
-    if (url === "/hello" && method === "GET") {
-        res.setHeader("Content-Type", "application/json");
-        res.send(JSON.stringify({ message: "Hello, world!" }));
+app.handle = function (req, res) {
+    // Middleware: add custom header
+    res.set("X-Powered-By", "HBF");
+
+    const { method, path } = req;
+    if (path === "/" && method === "GET") {
+        // Serve index.html
+        res.set("Content-Type", "text/html");
+        res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HBF</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <h1>HBF</h1>
+    <p>Single binary web compute environment</p>
+    <h2>Available Routes</h2>
+    <ul>
+        <li><a href="/health">/health</a> - Health check</li>
+        <li><a href="/hello">/hello</a> - Hello world</li>
+        <li><a href="/user/42">/user/42</a> - User endpoint</li>
+        <li><a href="/echo">/echo</a> - Echo request</li>
+    </ul>
+</body>
+</html>`);
         return;
     }
-    if (url.startsWith("/user/") && method === "GET") {
-        const id = url.split("/")[2];
-        res.setHeader("Content-Type", "application/json");
-        res.send(JSON.stringify({ id }));
+    if (path === "/hello" && method === "GET") {
+        res.set("Content-Type", "application/json");
+        res.send(JSON.stringify({ message: "Hello, World!" }));
         return;
     }
-    if (url === "/echo" && method === "GET") {
-        res.setHeader("Content-Type", "application/json");
-        res.send(JSON.stringify({ method, url }));
+    if (path.startsWith("/user/") && method === "GET") {
+        const userId = path.split("/")[2];
+        res.set("Content-Type", "application/json");
+        res.send(JSON.stringify({ userId }));
+        return;
+    }
+    if (path === "/echo" && method === "GET") {
+        res.set("Content-Type", "application/json");
+        res.send(JSON.stringify({ method, url: path }));
         return;
     }
     // Default: 404
-    res.statusCode = 404;
-    res.setHeader("Content-Type", "text/plain");
+    res.status(404);
+    res.set("Content-Type", "text/plain");
     res.send("Not Found");
 };
-
-globalThis.app = app;
