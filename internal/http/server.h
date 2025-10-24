@@ -4,7 +4,16 @@
 
 #include <sqlite3.h>
 
-typedef struct hbf_server hbf_server_t;
+/* Forward declaration for CivetWeb context */
+struct mg_context;
+
+/* HTTP server structure */
+typedef struct hbf_server {
+	int port;
+	sqlite3 *db;       /* Main database */
+	sqlite3 *fs_db;    /* Filesystem database (SQLAR) */
+	struct mg_context *ctx;
+} hbf_server_t;
 
 /*
  * Create HTTP server

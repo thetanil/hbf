@@ -1,5 +1,7 @@
 /* QuickJS HTTP request handler implementation */
 #include "internal/http/handler.h"
+#include "internal/http/server.h"
+#include <stdlib.h>
 
 #include "internal/core/log.h"
 #include "internal/db/db.h"
@@ -18,9 +20,9 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	JSValue global, app, handle_func, req, res, result;
 	hbf_response_t response;
 	int status;
-	extern sqlite3 *g_default_db; /* Global database from main.c */
+	/* cbdata is expected to be hbf_server_t* for access to fs_db */
+	hbf_server_t *server = (hbf_server_t *)cbdata;
 
-	(void)cbdata;
 
 	ri = mg_get_request_info(conn);
 	if (!ri) {
@@ -35,7 +37,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	 * This prevents stack overflow errors and ensures complete isolation.
 	 * DO NOT reuse contexts between requests - this is a QuickJS best practice.
 	 */
-	qjs_ctx = hbf_qjs_ctx_create_with_db(g_default_db);
+	qjs_ctx = hbf_qjs_ctx_create_with_db(server ? server->db : NULL);
 	if (!qjs_ctx) {
 		hbf_log_error("Failed to create QuickJS context for request");
 		mg_send_http_error(conn, 500, "Internal Server Error");
@@ -50,41 +52,24 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 500;
 	}
 
-	/* Load server.js from database into this fresh context */
-	{
-		sqlite3_stmt *stmt = NULL;
-		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'server.js' AND type = 'js'";
-		int ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
-		if (ret == SQLITE_OK) {
-			if (sqlite3_step(stmt) == SQLITE_ROW) {
-				const char *code = (const char *)sqlite3_column_text(stmt, 0);
-				int code_len = sqlite3_column_bytes(stmt, 0);
-				if (code && code_len > 0) {
-					ret = hbf_qjs_eval(qjs_ctx, code, (size_t)code_len, "server.js");
-					if (ret != 0) {
-						hbf_log_error("Failed to load server.js: %s",
-							     hbf_qjs_get_error(qjs_ctx));
-						sqlite3_finalize(stmt);
-						hbf_qjs_ctx_destroy(qjs_ctx);
-						mg_send_http_error(conn, 500, "Internal Server Error");
-						return 500;
-					}
-				}
-			} else {
-				hbf_log_error("server.js not found in database");
-				sqlite3_finalize(stmt);
-				hbf_qjs_ctx_destroy(qjs_ctx);
-				mg_send_http_error(conn, 503, "Service Unavailable");
-				return 503;
-			}
-			sqlite3_finalize(stmt);
-		} else {
-			hbf_log_error("Failed to query for server.js");
+		/* Load hbf/server.js from SQLAR archive using fs_db */
+		unsigned char *js_data = NULL;
+		size_t js_size = 0;
+		int ret = hbf_db_read_file(server ? server->fs_db : NULL, "hbf/server.js", &js_data, &js_size);
+		if (ret != 0 || !js_data || js_size == 0) {
+			hbf_log_error("hbf/server.js not found in SQLAR archive");
+			hbf_qjs_ctx_destroy(qjs_ctx);
+			mg_send_http_error(conn, 503, "Service Unavailable");
+			return 503;
+		}
+		ret = hbf_qjs_eval(qjs_ctx, (const char *)js_data, js_size, "hbf/server.js");
+		free(js_data);
+		if (ret != 0) {
+			hbf_log_error("Failed to load hbf/server.js: %s", hbf_qjs_get_error(qjs_ctx));
 			hbf_qjs_ctx_destroy(qjs_ctx);
 			mg_send_http_error(conn, 500, "Internal Server Error");
 			return 500;
 		}
-	}
 
 	/* Create request and response objects */
 	req = hbf_qjs_create_request(ctx, conn);

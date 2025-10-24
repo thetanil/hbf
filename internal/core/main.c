@@ -3,6 +3,7 @@
 #include "log.h"
 #include "../db/db.h"
 #include "../http/server.h"
+#include "../qjs/engine.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +44,14 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	/* Initialize QuickJS engine (64 MB memory limit, 5000 ms timeout) */
+	ret = hbf_qjs_init(64, 5000);
+	if (ret != 0) {
+		hbf_log_error("Failed to initialize QuickJS engine");
+		hbf_db_close(db, fs_db);
+		return 1;
+	}
+
 	/* Create HTTP server */
 	server = hbf_server_create(config.port, db, fs_db);
 	if (!server) {
@@ -73,6 +82,7 @@ int main(int argc, char *argv[])
 	/* Cleanup */
 	hbf_log_info("Shutting down");
 	hbf_server_destroy(server);
+	hbf_qjs_shutdown();
 	hbf_db_close(db, fs_db);
 
 	return 0;

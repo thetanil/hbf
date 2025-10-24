@@ -2,13 +2,22 @@
 
 cc_library(
     name = "server",
-    srcs = ["server.c"],
-    hdrs = ["server.h"],
+    srcs = [
+        "server.c",
+        "handler.c",
+    ],
+    hdrs = [
+        "server.h",
+        "handler.h",
+    ],
     deps = [
         "//internal/core:log",
         "//internal/db:db",
+        "//internal/qjs:engine",
+        "//internal/qjs:bindings",
         "@civetweb//:civetweb",
         "@sqlite3",
+        "@quickjs-ng//:quickjs",
     ],
     visibility = ["//visibility:public"],
 )

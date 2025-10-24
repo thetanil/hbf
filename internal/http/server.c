@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "server.h"
+#include "internal/http/handler.h"
 #include "../core/log.h"
 #include "../db/db.h"
 #include "civetweb.h"
@@ -7,12 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct hbf_server {
-	struct mg_context *ctx;
-	int port;
-	sqlite3 *db;
-	sqlite3 *fs_db;
-};
+
 
 /* MIME type helper */
 static const char *get_mime_type(const char *path)
@@ -155,7 +151,8 @@ int hbf_server_start(hbf_server_t *server)
 
 	/* Register handlers */
 	mg_set_request_handler(server->ctx, "/health", health_handler, server);
-	mg_set_request_handler(server->ctx, "**", static_handler, server);
+	mg_set_request_handler(server->ctx, "/static/**", static_handler, server);
+	mg_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
 
 	hbf_log_info("HTTP server listening on port %d", server->port);
 	return 0;

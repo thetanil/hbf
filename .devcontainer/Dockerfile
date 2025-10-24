@@ -12,6 +12,16 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     clang-tidy-18 \
     llvm-18 \
     apache2-utils \
+    apt-transport-https \
+    gnupg \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Bazel APT repository and install Bazel
+RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" > /etc/apt/sources.list.d/bazel.list \
+    && apt-get update \
+    && apt-get install -y bazel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

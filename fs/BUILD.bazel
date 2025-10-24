@@ -10,7 +10,13 @@ genrule(
         exclude_directories = 1,
     ),
     outs = ["fs.db"],
-    cmd = "sqlite3 -A -C fs -cf $(location fs.db) $$(echo '$(SRCS)' | sed 's|fs/||g')",
+    cmd = """
+        mkdir -p hbf static
+        cp $(location hbf/server.js) hbf/server.js
+        cp $(location static/index.html) static/index.html
+        sqlite3 -A -cf $(location fs.db) hbf/server.js static/index.html
+        rm -rf hbf static
+    """,
 )
 
 # Step 2: Convert database to C source files
