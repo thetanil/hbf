@@ -47,7 +47,7 @@ run_client() {
 for ((c=0;c<$NUM_CLIENTS;c++)); do
     run_client &
     pids[$c]=$!
-    sleep 0.05
+    sleep 0.01
 done
 
 for pid in ${pids[@]}; do

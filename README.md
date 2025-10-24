@@ -11,22 +11,69 @@ when the bin is started, it looks for a database if one is given on the cli
 otherwise, it opens the last database written to in ./henvs
 otherwise it exits
 
-ensure that a database with nodes table is available before proceding to any
-module which includes db.
+i would like to make a migration from the current database file handling and sql
+schema, to something new. anything which is there now related to the schema, how
+it is used in the application, how it is queried, and how it is compiled into
+the application should be flagged for removal. the new system will be designed
+as such. write a plan called db_plan.md which includes all the relevant things
+in the current implementation to be flagged for removal, and detailed
+implementation plan for the following:
+
+files under fs/ will be archived in a sqlite db using sqlar using a command like
+- sqlite3 fs.db -Ac fs/*
+- https://sqlite.org/sqlar.html
+- https://sqlite.org/src/file/ext/misc/sqlar.c
+- the database should be vaccumed and shrunk before creating the archive to
+  reduce size of the binary if possible
+- this is done at build time by bazel
+- this could be a genrule which creates fs.db
+
+the binary database file (fs.db) is converted to fs.c
+- this is another genrule in bazel
+- use something like xxd -i fs.db > fs.c
+- fs.c gets compiled into the hbf binary
+
+this can be run in memory mode like:
+```c
+sqlite3 *db;
+sqlite3_open("file:memdb1?mode=memory&cache=shared", &db);
+sqlite3_exec(db, (char*)dump_sql, NULL, NULL, NULL);
+```
+
+or it can be written to the filesystem and used persistently. the default is
+persistent mode. tests should set a flag to use inmem database. a cli flag inmem
+can be used for easy script testing.
+
+the layout of the fs/ directory is notable
+
+fs/static/{some_path}/{some_filename}
+- i expect, but do not know how the archive works, that the name/id in the sqlar
+  table will be static/{some_path}/{some_filename}
+- this will be a handler for civetweb
+
+the http static file server handler receives a request for
+/{some_path}/{some_filename} and it prepends /static/ to the requested url and try to
+serve it if it is availble with a query like 
+
+```sql
+SELECT name, mode, datetime(mtime,'unixepoch'), sqlar_uncompress(data,sz)
+  FROM sqlar
+ WHERE ...;
+```
+if the file is found in the sqlar table, civetweb creates the response and no
+quickjs js data needs be created.
+
+fs/hbf/ 
+contains files which are needed for hbf itself, primarily the server.js
+which is loaded into the quickjs context as the http handler. this can be edited
+by the user via REST CRUD, but is not served as a static file
+
+
+
+
+
 
 > no do not manually run the inject_content.sh script. this is handled in db internal/db/BUILD.bazel
-
-let's make a variant of our hbf app which does not use any database. hbf_simple
-could be the bazel target name. it should use civet to handle the http
-connection. on a new request, civet request info should be copied into a request
-object for the quickjs runtime. the qjs_request is passed to a new context which
-loads server.js and processes the request according to the server.js and returns
-the qjs response binding. this is them transformed into a civetweb response and
-passed back to the civetweb conn. we will use this as a simple way to debug this
-very persistent stack size exceeded error. i think something which is missing,
-is the request.h in qjs/bindings doesn't have any alignment with the civetweb
-mg_request_info data. maybe we could mock that and simplify all the way to just
-using qjs? anyway. make a plan in hbf_simple.md
 
 ● Summary
 

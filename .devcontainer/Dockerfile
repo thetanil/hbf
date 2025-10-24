@@ -5,8 +5,8 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
     curl \
     git \
+    xxd \
     vim \
-    wget \
     sqlite3 \
     clang-tidy-18 \
     llvm-18 \
