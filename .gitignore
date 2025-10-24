@@ -39,3 +39,4 @@ core.*
 *.db
 hbf.db-wal
 hbf.db-shm
+hbf
