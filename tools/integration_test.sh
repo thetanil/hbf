@@ -138,7 +138,7 @@ main() {
     echo ""
 
     echo -e "${YELLOW}Starting server on port $PORT...${NC}"
-    ./bazel-bin/hbf --port "$PORT" --log_level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
+    ./bazel-bin/hbf --port "$PORT" --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
     SERVER_PID=$!
     echo -e "${GREEN}Server started (PID: $SERVER_PID)${NC}"
     echo ""

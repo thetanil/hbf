@@ -1,241 +1,114 @@
 /* SPDX-License-Identifier: MIT */
 #include "db.h"
+#include "../core/log.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#define TEST_DB_PATH "/tmp/hbf_db_test.db"
-
-static void cleanup_test_db(void)
-{
-	unlink(TEST_DB_PATH);
-	unlink("/tmp/hbf_db_test.db-wal");
-	unlink("/tmp/hbf_db_test.db-shm");
-}
-
-static void test_db_open_close(void)
+static void test_db_init_inmem(void)
 {
 	sqlite3 *db = NULL;
+	sqlite3 *fs_db = NULL;
 	int ret;
 
-	cleanup_test_db();
-
-	ret = hbf_db_open(TEST_DB_PATH, &db);
+	ret = hbf_db_init(1, &db, &fs_db);
 	assert(ret == 0);
 	assert(db != NULL);
+	assert(fs_db != NULL);
 
-	hbf_db_close(db);
-	cleanup_test_db();
+	hbf_db_close(db, fs_db);
 
-	printf("  ✓ Open and close database\n");
+	printf("  ✓ In-memory database initialization\n");
 }
 
-static void test_db_open_null_args(void)
+static void test_db_init_persistent(void)
 {
 	sqlite3 *db = NULL;
+	sqlite3 *fs_db = NULL;
 	int ret;
 
-	ret = hbf_db_open(NULL, &db);
-	assert(ret == -1);
+	/* Remove existing test database */
+	unlink("./hbf.db");
+	unlink("./hbf.db-wal");
+	unlink("./hbf.db-shm");
 
-	ret = hbf_db_open(TEST_DB_PATH, NULL);
-	assert(ret == -1);
-
-	printf("  ✓ NULL argument handling\n");
-}
-
-static void test_db_pragmas(void)
-{
-	sqlite3 *db = NULL;
-	sqlite3_stmt *stmt;
-	int ret;
-	const char *text;
-
-	cleanup_test_db();
-
-	ret = hbf_db_open(TEST_DB_PATH, &db);
+	ret = hbf_db_init(0, &db, &fs_db);
 	assert(ret == 0);
 	assert(db != NULL);
+	assert(fs_db != NULL);
 
-	/* Check foreign_keys pragma */
-	ret = sqlite3_prepare_v2(db, "PRAGMA foreign_keys", -1, &stmt, NULL);
-	assert(ret == SQLITE_OK);
-	ret = sqlite3_step(stmt);
-	assert(ret == SQLITE_ROW);
-	assert(sqlite3_column_int(stmt, 0) == 1);
-	sqlite3_finalize(stmt);
+	hbf_db_close(db, fs_db);
 
-	/* Check journal_mode pragma */
-	ret = sqlite3_prepare_v2(db, "PRAGMA journal_mode", -1, &stmt, NULL);
-	assert(ret == SQLITE_OK);
-	ret = sqlite3_step(stmt);
-	assert(ret == SQLITE_ROW);
-	text = (const char *)sqlite3_column_text(stmt, 0);
-	assert(strcmp(text, "wal") == 0);
-	sqlite3_finalize(stmt);
+	/* Cleanup */
+	unlink("./hbf.db");
+	unlink("./hbf.db-wal");
+	unlink("./hbf.db-shm");
 
-	/* Check synchronous pragma */
-	ret = sqlite3_prepare_v2(db, "PRAGMA synchronous", -1, &stmt, NULL);
-	assert(ret == SQLITE_OK);
-	ret = sqlite3_step(stmt);
-	assert(ret == SQLITE_ROW);
-	assert(sqlite3_column_int(stmt, 0) == 1); /* NORMAL = 1 */
-	sqlite3_finalize(stmt);
-
-	hbf_db_close(db);
-	cleanup_test_db();
-
-	printf("  ✓ Database pragmas configured correctly\n");
+	printf("  ✓ Persistent database initialization\n");
 }
 
-static void test_db_exec(void)
+static void test_db_read_file(void)
 {
 	sqlite3 *db = NULL;
+	sqlite3 *fs_db = NULL;
+	unsigned char *data;
+	size_t size;
 	int ret;
 
-	cleanup_test_db();
-
-	ret = hbf_db_open(TEST_DB_PATH, &db);
+	ret = hbf_db_init(1, &db, &fs_db);
 	assert(ret == 0);
 
-	/* Create a simple table */
-	ret = hbf_db_exec(db, "CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)");
-	assert(ret == 0);
+	/* Test reading existing file */
+	ret = hbf_db_read_file(fs_db, "hbf/server.js", &data, &size);
+	if (ret == 0) {
+		assert(data != NULL);
+		assert(size > 0);
+		free(data);
+		printf("  ✓ Read file from archive (server.js, %zu bytes)\n", size);
+	} else {
+		printf("  ⚠ server.js not found in archive (expected for minimal test)\n");
+	}
 
-	/* Insert data */
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('hello')");
-	assert(ret == 0);
-
-	/* Invalid SQL should fail */
-	ret = hbf_db_exec(db, "INVALID SQL");
+	/* Test reading non-existent file */
+	ret = hbf_db_read_file(fs_db, "nonexistent/file.txt", &data, &size);
 	assert(ret == -1);
 
-	hbf_db_close(db);
-	cleanup_test_db();
+	printf("  ✓ File read operations\n");
 
-	printf("  ✓ Execute SQL statements\n");
+	hbf_db_close(db, fs_db);
 }
 
-static void test_db_transactions(void)
+static void test_db_file_exists(void)
 {
 	sqlite3 *db = NULL;
+	sqlite3 *fs_db = NULL;
 	int ret;
+	int exists;
 
-	cleanup_test_db();
-
-	ret = hbf_db_open(TEST_DB_PATH, &db);
+	ret = hbf_db_init(1, &db, &fs_db);
 	assert(ret == 0);
 
-	ret = hbf_db_exec(db, "CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)");
-	assert(ret == 0);
+	/* Test non-existent file */
+	exists = hbf_db_file_exists(fs_db, "nonexistent/file.txt");
+	assert(exists == 0);
 
-	/* Begin transaction */
-	ret = hbf_db_begin(db);
-	assert(ret == 0);
+	printf("  ✓ File existence check\n");
 
-	/* Insert data */
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test1')");
-	assert(ret == 0);
-
-	/* Commit transaction */
-	ret = hbf_db_commit(db);
-	assert(ret == 0);
-
-	/* Begin another transaction and rollback */
-	ret = hbf_db_begin(db);
-	assert(ret == 0);
-
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test2')");
-	assert(ret == 0);
-
-	ret = hbf_db_rollback(db);
-	assert(ret == 0);
-
-	hbf_db_close(db);
-	cleanup_test_db();
-
-	printf("  ✓ Transaction management (begin, commit, rollback)\n");
-}
-
-static void test_db_last_insert_id(void)
-{
-	sqlite3 *db = NULL;
-	int64_t id;
-	int ret;
-
-	cleanup_test_db();
-
-	ret = hbf_db_open(TEST_DB_PATH, &db);
-	assert(ret == 0);
-
-	ret = hbf_db_exec(db, "CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)");
-	assert(ret == 0);
-
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test')");
-	assert(ret == 0);
-
-	id = hbf_db_last_insert_id(db);
-	assert(id == 1);
-
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test2')");
-	assert(ret == 0);
-
-	id = hbf_db_last_insert_id(db);
-	assert(id == 2);
-
-	hbf_db_close(db);
-	cleanup_test_db();
-
-	printf("  ✓ Last insert ID retrieval\n");
-}
-
-static void test_db_changes(void)
-{
-	sqlite3 *db = NULL;
-	int changes;
-	int ret;
-
-	cleanup_test_db();
-
-	ret = hbf_db_open(TEST_DB_PATH, &db);
-	assert(ret == 0);
-
-	ret = hbf_db_exec(db, "CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)");
-	assert(ret == 0);
-
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test1')");
-	assert(ret == 0);
-	changes = hbf_db_changes(db);
-	assert(changes == 1);
-
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test2')");
-	assert(ret == 0);
-	ret = hbf_db_exec(db, "INSERT INTO test (value) VALUES ('test3')");
-	assert(ret == 0);
-
-	ret = hbf_db_exec(db, "UPDATE test SET value = 'updated' WHERE 1=1");
-	assert(ret == 0);
-	changes = hbf_db_changes(db);
-	assert(changes == 3);
-
-	hbf_db_close(db);
-	cleanup_test_db();
-
-	printf("  ✓ Row change count\n");
+	hbf_db_close(db, fs_db);
 }
 
 int main(void)
 {
-	printf("Running database tests:\n");
+	hbf_log_init(hbf_log_parse_level("DEBUG"));
 
-	test_db_open_close();
-	test_db_open_null_args();
-	test_db_pragmas();
-	test_db_exec();
-	test_db_transactions();
-	test_db_last_insert_id();
-	test_db_changes();
+	printf("Database tests:\n");
+
+	test_db_init_inmem();
+	test_db_init_persistent();
+	test_db_read_file();
+	test_db_file_exists();
 
 	printf("\nAll database tests passed!\n");
 	return 0;

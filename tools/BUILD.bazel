@@ -7,6 +7,12 @@ sh_binary(
 )
 
 sh_binary(
+    name = "db_to_c",
+    srcs = ["db_to_c.sh"],
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
     name = "sql_to_c",
     srcs = ["sql_to_c.sh"],
     visibility = ["//visibility:public"],

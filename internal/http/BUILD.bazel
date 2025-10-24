@@ -1,29 +1,13 @@
-# HTTP server and routing (Phase 1+)
+# HTTP server and routing
 
 cc_library(
     name = "server",
     srcs = ["server.c"],
     hdrs = ["server.h"],
     deps = [
-        ":handler",
-        "//internal/core:config",
-        "//internal/core:log",
-        "@civetweb//:civetweb",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "handler",
-    srcs = ["handler.c"],
-    hdrs = ["handler.h"],
-    deps = [
         "//internal/core:log",
         "//internal/db:db",
-        "//internal/qjs:bindings",
-        "//internal/qjs:engine",
         "@civetweb//:civetweb",
-        "@quickjs-ng//:quickjs",
         "@sqlite3",
     ],
     visibility = ["//visibility:public"],

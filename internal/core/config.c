@@ -1,108 +1,63 @@
 /* SPDX-License-Identifier: MIT */
 #include "config.h"
+#include "log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-void hbf_config_init(hbf_config_t *config)
+static void print_usage(const char *program)
 {
-	if (!config) {
-		return;
-	}
-
-	config->port = 5309;
-	config->log_level = HBF_LOG_INFO;
-	config->dev_mode = false;
-	strncpy(config->storage_dir, "./henvs", sizeof(config->storage_dir) - 1);
-	config->storage_dir[sizeof(config->storage_dir) - 1] = '\0';
-}
-
-void hbf_config_print_usage(const char *program_name)
-{
-	printf("Usage: %s [options]\n", program_name);
-	printf("\n");
+	printf("Usage: %s [options]\n", program);
 	printf("Options:\n");
-	printf("  --port <num>         HTTP server port (default: 5309)\n");
-	printf("  --storage_dir <path> Directory for user pod storage (default: ./henvs)\n");
-	printf("  --log_level <level>  Log level: debug, info, warn, error (default: info)\n");
+	printf("  --port PORT          HTTP server port (default: 5309)\n");
+	printf("  --log-level LEVEL    Log level: debug, info, warn, error (default: info)\n");
 	printf("  --dev                Enable development mode\n");
-	printf("  --help               Show this help message\n");
-	printf("\n");
+	printf("  --inmem              Use in-memory database (for testing)\n");
+	printf("  --help, -h           Show this help message\n");
 }
 
-/* Helper: parse port argument */
-static int parse_port(const char *arg)
-{
-	char *endptr;
-	long port_long;
-
-	port_long = strtol(arg, &endptr, 10);
-	if (endptr == arg || *endptr != '\0' || port_long <= 0 || port_long > 65535) {
-		return -1;
-	}
-	return (int)port_long;
-}
-
-/* Helper: set storage_dir in config */
-static int set_storage_dir(hbf_config_t *config, const char *path)
-{
-	if (strlen(path) >= sizeof(config->storage_dir)) {
-		return -1;
-	}
-	strncpy(config->storage_dir, path, sizeof(config->storage_dir) - 1);
-	config->storage_dir[sizeof(config->storage_dir) - 1] = '\0';
-	return 0;
-}
-
-int hbf_config_parse(hbf_config_t *config, int argc, char *argv[])
+int hbf_config_parse(int argc, char *argv[], hbf_config_t *config)
 {
 	int i;
 
-	if (!config || !argv) {
+	if (!config) {
 		return -1;
 	}
 
-	/* Initialize with defaults */
-	hbf_config_init(config);
+	/* Set defaults */
+	config->port = 5309;
+	strncpy(config->log_level, "info", sizeof(config->log_level) - 1);
+	config->dev = 0;
+	config->inmem = 0;
 
 	/* Parse arguments */
 	for (i = 1; i < argc; i++) {
-		const char *arg = argv[i];
-
-		if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-			hbf_config_print_usage(argv[0]);
+		if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+			print_usage(argv[0]);
 			return 1;
-		}
-		if (strcmp(arg, "--dev") == 0) {
-			config->dev_mode = true;
-			continue;
-		}
-
-		/* Check arguments that require values */
-		if (i + 1 >= argc &&
-		    (strcmp(arg, "--port") == 0 || strcmp(arg, "--storage_dir") == 0 ||
-		     strcmp(arg, "--log_level") == 0)) {
-			fprintf(stderr, "Error: %s requires an argument\n", arg);
-			return -1;
-		}
-
-		if (strcmp(arg, "--port") == 0) {
-			int port = parse_port(argv[++i]);
-			if (port < 0) {
-				fprintf(stderr, "Error: Invalid port number: %s\n", argv[i]);
+		} else if (strcmp(argv[i], "--port") == 0) {
+			if (i + 1 >= argc) {
+				hbf_log_error("--port requires an argument");
 				return -1;
 			}
-			config->port = port;
-		} else if (strcmp(arg, "--storage_dir") == 0) {
-			if (set_storage_dir(config, argv[++i]) != 0) {
-				fprintf(stderr, "Error: storage_dir path too long: %s\n", argv[i]);
+			config->port = atoi(argv[++i]);
+			if (config->port <= 0 || config->port > 65535) {
+				hbf_log_error("Invalid port: %d", config->port);
 				return -1;
 			}
-		} else if (strcmp(arg, "--log_level") == 0) {
-			config->log_level = hbf_log_parse_level(argv[++i]);
+		} else if (strcmp(argv[i], "--log-level") == 0) {
+			if (i + 1 >= argc) {
+				hbf_log_error("--log-level requires an argument");
+				return -1;
+			}
+			strncpy(config->log_level, argv[++i],
+			        sizeof(config->log_level) - 1);
+		} else if (strcmp(argv[i], "--dev") == 0) {
+			config->dev = 1;
+		} else if (strcmp(argv[i], "--inmem") == 0) {
+			config->inmem = 1;
 		} else {
-			fprintf(stderr, "Error: Unknown option: %s\n", arg);
-			hbf_config_print_usage(argv[0]);
+			hbf_log_error("Unknown option: %s", argv[i]);
 			return -1;
 		}
 	}

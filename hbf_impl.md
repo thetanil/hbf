@@ -1,7 +1,6 @@
 # HBF Implementation Guide (C99 + Bazel)
 
-**Last Updated**: 2025-10-23 **Current Status**: Phase 3.0 Complete (Per-Request
-Context Isolation Fixed) ✅
+**Last Updated**: 2025-10-24 **Current Status**: Database Migration to SQLAR Complete ✅
 
 This document provides a pragmatic, phased plan to build HBF: a single,
 statically linked C99 web compute environment that embeds SQLite as the
@@ -12,19 +11,24 @@ runtime extensibility.
 with programmable routing via JavaScript. All HTTP requests handled by
 user-defined `server.js` loaded from SQLite database.
 
+**Recent Major Change**: Migrated from multi-tenant pod system to single-user
+SQLAR-based architecture. Static files embedded in SQLite Archive at build time.
+
 ## Core Architecture
 
 - **Language**: Strict C99 (no C++)
 - **Binary**: Single statically linked executable with musl toolchain (100%
   static, no glibc)
 - **HTTP**: CivetWeb (HTTP only, no HTTPS in binary), WebSockets supported
-- **DB**: SQLite3 amalgamation with WAL + FTS5
+- **DB**: Two SQLite databases - `fs.db` (embedded SQLAR archive, read-only) and
+  `hbf.db` (runtime data, read-write)
 - **Scripting**: QuickJS-NG embedded, sandboxed (memory/timeout limits)
 - **Programmable Routing**: Express.js-compatible API in JavaScript (`server.js`
-  from database)
+  from fs.db archive)
 - **Per-Request Isolation**: Each HTTP request creates fresh JSRuntime +
   JSContext (no reuse)
-- **Static Content**: Served from SQLite nodes table (injected at build time)
+- **Static Content**: Embedded in fs.db SQLAR archive at build time, served via
+  sqlite3_deserialize API
 - **Build**: Bazel 8 with bzlmod, vendored third_party sources
 - **Licensing**: MIT/BSD/Apache-2/PD only (NO GPL)
 
@@ -34,9 +38,14 @@ user-defined `server.js` loaded from SQLite database.
   DNS-safe hash)
 - ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI, signal handling)
 - ✅ **Phase 2a**: SQLite Integration & Database Schema (document-graph, system
-  tables, FTS5)
+  tables, FTS5) - DEPRECATED, replaced by SQLAR
 - ✅ **Phase 2b**: User Pod & Connection Management (connection caching, LRU
-  eviction)
+  eviction) - DEPRECATED, removed multi-tenancy
+- ✅ **Phase 2c**: **Database Migration to SQLAR** (db_plan.md implementation)
+  - Removed multi-user pod system (henv/)
+  - Implemented SQLAR-based filesystem embedding
+  - Two-database architecture (fs.db embedded + hbf.db runtime)
+  - Fixed segfault in sqlite3_deserialize cleanup
 - ✅ **Phase 3.0**: **Per-Request Context Isolation Fix** (Critical QuickJS
   runtime fix)
 - 🔄 **Phase 3.1**: Request/Response Bindings (NEXT - 2-3 days)
@@ -74,19 +83,22 @@ user-defined `server.js` loaded from SQLite database.
 
 /internal/
   core/              ✅ Logging, config, CLI, hash generator, main
-  http/              ✅ CivetWeb server wrapper, request handler
-  henv/              ✅ User pod management with connection caching
-  db/                ✅ SQLite wrapper, schema, embedded SQL
+  http/              ✅ CivetWeb server wrapper, simplified single-user handler
+  db/                ✅ SQLite wrapper, SQLAR file reading (fs.db + hbf.db)
   qjs/               ✅ QuickJS-NG engine, bindings, modules
     bindings/        ✅ Request, response, db, console modules
 
-/static/             ✅ Build-time content (server.js, router.js)
-  server.js          ✅ Express-style routing script
+/fs/                 ✅ Build-time filesystem (embedded into fs.db SQLAR)
+  hbf/               ✅ JavaScript runtime files
+    server.js        ✅ Express-style routing script (placeholder)
+  static/            ✅ Static web content
+    index.html       ✅ Default landing page
+    style.css        ✅ Basic CSS
 
 /tools/
   lint.sh            ✅ clang-tidy wrapper
-  sql_to_c.sh        ✅ SQL to C byte array converter
-  inject_content.sh  ✅ Static content → SQL INSERT statements
+  create_fs_archive.sh ✅ Convert fs/ to SQLite SQLAR archive
+  db_to_c.sh         ✅ SQLite database to C byte array converter
 
 /DOCS/               ✅ Documentation
   coding-standards.md
@@ -180,6 +192,11 @@ PRAGMA synchronous=NORMAL;
 - ✅ `internal/db/db_test.c` - 7 test cases
 - ✅ `internal/db/schema_test.c` - 9 test cases
 
+### Deprecation Note
+**Phase 2a schema has been superseded by Phase 2c (SQLAR migration)**. The
+document-graph schema and system tables have been removed. Future phases will
+reintroduce necessary tables as needed for the single-user architecture.
+
 ---
 
 ## Phase 2b: User Pod & Connection Management ✅ COMPLETE
@@ -205,6 +222,122 @@ PRAGMA synchronous=NORMAL;
 
 ### Tests
 - ✅ `internal/henv/manager_test.c` - 12 test cases
+
+### Deprecation Note
+**Phase 2b has been superseded by Phase 2c (SQLAR migration)**. The multi-tenant
+pod system has been removed in favor of a simpler single-user architecture.
+
+---
+
+## Phase 2c: Database Migration to SQLAR ✅ COMPLETE
+
+### Status
+**Completed**: 2025-10-24 **Major Refactor**: Migrated from schema-based
+multi-tenant system to SQLAR-based single-user architecture
+
+### Problem Statement
+The previous architecture (Phase 2a/2b) implemented a complex multi-tenant pod
+system with per-user database isolation. This added unnecessary complexity for
+the initial single-instance deployment model. The db_plan.md proposed a
+simplified architecture using SQLite Archive (SQLAR) for embedded static files.
+
+### Architecture Change
+
+#### Before (Phase 2a/2b)
+- Multi-user pod system (`internal/henv/`)
+- Schema-based database with nodes/edges/tags tables
+- Per-user database isolation with connection caching
+- Complex LRU eviction logic
+- Static content planned for database nodes table
+
+#### After (Phase 2c)
+- Single-user architecture
+- Two-database model:
+  - `fs.db` - Embedded SQLAR archive (read-only, in-memory via
+    sqlite3_deserialize)
+  - `hbf.db` or `:memory:` - Runtime application data (read-write)
+- Static files embedded at build time
+- Simplified HTTP server (182 lines, down from 329)
+- Simplified main.c (80 lines, down from 202)
+
+### Deliverables
+
+#### 1. Filesystem Build System (`/fs/`)
+- ✅ `fs/hbf/server.js` - JavaScript routing script (placeholder)
+- ✅ `fs/static/index.html` - Default landing page
+- ✅ `fs/static/style.css` - Basic CSS
+- ✅ `fs/BUILD.bazel` - Bazel rules for SQLAR generation
+- ✅ `fs/fs_build_test.sh` - Verification script
+
+#### 2. Build Tools (`/tools/`)
+- ✅ `tools/create_fs_archive.sh` - Converts fs/ directory to SQLite SQLAR
+  archive
+- ✅ `tools/db_to_c.sh` - Converts SQLite database to C byte array (fs_embedded.c/h)
+
+#### 3. Database API (`internal/db/`)
+- ✅ Complete rewrite of `db.h` and `db.c`
+- ✅ `hbf_db_init(inmem, &db, &fs_db)` - Initialize both databases
+- ✅ `hbf_db_close(db, fs_db)` - Clean shutdown
+- ✅ `hbf_db_read_file(fs_db, path, &data, &size)` - Read from SQLAR archive
+- ✅ `hbf_db_file_exists(fs_db, path)` - Check file existence
+- ✅ Uses `sqlite3_deserialize()` API for in-memory fs.db
+- ✅ Fixed segfault: Use `sqlite3_malloc64()` for FREEONCLOSE compatibility
+
+#### 4. HTTP Server Simplification (`internal/http/`)
+- ✅ Removed thread-local storage complexity
+- ✅ Removed henv dependencies
+- ✅ Direct SQLAR file serving
+- ✅ Simplified from 329 to 182 lines (44% reduction)
+
+#### 5. Configuration Updates (`internal/core/`)
+- ✅ Removed `--storage_dir` CLI flag
+- ✅ Added `--inmem` flag for in-memory database mode
+- ✅ Simplified config struct (removed storage_dir field)
+- ✅ Updated main.c (202 → 80 lines, 60% reduction)
+
+#### 6. QuickJS Engine Updates (`internal/qjs/`)
+- ✅ Removed dependency on old `hbf_db_open()` function
+- ✅ Engine uses `sqlite3_open()` directly for test databases
+- ✅ Engine only receives runtime db handle (no fs_db knowledge)
+
+### Critical Bug Fixes
+
+#### Segfault in sqlite3_deserialize Cleanup
+**Symptom**: Core dump on Ctrl+C shutdown
+**Root Cause**: Memory allocated with `malloc()` was freed by SQLite's internal
+allocator when using `SQLITE_DESERIALIZE_FREEONCLOSE` flag
+**Fix**: Changed to use SQLite's memory allocator
+```c
+// internal/db/db.c lines 70-100
+fs_data_copy = sqlite3_malloc64(fs_db_len);  // Was: malloc()
+// ... use memory ...
+sqlite3_free(fs_data_copy);  // Was: free()
+```
+
+### Removed Components
+- ❌ `internal/henv/` - Entire directory (multi-user pod management)
+- ❌ `internal/db/schema.sql` - Schema-based tables
+- ❌ `internal/db/schema.c|h` - Schema initialization
+- ❌ `internal/db/schema_test.c` - Schema tests
+- ❌ `--storage_dir` CLI flag
+
+### Tests
+- ✅ `//fs:fs_build_test` - SQLAR archive verification (8 files)
+- ✅ `//internal/db:db_test` - Database operations (5 test cases, no segfault)
+- ✅ `//internal/core:config_test` - Updated for new CLI flags (7 test cases)
+- ✅ Manual shutdown test - No core dumps on SIGINT
+
+### Build Verification
+```bash
+bazel build //:hbf           # ✅ PASSED
+bazel test //...             # ✅ 6/6 tests PASSED
+bazel-bin/hbf --inmem        # ✅ Runs without segfault
+# Ctrl+C shutdown             # ✅ Clean shutdown, no core dump
+```
+
+### Binary Size
+- **Current**: 1.1 MB (stripped, statically linked)
+- **Embedded fs.db**: 3,584 bytes (8 files)
 
 ---
 
@@ -1002,9 +1135,17 @@ single k3s pod).
 
 ## Change Log
 
+- **2025-10-24**: Phase 2c complete - Database migration to SQLAR (major
+  refactor)
+  - Removed multi-tenant pod system (Phase 2a/2b deprecated)
+  - Implemented two-database architecture (fs.db SQLAR + hbf.db runtime)
+  - Fixed critical segfault in sqlite3_deserialize cleanup
+  - Simplified codebase (HTTP server -44%, main.c -60%)
 - **2025-10-23**: Phase 3.0 complete - Per-request context isolation fix (stack
   overflow + segfault resolved)
-- **2025-10-19**: Phase 2b complete - User pod & connection management
-- **2025-10-18**: Phase 2a complete - SQLite integration & schema
+- **2025-10-19**: Phase 2b complete - User pod & connection management (now
+  deprecated)
+- **2025-10-18**: Phase 2a complete - SQLite integration & schema (now
+  deprecated)
 - **2025-10-16**: Phase 1 complete - HTTP server bootstrap
 - **2025-10-15**: Phase 0 complete - Foundation established

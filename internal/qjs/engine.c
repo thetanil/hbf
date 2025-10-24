@@ -143,9 +143,14 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 		ctx->db = db;
 		ctx->own_db = 0; /* Don't close on destroy */
 	} else if (own_db) {
-		/* Open own database (for testing) */
-		if (hbf_db_open(":memory:", &ctx->db) != 0) {
-			hbf_log_error("Failed to open SQLite DB");
+		/* Open own database (for testing) - use sqlite3_open directly */
+		int rc = sqlite3_open(":memory:", &ctx->db);
+		if (rc != SQLITE_OK) {
+			hbf_log_error("Failed to open SQLite DB: %s",
+			              ctx->db ? sqlite3_errmsg(ctx->db) : "unknown error");
+			if (ctx->db) {
+				sqlite3_close(ctx->db);
+			}
 			JS_FreeContext(js_ctx);
 			JS_FreeRuntime(rt);
 			free(ctx);

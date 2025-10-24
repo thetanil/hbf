@@ -6,6 +6,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     curl \
     git \
     xxd \
+    gdb \
     vim \
     sqlite3 \
     clang-tidy-18 \

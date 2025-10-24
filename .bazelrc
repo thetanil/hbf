@@ -40,8 +40,9 @@ build --conlyopt=-D_POSIX_C_SOURCE=200809L
 build --copt=-D_POSIX_C_SOURCE=200809L
 
 # SQLite compile-time options
-build --copt=-DSQLITE_THREADSAFE=0
+build --copt=-DSQLITE_THREADSAFE=1
 build --copt=-DSQLITE_ENABLE_FTS5
+build --copt=-DSQLITE_ENABLE_SQLAR
 build --copt=-DSQLITE_OMIT_LOAD_EXTENSION
 build --copt=-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
 build --copt=-DSQLITE_ENABLE_JSON1

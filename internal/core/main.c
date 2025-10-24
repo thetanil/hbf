@@ -1,202 +1,79 @@
 /* SPDX-License-Identifier: MIT */
 #include "config.h"
-#include "hash.h"
 #include "log.h"
-#include "../henv/manager.h"
-#include "../http/server.h"
-#include "internal/qjs/engine.h"
 #include "../db/db.h"
-#include "../db/schema.h"
-#include <errno.h>
-#include <pthread.h>
+#include "../http/server.h"
 #include <signal.h>
-#include <sqlite3.h>
-#include <stdbool.h>
 #include <stdio.h>
-#include <string.h>
-#include <time.h>
+#include <stdlib.h>
 #include <unistd.h>
 
-static volatile bool g_shutdown = false;
-static hbf_server_t *g_server = NULL;
-sqlite3 *g_default_db = NULL; /* Exported for per-request context creation */
+static volatile sig_atomic_t running = 1;
 
-static void signal_handler(int signum)
+static void signal_handler(int sig)
 {
-	(void)signum;
-	g_shutdown = true;
+	(void)sig;
+	running = 0;
 }
 
 int main(int argc, char *argv[])
 {
 	hbf_config_t config;
-	struct sigaction sa;
+	sqlite3 *db = NULL;
+	sqlite3 *fs_db = NULL;
+	hbf_server_t *server = NULL;
 	int ret;
 
 	/* Parse configuration */
-	ret = hbf_config_parse(&config, argc, argv);
+	ret = hbf_config_parse(argc, argv, &config);
 	if (ret != 0) {
-		return (ret < 0) ? 1 : 0;
+		return (ret == 1) ? 0 : 1;
 	}
 
 	/* Initialize logging */
-	hbf_log_init(config.log_level);
+	hbf_log_init(hbf_log_parse_level(config.log_level));
 
-	hbf_log_info("HBF v0.1.0 starting");
-	hbf_log_info("Port: %d", config.port);
-	hbf_log_info("Storage directory: %s", config.storage_dir);
-	hbf_log_info("Log level: %d", config.log_level);
-	hbf_log_info("Dev mode: %s", config.dev_mode ? "enabled" : "disabled");
+	hbf_log_info("HBF starting (port=%d, inmem=%d, dev=%d)",
+	             config.port, config.inmem, config.dev);
 
-	/* Initialize henv manager (max 100 cached connections) */
-	if (hbf_henv_init(config.storage_dir, 100) != 0) {
-		hbf_log_error("Failed to initialize henv manager");
-		return 1;
-	}
-
-	/* Open default database using henv manager with time-based hash */
-	/* This creates {storage_dir}/{hash(timestamp)}/index.db - unique per invocation */
-	char time_str[64];
-	char default_db_path[256];
-	char user_hash[9];
-	struct timespec ts;
-
-	clock_gettime(CLOCK_REALTIME, &ts);
-	ret = snprintf(time_str, sizeof(time_str), "%ld.%ld", ts.tv_sec, ts.tv_nsec);
-	if (ret < 0 || (size_t)ret >= sizeof(time_str)) {
-		hbf_log_error("Failed to format timestamp");
-		hbf_henv_shutdown();
-		return 1;
-	}
-
-	/* Generate hash from timestamp */
-	ret = hbf_dns_safe_hash(time_str, user_hash);
+	/* Initialize database */
+	ret = hbf_db_init(config.inmem, &db, &fs_db);
 	if (ret != 0) {
-		hbf_log_error("Failed to generate hash for default database");
-		hbf_henv_shutdown();
+		hbf_log_error("Failed to initialize database");
 		return 1;
 	}
 
-	/* Create user pod if it doesn't exist */
-	if (!hbf_henv_user_exists(user_hash)) {
-		hbf_log_info("Creating user pod: %s", user_hash);
-		ret = hbf_henv_create_user_pod(user_hash);
-		if (ret != 0) {
-			hbf_log_error("Failed to create user pod");
-			hbf_henv_shutdown();
-			return 1;
-		}
-	}
-
-	/* Get database path */
-	ret = hbf_henv_get_db_path(user_hash, default_db_path);
-	if (ret != 0) {
-		hbf_log_error("Failed to get default database path");
-		hbf_henv_shutdown();
-		return 1;
-	}
-
-	/* Open the database */
-	ret = hbf_db_open(default_db_path, &g_default_db);
-	if (ret != 0) {
-		hbf_log_error("Failed to open default database at %s", default_db_path);
-		hbf_henv_shutdown();
-		return 1;
-	}
-	hbf_log_info("Opened default database: %s", default_db_path);
-
-	/* Initialize database schema (skip if already exists) */
-	ret = hbf_db_init_schema(g_default_db);
-	if (ret != 0) {
-		hbf_log_error("Failed to initialize database schema");
-		hbf_db_close(g_default_db);
-		hbf_henv_shutdown();
-		return 1;
-	}
-
-	/*
-	 * Initialize QuickJS engine with global settings (memory limit: 64MB, timeout: 5000ms).
-	 * Note: We no longer create a global context here. Instead, each HTTP request
-	 * will create its own fresh JSRuntime + JSContext, load server.js, handle the
-	 * request, and then destroy the runtime/context. This prevents stack overflow
-	 * errors and ensures complete isolation between requests.
-	 */
-	ret = hbf_qjs_init(64, 5000);
-	if (ret != 0) {
-		hbf_log_error("Failed to initialize QuickJS engine");
-		hbf_db_close(g_default_db);
-		hbf_henv_shutdown();
-		return 1;
-	}
-
-	/* Verify server.js exists in database (fail fast if missing) */
-	hbf_log_info("Verifying server.js in database...");
-	{
-		sqlite3_stmt *stmt = NULL;
-		const char *sql = "SELECT json_extract(body, '$.content') FROM nodes WHERE name = 'server.js' AND type = 'js'";
-		ret = sqlite3_prepare_v2(g_default_db, sql, -1, &stmt, NULL);
-		if (ret == SQLITE_OK) {
-			if (sqlite3_step(stmt) == SQLITE_ROW) {
-				int code_len = sqlite3_column_bytes(stmt, 0);
-				hbf_log_info("Found server.js (%d bytes) - will load per-request", code_len);
-			} else {
-				hbf_log_warn("server.js not found in database - requests will fail");
-			}
-			sqlite3_finalize(stmt);
-		} else {
-			hbf_log_error("Failed to query for server.js");
-		}
-	}
-
-
-	/* Set up signal handlers for graceful shutdown */
-	sa.sa_handler = signal_handler;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = 0;
-
-	if (sigaction(SIGINT, &sa, NULL) < 0) {
-		hbf_log_error("Failed to set SIGINT handler");
-		return 1;
-	}
-
-	if (sigaction(SIGTERM, &sa, NULL) < 0) {
-		hbf_log_error("Failed to set SIGTERM handler");
+	/* Create HTTP server */
+	server = hbf_server_create(config.port, db, fs_db);
+	if (!server) {
+		hbf_log_error("Failed to create HTTP server");
+		hbf_db_close(db, fs_db);
 		return 1;
 	}
 
 	/* Start HTTP server */
-	g_server = hbf_server_start(&config, default_db_path);
-	if (!g_server) {
-		hbf_log_error("Failed to start server");
+	ret = hbf_server_start(server);
+	if (ret != 0) {
+		hbf_log_error("Failed to start HTTP server");
+		hbf_server_destroy(server);
+		hbf_db_close(db, fs_db);
 		return 1;
 	}
 
-	hbf_log_info("Server running. Press Ctrl+C to stop.");
+	/* Setup signal handlers */
+	signal(SIGINT, signal_handler);
+	signal(SIGTERM, signal_handler);
 
-	/* Wait for shutdown signal */
-	while (!g_shutdown) {
+	/* Main loop */
+	hbf_log_info("HBF running (press Ctrl+C to stop)");
+	while (running) {
 		sleep(1);
 	}
 
-	hbf_log_info("Shutdown signal received");
-
-	/* Stop server */
-	hbf_server_stop(g_server);
-	g_server = NULL;
-
-	/* Shutdown QuickJS engine (no global context to destroy) */
-	hbf_qjs_shutdown();
-
-	/* Close default database */
-	if (g_default_db) {
-		hbf_db_close(g_default_db);
-		g_default_db = NULL;
-	}
-
-	/* Shutdown henv manager */
-	hbf_henv_shutdown();
-
-	hbf_log_info("HBF stopped");
+	/* Cleanup */
+	hbf_log_info("Shutting down");
+	hbf_server_destroy(server);
+	hbf_db_close(db, fs_db);
 
 	return 0;
 }

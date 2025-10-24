@@ -1,50 +1,5 @@
-# Database utilities
-
-# Generate SQL inserts for static content (server.js, static files)
-genrule(
-    name = "static_content_sql_gen",
-    srcs = [
-        "//static:server.js",
-        "//static/www:index.html",
-        "//static/www:style.css",
-    ],
-    outs = ["static_content.sql"],
-    cmd = """
-        # Create temp directory structure matching static/
-        TMPDIR=$$(mktemp -d)
-        trap "rm -rf $$TMPDIR" EXIT
-        mkdir -p $$TMPDIR/static/www
-
-        # Copy files to temp directory with correct structure
-        cp $(location //static:server.js) $$TMPDIR/static/server.js
-        cp $(location //static/www:index.html) $$TMPDIR/static/www/index.html
-        cp $(location //static/www:style.css) $$TMPDIR/static/www/style.css
-
-        # Run inject_content script
-        $(location //tools:inject_content) $$TMPDIR/static $(location static_content.sql)
-    """,
-    tools = ["//tools:inject_content"],
-)
-
-# Merge schema.sql with static content SQL
-genrule(
-    name = "schema_with_content_gen",
-    srcs = [
-        "schema.sql",
-        ":static_content_sql_gen",
-    ],
-    outs = ["schema_with_content.sql"],
-    cmd = "cat $(location schema.sql) $(location :static_content_sql_gen) > $(location schema_with_content.sql)",
-)
-
-# Convert merged schema to C source file
-genrule(
-    name = "schema_sql_gen",
-    srcs = [":schema_with_content_gen"],
-    outs = ["schema_sql.c"],
-    cmd = "$(location //tools:sql_to_c) $(location :schema_with_content_gen) $(location schema_sql.c)",
-    tools = ["//tools:sql_to_c"],
-)
+# SPDX-License-Identifier: MIT
+# Database management
 
 cc_library(
     name = "db",
@@ -52,21 +7,8 @@ cc_library(
     hdrs = ["db.h"],
     deps = [
         "//internal/core:log",
-        "@sqlite3//:sqlite3",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "schema",
-    srcs = [
-        "schema.c",
-        ":schema_sql_gen",
-    ],
-    hdrs = ["schema.h"],
-    deps = [
-        ":db",
-        "//internal/core:log",
+        "//fs:fs_embedded",
+        "//third_party/sqlar",
         "@sqlite3//:sqlite3",
     ],
     visibility = ["//visibility:public"],
@@ -76,12 +18,5 @@ cc_test(
     name = "db_test",
     srcs = ["db_test.c"],
     deps = [":db"],
-    linkstatic = 1,
-)
-
-cc_test(
-    name = "schema_test",
-    srcs = ["schema_test.c"],
-    deps = [":schema"],
     linkstatic = 1,
 )

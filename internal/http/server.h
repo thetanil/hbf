@@ -2,37 +2,40 @@
 #ifndef HBF_HTTP_SERVER_H
 #define HBF_HTTP_SERVER_H
 
-#include "../core/config.h"
-#include <stddef.h>
+#include <sqlite3.h>
 
-/*
- * HTTP server context.
- * Opaque structure - implementation details hidden.
- */
 typedef struct hbf_server hbf_server_t;
 
 /*
- * Create and start HTTP server.
+ * Create HTTP server
  *
- * @param config: Configuration including port and log level
- * @param db_path: Path to default database for static file serving
- * @return Server instance on success, NULL on error
+ * @param port: HTTP server port
+ * @param db: Main database handle
+ * @param fs_db: Filesystem database handle (for static files)
+ * @return Server instance or NULL on error
  */
-hbf_server_t *hbf_server_start(const hbf_config_t *config, const char *db_path);
+hbf_server_t *hbf_server_create(int port, sqlite3 *db, sqlite3 *fs_db);
 
 /*
- * Stop and destroy HTTP server.
+ * Start HTTP server
  *
- * @param server: Server instance to stop
+ * @param server: Server instance
+ * @return 0 on success, -1 on error
+ */
+int hbf_server_start(hbf_server_t *server);
+
+/*
+ * Stop HTTP server
+ *
+ * @param server: Server instance
  */
 void hbf_server_stop(hbf_server_t *server);
 
 /*
- * Get server uptime in seconds.
+ * Destroy HTTP server
  *
  * @param server: Server instance
- * @return Uptime in seconds, or 0 if server is NULL
  */
-unsigned long hbf_server_uptime(const hbf_server_t *server);
+void hbf_server_destroy(hbf_server_t *server);
 
 #endif /* HBF_HTTP_SERVER_H */

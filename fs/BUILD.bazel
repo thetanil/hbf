@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: MIT
+# Filesystem archive for HBF
+
+# Step 1: Create SQLite archive from fs/ directory
+genrule(
+    name = "fs_archive",
+    srcs = glob(
+        ["hbf/**/*", "static/**/*"],
+        exclude = ["BUILD.bazel"],
+        exclude_directories = 1,
+    ),
+    outs = ["fs.db"],
+    cmd = "sqlite3 -Acf $(location fs.db) $(SRCS)",
+)
+
+# Step 2: Convert database to C source files
+genrule(
+    name = "fs_db_gen",
+    srcs = [":fs_archive"],
+    outs = [
+        "fs_embedded.c",
+        "fs_embedded.h",
+    ],
+    cmd = "$(location //tools:db_to_c) $(location :fs_archive) $(location fs_embedded.c) $(location fs_embedded.h)",
+    tools = ["//tools:db_to_c"],
+)
+
+# Step 3: Create library with embedded database
+cc_library(
+    name = "fs_embedded",
+    srcs = ["fs_embedded.c"],
+    hdrs = ["fs_embedded.h"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)
+
+# Test archive creation
+sh_test(
+    name = "fs_build_test",
+    srcs = ["fs_build_test.sh"],
+    args = ["$(location :fs_archive)"],
+    data = [":fs_archive"],
+)

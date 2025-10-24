@@ -1479,4 +1479,25 @@ Tests verify each criterion:
 
 ---
 
+  db_plan.md Success Criteria Status
+
+  Based on my verification, here's the complete status:
+
+  1. ✅ fs/ archived to SQLite → fs/fs_build_test.sh PASSES (8 files archived)
+  2. ✅ Archive embedded in binary → Build succeeds, fs_embedded.c generated
+  3. ❌ Static files served → tools/integration_test.sh FAILS
+    - Fixed --log_level → --log-level flag
+    - Added SQLITE_ENABLE_SQLAR compile flag
+    - Changed SQLAR creation to store uncompressed files
+    - Current issue: Files not being served (404 errors)
+  4. ⚠️ server.js loadable → Partially verified (file exists in archive but not tested for
+  loading)
+  5. ✅ In-memory mode works → internal/db/db_test.c PASSES
+  6. ✅ Persistent mode works → internal/db/db_test.c PASSES
+  7. ✅ Old schema removed → internal/henv/, schema.sql, schema.c/h all removed
+  8. ⚠️ Build time maintained → Build completes but no benchmark comparison done
+  9. ⚠️ Binary size maintained → 1.1 MB (same), embedded fs.db now 12KB (was 3.5KB due to
+  uncompressed storage)
+  10. ⚠️ All tests pass → 6/6 unit tests pass, but integration test fails
+
 **End of Plan**

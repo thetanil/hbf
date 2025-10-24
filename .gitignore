@@ -36,3 +36,4 @@ hbf/hbf
 __pycache__
 henvs/
 core.*
+*.db

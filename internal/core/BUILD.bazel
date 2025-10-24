@@ -42,13 +42,9 @@ cc_binary(
     srcs = ["main.c"],
     deps = [
         ":config",
-        ":hash",
         ":log",
         "//internal/db:db",
-        "//internal/db:schema",
-        "//internal/henv:manager",
         "//internal/http:server",
-        "//internal/qjs:engine",
         "@sqlite3",
     ],
     visibility = ["//visibility:public"],

@@ -70,7 +70,8 @@ by the user via REST CRUD, but is not served as a static file
 
 
 
-
+https://sqlite.org/sqlar.html
+added zlib for uncompress as well
 
 
 > no do not manually run the inject_content.sh script. this is handled in db internal/db/BUILD.bazel
