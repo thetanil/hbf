@@ -154,7 +154,7 @@ int hbf_server_start(hbf_server_t *server)
 	mg_set_request_handler(server->ctx, "/static/**", static_handler, server);
 	mg_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
 
-	hbf_log_info("HTTP server listening on port %d", server->port);
+	hbf_log_info("HTTP server listening at http://localhost:%d/", server->port);
 	return 0;
 }
 
