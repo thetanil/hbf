@@ -10,7 +10,7 @@ genrule(
         exclude_directories = 1,
     ),
     outs = ["fs.db"],
-    cmd = "sqlite3 -Acf $(location fs.db) $(SRCS)",
+    cmd = "sqlite3 -A -C fs -cf $(location fs.db) $$(echo '$(SRCS)' | sed 's|fs/||g')",
 )
 
 # Step 2: Convert database to C source files
