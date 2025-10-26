@@ -177,10 +177,12 @@ static JSValue js_res_set(JSContext *ctx, JSValueConst this_val,
 		}
 	}
 
-	if (name)
+	if (name) {
 		JS_FreeCString(ctx, name);
-	if (value)
+	}
+	if (value) {
 		JS_FreeCString(ctx, value);
+	}
 
 	return JS_UNDEFINED;
 }
