@@ -12,6 +12,7 @@
 #include "sqlite3.h"
 
 /* QuickJS request handler */
+/* NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex request handling logic */
 int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 {
 	const struct mg_request_info *ri;

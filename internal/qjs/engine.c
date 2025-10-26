@@ -38,8 +38,9 @@ static int hbf_qjs_interrupt_handler(JSRuntime *rt, void *opaque)
 
 	(void)rt; /* Unused parameter */
 
-	if (g_qjs_config.timeout_ms == 0)
+	if (g_qjs_config.timeout_ms == 0) {
 		return 0; /* No timeout */
+	}
 
 	elapsed = hbf_qjs_get_time_ms() - ctx->start_time_ms;
 
@@ -73,8 +74,9 @@ int hbf_qjs_init(size_t mem_limit_mb, int timeout_ms)
 /* Shutdown QuickJS engine */
 void hbf_qjs_shutdown(void)
 {
-	if (!g_qjs_config.initialized)
+	if (!g_qjs_config.initialized) {
 		return;
+	}
 
 	g_qjs_config.initialized = 0;
 	hbf_log_info("QuickJS engine shutdown");
@@ -192,8 +194,9 @@ hbf_qjs_ctx_t *hbf_qjs_ctx_create_with_db(sqlite3 *db)
 /* Destroy QuickJS context */
 void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx)
 {
-	if (!ctx)
+	if (!ctx) {
 		return;
+	}
 
 	/* Only close database if we own it */
 	if (ctx->db && ctx->own_db) {
@@ -266,8 +269,9 @@ int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
 /* Get last error message */
 const char *hbf_qjs_get_error(hbf_qjs_ctx_t *ctx)
 {
-	if (!ctx || ctx->error_buf[0] == '\0')
+	if (!ctx || ctx->error_buf[0] == '\0') {
 		return NULL;
+	}
 
 	return ctx->error_buf;
 }

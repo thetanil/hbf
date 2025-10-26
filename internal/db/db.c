@@ -10,8 +10,11 @@
 #define HBF_DB_INMEM ":memory:"
 
 /* SQLAR extension initialization */
+/* NOLINTBEGIN(readability-identifier-naming) - SQLite extension API convention */
 extern int sqlite3_sqlar_init(sqlite3 *db, char **pzErrMsg, const void *pApi);
+/* NOLINTEND(readability-identifier-naming) */
 
+/* NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization logic */
 int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 {
 	int rc;
