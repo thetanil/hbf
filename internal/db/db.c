@@ -14,8 +14,11 @@
 extern int sqlite3_sqlar_init(sqlite3 *db, char **pzErrMsg, const void *pApi);
 /* NOLINTEND(readability-identifier-naming) */
 
+/* Private static handle for embedded filesystem database (used only for template hydration) */
+static sqlite3 *g_fs_db = NULL;
+
 /* NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization logic */
-int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
+int hbf_db_init(int inmem, sqlite3 **db)
 {
 	int rc;
 	const char *db_path;
@@ -23,13 +26,12 @@ int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 	int db_exists;
 	int has_sqlar;
 
-	if (!db || !fs_db) {
-		hbf_log_error("NULL database handle pointers");
+	if (!db) {
+		hbf_log_error("NULL database handle pointer");
 		return -1;
 	}
 
 	*db = NULL;
-	*fs_db = NULL;
 
 	/* Check if database file exists (only matters for non-inmem) */
 	db_path = inmem ? HBF_DB_INMEM : HBF_DB_PATH;
@@ -168,14 +170,14 @@ int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 		return -1;
 	}
 
-	/* Initialize filesystem database (embedded SQLAR) for backwards compatibility */
-	rc = sqlite3_open(HBF_DB_INMEM, fs_db);
+	/* Initialize filesystem database (embedded SQLAR) - kept private for template hydration */
+	rc = sqlite3_open(HBF_DB_INMEM, &g_fs_db);
 	if (rc != SQLITE_OK) {
 		hbf_log_error("Failed to open in-memory filesystem database: %s",
-		              sqlite3_errmsg(*fs_db));
-		if (*fs_db) {
-			sqlite3_close(*fs_db);
-			*fs_db = NULL;
+		              sqlite3_errmsg(g_fs_db));
+		if (g_fs_db) {
+			sqlite3_close(g_fs_db);
+			g_fs_db = NULL;
 		}
 		sqlite3_close(*db);
 		*db = NULL;
@@ -186,9 +188,9 @@ int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 	fs_data_copy = sqlite3_malloc64(fs_db_len);
 	if (!fs_data_copy) {
 		hbf_log_error("Failed to allocate memory for embedded database");
-		sqlite3_close(*fs_db);
+		sqlite3_close(g_fs_db);
 		sqlite3_close(*db);
-		*fs_db = NULL;
+		g_fs_db = NULL;
 		*db = NULL;
 		return -1;
 	}
@@ -196,7 +198,7 @@ int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 
 	/* Load embedded database using deserialize API */
 	rc = sqlite3_deserialize(
-		*fs_db,
+		g_fs_db,
 		"main",
 		fs_data_copy,
 		(sqlite3_int64)fs_db_len,
@@ -206,23 +208,23 @@ int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 
 	if (rc != SQLITE_OK) {
 		hbf_log_error("Failed to deserialize embedded database: %s",
-		              sqlite3_errmsg(*fs_db));
+		              sqlite3_errmsg(g_fs_db));
 		sqlite3_free(fs_data_copy);
-		sqlite3_close(*fs_db);
+		sqlite3_close(g_fs_db);
 		sqlite3_close(*db);
-		*fs_db = NULL;
+		g_fs_db = NULL;
 		*db = NULL;
 		return -1;
 	}
 
 	/* Initialize SQLAR extension functions */
-	rc = sqlite3_sqlar_init(*fs_db, NULL, NULL);
+	rc = sqlite3_sqlar_init(g_fs_db, NULL, NULL);
 	if (rc != SQLITE_OK) {
 		hbf_log_error("Failed to initialize SQLAR extension: %s",
-		              sqlite3_errmsg(*fs_db));
-		sqlite3_close(*fs_db);
+		              sqlite3_errmsg(g_fs_db));
+		sqlite3_close(g_fs_db);
 		sqlite3_close(*db);
-		*fs_db = NULL;
+		g_fs_db = NULL;
 		*db = NULL;
 		return -1;
 	}
@@ -232,10 +234,11 @@ int hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)
 	return 0;
 }
 
-void hbf_db_close(sqlite3 *db, sqlite3 *fs_db)
+void hbf_db_close(sqlite3 *db)
 {
-	if (fs_db) {
-		sqlite3_close(fs_db);
+	if (g_fs_db) {
+		sqlite3_close(g_fs_db);
+		g_fs_db = NULL;
 		hbf_log_debug("Closed filesystem database");
 	}
 
@@ -243,108 +246,6 @@ void hbf_db_close(sqlite3 *db, sqlite3 *fs_db)
 		sqlite3_close(db);
 		hbf_log_debug("Closed main database");
 	}
-}
-
-int hbf_db_read_file(sqlite3 *fs_db, const char *path,
-                     unsigned char **data, size_t *size)
-{
-	sqlite3_stmt *stmt;
-	const char *sql;
-	int rc;
-	const void *blob_data;
-	int blob_size;
-
-	if (!fs_db || !path || !data || !size) {
-		hbf_log_error("NULL parameter in hbf_db_read_file");
-		return -1;
-	}
-
-	*data = NULL;
-	*size = 0;
-
-	/* Use sqlar_uncompress to get uncompressed data */
-	sql = "SELECT sqlar_uncompress(data, sz) FROM sqlar WHERE name = ?";
-
-	rc = sqlite3_prepare_v2(fs_db, sql, -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to prepare file read query: %s",
-		              sqlite3_errmsg(fs_db));
-		return -1;
-	}
-
-	rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to bind file path: %s",
-		              sqlite3_errmsg(fs_db));
-		sqlite3_finalize(stmt);
-		return -1;
-	}
-
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_ROW) {
-		/* File not found */
-		sqlite3_finalize(stmt);
-		hbf_log_debug("File not found in archive: %s", path);
-		return -1;
-	}
-
-	/* Get uncompressed data */
-	blob_data = sqlite3_column_blob(stmt, 0);
-	blob_size = sqlite3_column_bytes(stmt, 0);
-
-	if (blob_size > 0 && blob_data) {
-		*data = malloc((size_t)blob_size);
-		if (*data) {
-			memcpy(*data, blob_data, (size_t)blob_size);
-			*size = (size_t)blob_size;
-		}
-	}
-
-	sqlite3_finalize(stmt);
-
-	if (!*data && blob_size > 0) {
-		hbf_log_error("Failed to allocate memory for file data");
-		return -1;
-	}
-
-	hbf_log_debug("Read file '%s' (%zu bytes)", path, *size);
-	return 0;
-}
-
-int hbf_db_file_exists(sqlite3 *fs_db, const char *path)
-{
-	sqlite3_stmt *stmt;
-	const char *sql;
-	int rc;
-	int exists;
-
-	if (!fs_db || !path) {
-		hbf_log_error("NULL parameter in hbf_db_file_exists");
-		return -1;
-	}
-
-	sql = "SELECT 1 FROM sqlar WHERE name = ?";
-
-	rc = sqlite3_prepare_v2(fs_db, sql, -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to prepare file exists query: %s",
-		              sqlite3_errmsg(fs_db));
-		return -1;
-	}
-
-	rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to bind file path: %s",
-		              sqlite3_errmsg(fs_db));
-		sqlite3_finalize(stmt);
-		return -1;
-	}
-
-	rc = sqlite3_step(stmt);
-	exists = (rc == SQLITE_ROW) ? 1 : 0;
-
-	sqlite3_finalize(stmt);
-	return exists;
 }
 
 int hbf_db_read_file_from_main(sqlite3 *db, const char *path,

@@ -10,15 +10,13 @@
 static void test_db_init_inmem(void)
 {
 	sqlite3 *db = NULL;
-	sqlite3 *fs_db = NULL;
 	int ret;
 
-	ret = hbf_db_init(1, &db, &fs_db);
+	ret = hbf_db_init(1, &db);
 	assert(ret == 0);
 	assert(db != NULL);
-	assert(fs_db != NULL);
 
-	hbf_db_close(db, fs_db);
+	hbf_db_close(db);
 
 	printf("  ✓ In-memory database initialization\n");
 }
@@ -26,7 +24,6 @@ static void test_db_init_inmem(void)
 static void test_db_init_persistent(void)
 {
 	sqlite3 *db = NULL;
-	sqlite3 *fs_db = NULL;
 	int ret;
 
 	/* Remove existing test database */
@@ -34,12 +31,11 @@ static void test_db_init_persistent(void)
 	unlink("./hbf.db-wal");
 	unlink("./hbf.db-shm");
 
-	ret = hbf_db_init(0, &db, &fs_db);
+	ret = hbf_db_init(0, &db);
 	assert(ret == 0);
 	assert(db != NULL);
-	assert(fs_db != NULL);
 
-	hbf_db_close(db, fs_db);
+	hbf_db_close(db);
 
 	/* Cleanup */
 	unlink("./hbf.db");
@@ -52,16 +48,15 @@ static void test_db_init_persistent(void)
 static void test_db_read_file(void)
 {
 	sqlite3 *db = NULL;
-	sqlite3 *fs_db = NULL;
 	unsigned char *data;
 	size_t size;
 	int ret;
 
-	ret = hbf_db_init(1, &db, &fs_db);
+	ret = hbf_db_init(1, &db);
 	assert(ret == 0);
 
-	/* Test reading existing file */
-	ret = hbf_db_read_file(fs_db, "hbf/server.js", &data, &size);
+	/* Test reading existing file from main DB */
+	ret = hbf_db_read_file_from_main(db, "hbf/server.js", &data, &size);
 	if (ret == 0) {
 		assert(data != NULL);
 		assert(size > 0);
@@ -72,31 +67,30 @@ static void test_db_read_file(void)
 	}
 
 	/* Test reading non-existent file */
-	ret = hbf_db_read_file(fs_db, "nonexistent/file.txt", &data, &size);
+	ret = hbf_db_read_file_from_main(db, "nonexistent/file.txt", &data, &size);
 	assert(ret == -1);
 
 	printf("  ✓ File read operations\n");
 
-	hbf_db_close(db, fs_db);
+	hbf_db_close(db);
 }
 
 static void test_db_file_exists(void)
 {
 	sqlite3 *db = NULL;
-	sqlite3 *fs_db = NULL;
 	int ret;
 	int exists;
 
-	ret = hbf_db_init(1, &db, &fs_db);
+	ret = hbf_db_init(1, &db);
 	assert(ret == 0);
 
 	/* Test non-existent file */
-	exists = hbf_db_file_exists(fs_db, "nonexistent/file.txt");
+	exists = hbf_db_file_exists_in_main(db, "nonexistent/file.txt");
 	assert(exists == 0);
 
 	printf("  ✓ File existence check\n");
 
-	hbf_db_close(db, fs_db);
+	hbf_db_close(db);
 }
 
 int main(void)

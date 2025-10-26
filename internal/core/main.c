@@ -21,7 +21,6 @@ int main(int argc, char *argv[])
 {
 	hbf_config_t config;
 	sqlite3 *db = NULL;
-	sqlite3 *fs_db = NULL;
 	hbf_server_t *server = NULL;
 	int ret;
 
@@ -38,7 +37,7 @@ int main(int argc, char *argv[])
 	             config.port, config.inmem, config.dev);
 
 	/* Initialize database */
-	ret = hbf_db_init(config.inmem, &db, &fs_db);
+	ret = hbf_db_init(config.inmem, &db);
 	if (ret != 0) {
 		hbf_log_error("Failed to initialize database");
 		return 1;
@@ -48,7 +47,7 @@ int main(int argc, char *argv[])
 	ret = hbf_qjs_init(64, 5000);
 	if (ret != 0) {
 		hbf_log_error("Failed to initialize QuickJS engine");
-		hbf_db_close(db, fs_db);
+		hbf_db_close(db);
 		return 1;
 	}
 
@@ -56,7 +55,7 @@ int main(int argc, char *argv[])
 	server = hbf_server_create(config.port, db);
 	if (!server) {
 		hbf_log_error("Failed to create HTTP server");
-		hbf_db_close(db, fs_db);
+		hbf_db_close(db);
 		return 1;
 	}
 
@@ -65,7 +64,7 @@ int main(int argc, char *argv[])
 	if (ret != 0) {
 		hbf_log_error("Failed to start HTTP server");
 		hbf_server_destroy(server);
-		hbf_db_close(db, fs_db);
+		hbf_db_close(db);
 		return 1;
 	}
 
@@ -83,7 +82,7 @@ int main(int argc, char *argv[])
 	hbf_log_info("Shutting down");
 	hbf_server_destroy(server);
 	hbf_qjs_shutdown();
-	hbf_db_close(db, fs_db);
+	hbf_db_close(db);
 
 	return 0;
 }
