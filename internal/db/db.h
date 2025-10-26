@@ -54,4 +54,33 @@ int hbf_db_read_file(sqlite3 *fs_db, const char *path, unsigned char **data, siz
  */
 int hbf_db_file_exists(sqlite3 *fs_db, const char *path);
 
+/*
+ * Read file from main database SQLAR archive
+ *
+ * @param db: Main database handle
+ * @param path: File path within archive (e.g., "hbf/server.js")
+ * @param data: Output parameter for file data (caller must free)
+ * @param size: Output parameter for file size
+ * @return 0 on success, -1 on error
+ */
+int hbf_db_read_file_from_main(sqlite3 *db, const char *path,
+                                unsigned char **data, size_t *size);
+
+/*
+ * Check if file exists in main database SQLAR archive
+ *
+ * @param db: Main database handle
+ * @param path: File path within archive
+ * @return 1 if exists, 0 if not found, -1 on error
+ */
+int hbf_db_file_exists_in_main(sqlite3 *db, const char *path);
+
+/*
+ * Check if database has sqlar table
+ *
+ * @param db: Database handle
+ * @return 1 if sqlar table exists, 0 if not, -1 on error
+ */
+int hbf_db_check_sqlar_table(sqlite3 *db);
+
 #endif /* HBF_DB_H */

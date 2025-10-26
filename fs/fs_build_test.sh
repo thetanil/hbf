@@ -25,13 +25,13 @@ if [ "$FILE_COUNT" -eq 0 ]; then
 fi
 
 # Test 3: Verify server.js exists
-if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = './hbf/server.js'" | grep -q 1; then
+if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = 'hbf/server.js'" | grep -q 1; then
     echo "FAIL: hbf/server.js not found in archive"
     exit 1
 fi
 
 # Test 4: Verify index.html exists
-if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = './static/index.html'" | grep -q 1; then
+if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = 'static/index.html'" | grep -q 1; then
     echo "FAIL: static/index.html not found in archive"
     exit 1
 fi

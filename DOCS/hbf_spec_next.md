@@ -1,19 +1,27 @@
 # HBF Spec — Next Steps (Migration Plan)
 
-This document translates the deltas in `DOCS/hbf_spec.md` into concrete implementation steps with scoped changes, acceptance criteria, and testing guidance. The primary goal is to align the code with the fs_db-as-template design: fs_db remains private to the DB module and the runtime uses only the main database.
+This document translates the deltas in `DOCS/hbf_spec.md` into concrete
+implementation steps with scoped changes, acceptance criteria, and testing
+guidance. The primary goal is to align the code with the fs_db-as-template
+design: fs_db remains private to the DB module and the runtime uses only the
+main database.
 
 ## Goals
 
 - Keep fs_db strictly private to the DB module.
-- Hydrate (create/recreate) the main DB from the embedded fs_db template when needed.
-- Ensure all runtime asset reads (e.g., `hbf/server.js`, `static/*`) go through the main DB’s SQLAR.
+- Hydrate (create/recreate) the main DB from the embedded fs_db template when
+  needed.
+- Ensure all runtime asset reads (e.g., `hbf/server.js`, `static/*`) go through
+  the main DB’s SQLAR.
 - Remove `fs_db` from public APIs and server structures.
 - Preserve existing behavior and integration tests while migrating.
 
 ## Targeted API Changes
 
 1) DB module (internal/db/db.h, db.c)
-- Keep existing `hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)` signature only until migration is complete, then collapse to `hbf_db_init(int inmem, sqlite3 **db)` (returning only main db).
+- Keep existing `hbf_db_init(int inmem, sqlite3 **db, sqlite3 **fs_db)`
+  signature only until migration is complete, then collapse to `hbf_db_init(int
+  inmem, sqlite3 **db)` (returning only main db).
 - New helpers targeting main DB SQLAR:
   - `int hbf_db_read_file_from_main(sqlite3 *db, const char *path, unsigned char **data, size_t *size);`
   - `int hbf_db_file_exists_in_main(sqlite3 *db, const char *path);`
