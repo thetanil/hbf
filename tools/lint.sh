@@ -39,9 +39,21 @@ WARNINGS=0
 
 for file in $C_FILES; do
     echo "Checking $file..."
-    # Add CivetWeb include path from Bazel's external repository
-    CIVETWEB_INCLUDE=$(bazel info output_base 2>/dev/null)/external/+_repo_rules+civetweb/include
-    OUTPUT=$($CLANG_TIDY "$file" -- -std=c99 -I. -I"$CIVETWEB_INCLUDE" -D_POSIX_C_SOURCE=200809L 2>&1 || true)
+    # Get Bazel output paths for external dependencies
+    BAZEL_OUTPUT_BASE=$(bazel info output_base 2>/dev/null)
+    CIVETWEB_INCLUDE="$BAZEL_OUTPUT_BASE/external/+_repo_rules+civetweb/include"
+    QUICKJS_INCLUDE="$BAZEL_OUTPUT_BASE/external/+_repo_rules+quickjs-ng"
+    SQLITE_INCLUDE="$BAZEL_OUTPUT_BASE/external/sqlite3+"
+    FS_EMBEDDED_INCLUDE="bazel-bin/fs"
+
+    OUTPUT=$($CLANG_TIDY "$file" -- -std=c99 \
+        -I. \
+        -I"$CIVETWEB_INCLUDE" \
+        -I"$QUICKJS_INCLUDE" \
+        -I"$SQLITE_INCLUDE" \
+        -I"$FS_EMBEDDED_INCLUDE" \
+        -D_POSIX_C_SOURCE=200809L \
+        2>&1 || true)
 
     if echo "$OUTPUT" | grep -q "error:"; then
         echo -e "${RED}✗ $file has errors${NC}"
