@@ -1,6 +1,8 @@
 # HBF Specification (current implementation)
 
-This document describes the behavior and architecture of HBF as implemented in this repository today. It is based on the actual code paths and build pipeline and highlights any divergences from prior plans.
+This document describes the behavior and architecture of HBF as implemented in
+this repository today. It is based on the actual code paths and build pipeline
+and highlights any divergences from prior plans.
 
 ## Overview
 
@@ -8,16 +10,21 @@ HBF is a single-binary web runtime that embeds:
 - An HTTP server (CivetWeb)
 - A QuickJS JavaScript engine for per-request handlers
 - SQLite for persistent application data ("main" database)
-- An embedded, read-only SQLAR SQLite database (fs_db) for app assets and the server-side handler script
+- An embedded, read-only SQLAR SQLite database (fs_db) used only inside the DB
+  module at startup to hydrate the main database with baseline assets (including
+  `hbf/server.js` and `static/*`)
 
 Endpoints are served by:
 - A built-in health check (C)
-- A static asset handler for `/static/**` (C, served from the main database’s SQLAR)
-- A JavaScript handler for all other routes (QuickJS evaluating `hbf/server.js` stored in the main database’s SQLAR on each request)
+- A static asset handler for `/static/**` (C, served from the main database’s
+  SQLAR)
+- A JavaScript handler for all other routes (QuickJS evaluating `hbf/server.js`
+  stored in the main database’s SQLAR on each request)
 
 ## Build and Embed Pipeline
 
-Bazel drives a pipeline that turns the contents of `fs/` into an embedded SQLite archive included in the binary:
+Bazel drives a pipeline that turns the contents of `fs/` into an embedded SQLite
+archive included in the binary:
 
 - Rule: `//fs:fs_archive` creates `fs.db` via `sqlite3 -A -cf` including:
   - `fs/hbf/server.js`
@@ -28,11 +35,16 @@ Bazel drives a pipeline that turns the contents of `fs/` into an embedded SQLite
 References:
 - `fs/BUILD.bazel`
 
-At runtime, `internal/db/db.c` deserializes the embedded `fs.db` into an in-memory SQLite connection (`fs_db`) and initializes SQLAR functions (`sqlite3_sqlar_init`).
+At build time, `fs.db` is generated and converted to C sources. At runtime, the
+DB module can deserialize the embedded `fs.db` internally only to hydrate the
+main DB when required; the `fs_db` pointer is not exposed outside the DB module.
 
 ## Runtime Databases
 
-HBF maintains a single long-lived SQLite connection for all application activity: the main database. An embedded, read-only template database (fs_db) is compiled into the binary and used only inside the DB module during initialization.
+HBF maintains a single long-lived SQLite connection for all application
+activity: the main database. An embedded, read-only template database (fs_db) is
+compiled into the binary and used only inside the DB module during
+initialization.
 
 - Main DB (runtime, writable)
   - Path: `./hbf.db` (or `:memory:` with `--inmem`)
@@ -46,19 +58,19 @@ HBF maintains a single long-lived SQLite connection for all application activity
 
 Initialization contract (DB module):
 - On startup, the DB module opens/creates the main DB.
-- If the main DB is missing required structures/content (e.g., no SQLAR table or missing baseline assets), the DB module clones from the embedded fs_db into the main DB.
-- The DB module returns only the main DB connection to callers. No component outside the DB module receives or uses an fs_db handle.
+- If the main DB is missing required structures/content (e.g., no SQLAR table or
+  missing baseline assets), the DB module clones from the embedded fs_db into
+  the main DB.
+- The DB module returns only the main DB connection to callers. No component
+  outside the DB module receives or uses an fs_db handle.
 
 References:
 - `internal/db/db.c`, `internal/db/db.h`
 
-Implementation status vs spec (delta):
-- Current code paths in the HTTP layer still pass and use an `fs_db` pointer directly (e.g., static/JS handlers reading from `server->fs_db`). This violates the spec’s constraint that `fs_db` is private to the DB module.
-- Migration steps:
-  1) Keep `fs_db` internal to the DB module. Perform main DB hydration there and return only the main DB handle.
-  2) Provide DB accessors that read assets from the main DB’s SQLAR (e.g., `hbf_db_read_file_from_main(db, path, ...)`).
-  3) Remove `fs_db` from public headers and from `hbf_server_t`. Update call sites to use the main DB handle exclusively.
-  4) Add a startup integrity check in the DB module (ensure main DB has required SQLAR entries, else rehydrate from embedded template).
+Status: aligned — fs_db is now private to the DB module; hydration occurs
+internally; runtime asset reads use main DB SQLAR via
+`hbf_db_read_file_from_main` and related helpers; public APIs expose only the
+main DB.
 
 ## Configuration and Startup
 
@@ -81,11 +93,8 @@ Startup sequence (`internal/core/main.c`):
 - Create and start HTTP server
 - Log: `HTTP server listening at http://localhost:<port>/`
 
-Implementation status vs spec (delta):
-- `hbf_server_create` currently accepts both `db` and `fs_db`, and the server struct retains both pointers. To align with the spec:
-  - Change `hbf_server_create` to accept only the main `db`.
-  - Ensure the DB module completes any fs_db→main hydration before returning.
-  - Remove all references to `fs_db` from HTTP/server code.
+Status: aligned — `hbf_server_create(int port, sqlite3 *db)` accepts only the
+main DB; server state no longer contains `fs_db`.
 
 Signals SIGINT/SIGTERM cause a clean shutdown.
 
@@ -96,15 +105,13 @@ Signals SIGINT/SIGTERM cause a clean shutdown.
 - `/static/**` → static file handler reading from the main database’s SQLAR
 - `**` (catch-all) → QuickJS request handler
 
-Implementation status vs spec (delta):
-- The static handler currently reads files via `server->fs_db`. Migrate to use main DB accessors from the DB module (e.g., `hbf_db_read_file_from_main(server->db, path, ...)`).
+Status: aligned — the static handler reads assets via `hbf_db_read_file_from_main(server->db, ...)`.
 
 ### Static Handler
 
-- Maps `/` to `static/index.html` only if handled by JS; static handler explicitly serves under `/static/**`
-- For `/static/**`, file path is `static<URI>` (e.g., `/static/style.css` → `static/static/style.css` would be wrong; current code maps `/static/**` by handler path and uses `static%s`, so URIs should not include an extra `static` prefix; avoid conflicting routes at root)
+- Serves only under `/static/**` by reading from the main DB’s SQLAR
 - MIME types are inferred by extension
-- 404 if file not found in the embedded SQLAR
+- Returns 404 if the asset is not found in SQLAR
 
 References:
 - `internal/http/server.c` (static handler)
@@ -124,9 +131,7 @@ References:
 - `internal/qjs/engine.c`
 - `internal/db/db.h` (asset read helpers targeting the main DB’s SQLAR)
 
-Implementation status vs spec (delta):
-- The handler presently calls into `hbf_db_read_file(server->fs_db, "hbf/server.js", ...)`. Update it to read from the main DB (e.g., `hbf_db_read_file_from_main(server->db, ...)`) after removing `fs_db` from the server struct.
-- Remove all references to `fs_db` from quickjs module and handlers
+Status: aligned — the JS handler loads `hbf/server.js` using `hbf_db_read_file_from_main(server->db, ...)`.
 
 ## JavaScript Request/Response Contracts
 
@@ -215,11 +220,32 @@ Reference: `internal/qjs/engine.c`
 
 References: `third_party/*`, `MODULE.bazel` (zlib fetched via Bazel Central Registry)
 
+Dependencies provenance (Bazel excerpts):
+
+```
+bazel_dep(name = "sqlite3", version = "3.50.4")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.7")
+
+git_repository(
+  name = "civetweb",
+  remote = "https://github.com/civetweb/civetweb.git",
+  tag = "v1.16",
+  build_file = "//third_party/civetweb:civetweb.BUILD",
+)
+
+git_repository(
+  name = "quickjs-ng",
+  remote = "https://github.com/quickjs-ng/quickjs.git",
+  tag = "v0.8.0",
+  build_file = "//third_party/quickjs-ng:quickjs.BUILD",
+)
+```
+
 ## Known Limitations (current state)
 
 - No module `import`/`require` support in QuickJS environment; all server code must live in `hbf/server.js`
 - Body parsing for POST/PUT is not implemented
-- The `fs_db` embedded archive is read-only at runtime
+- The embedded template (fs_db) is read-only and used only during initialization; all runtime asset reads use the main DB’s SQLAR
 - The reason phrase in HTTP status line is fixed to `OK`
 - Static handler serves only under `/static/**`; homepage `/` is served by JS
 
@@ -247,7 +273,7 @@ These items describe intended behavior and may differ from the current implement
   - `internal/core/main.c` — startup, shutdown
   - `internal/core/config.*` — CLI parsing
 - Databases
-  - `internal/db/db.*` — init, close, read file from fs_db
+  - `internal/db/db.*` — init, close, main-DB SQLAR access (fs_db is internal/template-only)
   - `fs/BUILD.bazel` — fs_db build pipeline
 - HTTP
   - `internal/http/server.*` — CivetWeb setup and route registration
@@ -264,4 +290,5 @@ These items describe intended behavior and may differ from the current implement
 
 ---
 
-This spec reflects the repository's behavior as of the current main branch and will be updated as future plan items are implemented.
+This spec reflects the repository's behavior as of the current main branch and
+will be updated as future plan items are implemented.
