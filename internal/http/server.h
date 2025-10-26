@@ -10,8 +10,7 @@ struct mg_context;
 /* HTTP server structure */
 typedef struct hbf_server {
 	int port;
-	sqlite3 *db;       /* Main database */
-	sqlite3 *fs_db;    /* Filesystem database (SQLAR) */
+	sqlite3 *db;       /* Main database (contains SQLAR) */
 	struct mg_context *ctx;
 } hbf_server_t;
 
@@ -19,11 +18,10 @@ typedef struct hbf_server {
  * Create HTTP server
  *
  * @param port: HTTP server port
- * @param db: Main database handle
- * @param fs_db: Filesystem database handle (for static files)
+ * @param db: Main database handle (contains SQLAR)
  * @return Server instance or NULL on error
  */
-hbf_server_t *hbf_server_create(int port, sqlite3 *db, sqlite3 *fs_db);
+hbf_server_t *hbf_server_create(int port, sqlite3 *db);
 
 /*
  * Start HTTP server

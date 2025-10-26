@@ -20,7 +20,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	JSValue global, app, handle_func, req, res, result;
 	hbf_response_t response;
 	int status;
-	/* cbdata is expected to be hbf_server_t* for access to fs_db */
+	/* cbdata is expected to be hbf_server_t* for access to db */
 	hbf_server_t *server = (hbf_server_t *)cbdata;
 
 
@@ -52,12 +52,12 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 500;
 	}
 
-		/* Load hbf/server.js from SQLAR archive using fs_db */
+		/* Load hbf/server.js from main database SQLAR */
 		unsigned char *js_data = NULL;
 		size_t js_size = 0;
-		int ret = hbf_db_read_file(server ? server->fs_db : NULL, "hbf/server.js", &js_data, &js_size);
+		int ret = hbf_db_read_file_from_main(server ? server->db : NULL, "hbf/server.js", &js_data, &js_size);
 		if (ret != 0 || !js_data || js_size == 0) {
-			hbf_log_error("hbf/server.js not found in SQLAR archive");
+			hbf_log_error("hbf/server.js not found in main database SQLAR");
 			hbf_qjs_ctx_destroy(qjs_ctx);
 			mg_send_http_error(conn, 503, "Service Unavailable");
 			return 503;

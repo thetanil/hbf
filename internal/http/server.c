@@ -59,8 +59,8 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 
 	hbf_log_debug("Static request: %s -> %s", uri, path);
 
-	/* Read file from archive */
-	ret = hbf_db_read_file(server->fs_db, path, &data, &size);
+	/* Read file from main database SQLAR */
+	ret = hbf_db_read_file_from_main(server->db, path, &data, &size);
 	if (ret != 0) {
 		hbf_log_debug("File not found: %s", path);
 		mg_send_http_error(conn, 404, "Not Found");
@@ -105,12 +105,12 @@ static int health_handler(struct mg_connection *conn, void *cbdata)
 	return 200;
 }
 
-hbf_server_t *hbf_server_create(int port, sqlite3 *db, sqlite3 *fs_db)
+hbf_server_t *hbf_server_create(int port, sqlite3 *db)
 {
 	hbf_server_t *server;
 
-	if (!db || !fs_db) {
-		hbf_log_error("NULL database handles");
+	if (!db) {
+		hbf_log_error("NULL database handle");
 		return NULL;
 	}
 
@@ -122,7 +122,6 @@ hbf_server_t *hbf_server_create(int port, sqlite3 *db, sqlite3 *fs_db)
 
 	server->port = port;
 	server->db = db;
-	server->fs_db = fs_db;
 	server->ctx = NULL;
 
 	return server;
