@@ -19,44 +19,25 @@ jobs:
     env:
       BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Build and upload artifacts (composite action)
+        uses: ./.github/actions/build-full
         with:
-          fetch-depth: 0
-
-      - name: Set up Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Cache Bazel directories
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel-${{ hashFiles('**/*.bzl', '**/*.bazel', '.bazelrc', 'MODULE.bazel', '**/MODULE.bazel', '**/BUILD.bazel') }}
-          restore-keys: |
-            ${{ runner.os }}-bazel-
+          tag: ${{ github.sha }}
+          artifact-name: build-assets
+          retention-days: 7
 
       - name: Install lint dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-tidy-18
 
+      - name: Set up Bazelisk (for lint/test)
+        uses: bazelbuild/setup-bazelisk@v3
+
       - name: Bazel info
         run: |
           bazel --version
           bazel info release
-
-      - name: Build
-        run: bazel build //:hbf
-
-      - name: Upload built binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hbf-linux-x86_64
-          path: bazel-bin/hbf
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Lint
         run: bazel run //:lint
