@@ -47,11 +47,11 @@ jobs:
           bazel --version
           bazel info release
 
-      - name: Lint
-        run: bazel run //:lint
-
       - name: Build
         run: bazel build //:hbf
+
+      - name: Lint
+        run: bazel run //:lint
 
       - name: Test
         run: bazel test //...
