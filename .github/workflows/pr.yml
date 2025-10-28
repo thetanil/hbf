@@ -50,6 +50,14 @@ jobs:
       - name: Build
         run: bazel build //:hbf
 
+      - name: Upload built binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hbf-linux-x86_64
+          path: bazel-bin/hbf
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Lint
         run: bazel run //:lint
 

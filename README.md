@@ -133,9 +133,13 @@ MIT. Third‑party components retain their original licenses. See DOCS/hbf_spec.
 ## FUTURE
 
 ci needed
-- pr.yml
-- uses github cache
-- runs bazel tasks (lint, build, test)
+- pr.yml - done
+    - save bazel-bin/hbf as an artifact using upload-artifact
+- release.yml
+    - on tag
+    - check version tag matches 'v{maj.min.patch}' semver rules 
+    - create version tagged release
+
 
 
 ### maybe

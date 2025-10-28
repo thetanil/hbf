@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag is semver vMAJ.MIN.PATCH
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag $TAG does not match vMAJ.MIN.PATCH" >&2
+            exit 1
+          fi
+
+      - name: Set up Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Cache Bazel directories
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ runner.os }}-bazel-${{ hashFiles('**/*.bzl', '**/*.bazel', '.bazelrc', 'MODULE.bazel', '**/MODULE.bazel', '**/BUILD.bazel') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-
+
+      - name: Build binaries (stripped and unstripped)
+        run: |
+          bazel build //:hbf
+          bazel build //:hbf_unstripped
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NAME_STRIPPED="hbf-${TAG}-linux-x86_64"
+          NAME_UNSTRIPPED="hbf-${TAG}-linux-x86_64-unstripped"
+          cp bazel-bin/hbf "$NAME_STRIPPED"
+          cp bazel-bin/internal/core/hbf "$NAME_UNSTRIPPED"
+          sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
+          sha256sum "$NAME_UNSTRIPPED" > "$NAME_UNSTRIPPED.sha256"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            hbf-${{ github.ref_name }}-linux-x86_64
+            hbf-${{ github.ref_name }}-linux-x86_64.sha256
+            hbf-${{ github.ref_name }}-linux-x86_64-unstripped
+            hbf-${{ github.ref_name }}-linux-x86_64-unstripped.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
