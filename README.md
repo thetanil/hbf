@@ -129,3 +129,16 @@ Run the integration script (starts the server on a random free port and exercise
 ## License
 
 MIT. Third‑party components retain their original licenses. See DOCS/hbf_spec.md for implementation details and limitations.
+
+## FUTURE
+
+ci needed
+- pr.yml
+- uses github cache
+- runs bazel tasks (lint, build, test)
+
+
+### maybe
+
+- add a “How to update content without rebuild” section once write APIs for SQLAR are available.
+- wire a short “dev loop” note (e.g., using --inmem during development) into the README if that’d help your workflow.
