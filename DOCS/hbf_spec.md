@@ -36,8 +36,10 @@ References:
 - `fs/BUILD.bazel`
 
 At build time, `fs.db` is generated and converted to C sources. At runtime, the
-DB module can deserialize the embedded `fs.db` internally only to hydrate the
-main DB when required; the `fs_db` pointer is not exposed outside the DB module.
+DB module can deserialize the embedded `fs.db` internally only when creating the
+main DB (e.g., when the DB file is missing or when using `:memory:`). It does
+not modify an existing database from the template. The `fs_db` pointer is not
+exposed outside the DB module.
 
 ## Runtime Databases
 
@@ -53,24 +55,27 @@ initialization.
 
 - Template DB (fs_db, read-only, embedded)
   - Deserialized internally from compiled-in `fs_embedded` data
-  - Used only to (re)create or hydrate the main database on startup when required (e.g., when `hbf.db` is missing or lacks the expected SQLAR content)
+  - Used only to create/hydrate the main database when creating it (e.g., when `hbf.db` is missing or when using `:memory:`). It is not used to modify existing databases that already exist on disk.
   - Its connection and pointer never leave the DB module; after initialization, only the main DB handle is used throughout the system
 
 Initialization contract (DB module):
 - On startup, the DB module opens/creates the main DB.
-- If the main DB is missing required structures/content (e.g., no SQLAR table or
-  missing baseline assets), the DB module clones from the embedded fs_db into
-  the main DB.
+- If the main DB file does not exist, the DB module creates it from the embedded
+  `fs_db` template (or deserializes it for `:memory:`). If the main DB exists
+  but is missing the `sqlar` table or baseline assets, startup fails with a
+  fatal error; the module does not rehydrate or modify an existing DB from the
+  template.
 - The DB module returns only the main DB connection to callers. No component
   outside the DB module receives or uses an fs_db handle.
 
 References:
 - `internal/db/db.c`, `internal/db/db.h`
 
-Status: aligned — fs_db is now private to the DB module; hydration occurs
-internally; runtime asset reads use main DB SQLAR via
-`hbf_db_read_file_from_main` and related helpers; public APIs expose only the
-main DB.
+Status: aligned — fs_db is now private to the DB module; hydration occurs only
+when creating the main DB (not for existing DBs); runtime asset reads use main
+DB SQLAR via `hbf_db_read_file_from_main` and related helpers; public APIs
+expose only the main DB. If an existing DB is missing `sqlar` or baseline
+assets, startup fails (no automatic rehydration).
 
 ## Configuration and Startup
 
@@ -87,7 +92,8 @@ Startup sequence (`internal/core/main.c`):
 - Parse config and initialize logging
 - Initialize databases via the DB module:
   - Open or create the main `hbf.db`
-  - If needed, (re)create/hydrate the main DB from the embedded fs_db template (inside the DB module)
+  - If needed (DB missing or in-memory mode), create/hydrate the main DB from
+    the embedded `fs_db` template (inside the DB module)
   - Return only the main DB connection to the caller (fs_db remains private and is not exposed)
 - Initialize QuickJS engine (memory limit 64 MB, timeout 5000 ms)
 - Create and start HTTP server
@@ -248,6 +254,9 @@ git_repository(
 - The embedded template (fs_db) is read-only and used only during initialization; all runtime asset reads use the main DB’s SQLAR
 - The reason phrase in HTTP status line is fixed to `OK`
 - Static handler serves only under `/static/**`; homepage `/` is served by JS
+- No automatic rehydration of existing databases: if the main DB exists but is
+  missing the `sqlar` table or baseline assets, startup fails (fatal) rather
+  than modifying the DB from the embedded template
 
 ## Future Alignment with Design Notes
 
