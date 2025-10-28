@@ -1,4 +1,6 @@
-# HBF — single-binary web runtime (C + SQLite + CivetWeb + QuickJS)
+# HBF
+
+a single-binary web runtime (C + SQLite + CivetWeb + QuickJS)
 
 HBF is a single executable that serves HTTP, runs a JavaScript handler per request (QuickJS), and stores both your app’s code and static files inside a SQLite database. The current behavior and interfaces are documented in DOCS/hbf_spec.md — this README is a concise Quickstart aligned with that spec.
 
