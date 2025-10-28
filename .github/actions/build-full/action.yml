@@ -17,10 +17,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Set up Bazelisk
       uses: bazelbuild/setup-bazelisk@v3

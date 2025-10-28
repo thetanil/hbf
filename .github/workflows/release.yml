@@ -29,6 +29,11 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Build and upload artifacts (composite action)
         uses: ./.github/actions/build-full
         with:
