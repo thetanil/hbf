@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Bazelisk
-        uses: bazelbuild/setup-bazelisk@v2
+        uses: bazelbuild/setup-bazelisk@v3
 
       - name: Cache Bazel directories
         uses: actions/cache@v4
