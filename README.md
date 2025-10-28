@@ -134,17 +134,65 @@ MIT. Third‑party components retain their original licenses. See DOCS/hbf_spec.
 
 ## FUTURE
 
-ci needed
-- pr.yml - done
-    - save bazel-bin/hbf as an artifact using upload-artifact
-- release.yml
-    - on tag
-    - check version tag matches 'v{maj.min.patch}' semver rules 
-    - create version tagged release
+A small, batteries-included platform for server‑side rendered apps that lean on htmx and hypermedia—plus a live, in‑browser development experience that can target a local or remotely hosted HBF server.
 
+### Server‑side rendering with htmx
 
+- First‑class HTML and partial responses (hx‑request aware handlers).
+- Helpers: `render(template, data)`, simple `layout()` with slots, and fragment helpers for partials.
+- Response helpers for htmx: HX‑Redirect, HX‑Location, HX‑Refresh, HX‑Trigger, HX‑Push‑Url, plus caching/Vary conventions.
+- Streaming: SSE and incremental chunking to support hx‑swap‑oob and progressive rendering.
+
+### Live development in the browser
+
+- Built‑in editor (Monaco) served under a dev UI; edits are stored in the main DB (SQLAR) or a dev overlay.
+- Save → instant availability: code/assets become live without a full rebuild; per‑request QuickJS sandbox ensures isolation.
+- Preview pane with auto‑refresh driven by htmx/WebSocket; keyboard palette for common actions (restart, clear DB, seed).
+- Server‑side console bridged to the browser for logs, stack traces, and minimal REPL eval in a safe context.
+- Safe hot‑reload for server modules with version pinning and one‑click rollback.
+
+### Remote or local app server
+
+- Pair a browser dev session with a local process or a remote HBF via secure WebSocket tunnel + token.
+- Live tail of logs, request traces, and DB metrics exposed in the dev UI.
+- Content sync protocol (chunked, content‑addressed blobs) with dry‑run diffs before push.
+
+### Hypermedia contract and UX
+
+- Opinionated conventions for links and forms (method overrides, validation, error presentation) that map cleanly to htmx.
+- A small HTML partials/components kit (forms, lists, tables) built on hx‑boost, hx‑swap, and out‑of‑band swaps.
+- Action discovery via link rels and `data-hbf-action`, powering a keyboardable command palette.
+
+### Database and content write path
+
+- Public write APIs to SQLAR (add/update/delete assets and server code) with content‑addressed versions and history.
+- Staging vs production content spaces; transactional “promote” with integrity checks.
+- Built‑in migrations (SQL) and seed data applied on first run and promotion.
+
+### Realtime
+
+- SSE and WebSocket helpers; broadcast channels; per‑user subscriptions.
+- htmx SSE extension compatibility; simple `publish()` API from QuickJS.
+
+### Security and multi‑tenancy
+
+- Sensible defaults: CSP, secure headers, CSRF integration with htmx.
+- AuthN/AuthZ hooks in JS (sessions, roles/claims), per‑route guards.
+- App namespaces in a single binary (per‑app DB/schema, per‑request CPU/mem timeouts).
+
+### Tooling
+
+- CLI: `hbf dev`, `hbf open`, `hbf pack`, `hbf push/pull`, `hbf logs`.
+- Inspector: request timeline, DB query log, slow route profiler.
+- Test harness: in‑proc server, snapshot HTML/partials, simulate htmx requests.
+
+### Examples
+
+- Todo (htmx), chat (SSE/WebSocket), live Markdown preview, admin CRUD.
 
 ### maybe
 
-- add a “How to update content without rebuild” section once write APIs for SQLAR are available.
-- wire a short “dev loop” note (e.g., using --inmem during development) into the README if that’d help your workflow.
+- Add a “How to update content without rebuild” section once write APIs for SQLAR are available.
+- Wire a short dev‑loop note (e.g., using `--inmem` + dev overlay) into the README.
+- Include Monaco for the in‑browser editor.
+- Update content live without full rebuild; document safe hot‑reload semantics.
