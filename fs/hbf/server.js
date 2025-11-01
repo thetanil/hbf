@@ -41,6 +41,7 @@ app.handle = function (req, res) {
         <li><a href="/hello">/hello</a> - Hello world</li>
         <li><a href="/user/42">/user/42</a> - User endpoint</li>
         <li><a href="/echo">/echo</a> - Echo request</li>
+        <li><a href="/__dev/">/__dev/</a> - Dev editor (dev mode only)</li>
     </ul>
     <h2>Static Assets</h2>
     <ul>
@@ -67,6 +68,33 @@ app.handle = function (req, res) {
     if (path === "/echo" && method === "GET") {
         res.set("Content-Type", "application/json");
         res.send(JSON.stringify({ method, url: path }));
+        return;
+    }
+
+    // Dev UI: Monaco editor interface
+    if (path === "/__dev/" && method === "GET") {
+        if (!req.dev) {
+            res.status(403);
+            res.set("Content-Type", "text/plain");
+            res.send("Dev mode not enabled");
+            return;
+        }
+
+        // Serve dev editor UI
+        const result = db.query(
+            "SELECT sqlar_uncompress(data, sz) AS content FROM latest_fs WHERE name = ?",
+            ["static/dev/index.html"]
+        );
+
+        if (result.length === 0) {
+            res.status(404);
+            res.set("Content-Type", "text/plain");
+            res.send("Dev UI not found");
+            return;
+        }
+
+        res.set("Content-Type", "text/html");
+        res.send(result[0].content);
         return;
     }
 
