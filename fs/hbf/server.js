@@ -28,6 +28,13 @@ app.handle = function (req, res) {
         <li><a href="/user/42">/user/42</a> - User endpoint</li>
         <li><a href="/echo">/echo</a> - Echo request</li>
     </ul>
+    <h2>Static Assets</h2>
+    <ul>
+        <li><a href="/static/style.css">/static/style.css</a> - Local CSS file</li>
+        <li><a href="/static/vendor/htmx.min.js">/static/vendor/htmx.min.js</a> - HTMX library</li>
+        <li><a href="/static/monaco/vs/loader.js">/static/monaco/vs/loader.js</a> - Monaco editor loader</li>
+        <li><a href="/static/monaco/vs/editor/editor.main.js">/static/monaco/vs/editor/editor.main.js</a> - Monaco editor main</li>
+    </ul>
 </body>
 </html>`);
         return;
