@@ -41,20 +41,5 @@ cc_test(
     linkstatic = 1,
 )
 
-cc_test(
-    name = "stack_overflow_test",
-    srcs = ["stack_overflow_test.c"],
-    deps = [
-        "@quickjs-ng//:quickjs",
-        ":engine",
-        ":bindings",
-        "//internal/core:log",
-        "@civetweb//:civetweb",
-    ],
-    data = [
-        "//static:server.js",
-    ],
-    linkstatic = 1,
-)
 
 

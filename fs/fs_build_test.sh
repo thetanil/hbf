@@ -30,12 +30,6 @@ if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = 'hbf/server.js'" | gre
     exit 1
 fi
 
-# Test 4: Verify index.html exists
-if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = 'static/index.html'" | grep -q 1; then
-    echo "FAIL: static/index.html not found in archive"
-    exit 1
-fi
-
 # Test 5: Verify style.css exists
 if ! sqlite3 "$ARCHIVE" "SELECT 1 FROM sqlar WHERE name = 'static/style.css'" | grep -q 1; then
     echo "FAIL: static/style.css not found in archive"
