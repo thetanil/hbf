@@ -86,6 +86,7 @@ Tier 6 — Tooling & DX
 - CLI: `hbf dev|open|pack|push|logs`
 - Test harness: in‑proc server, HTML/partial snapshots, htmx request simulation
 
+https://chatgpt.com/share/6901594d-ae70-8005-af57-4cf804b11f5a
 ## App archetypes → minimum feature sets
 
 - Blog
