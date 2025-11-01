@@ -32,11 +32,9 @@ go.work.sum
 # .idea/
 # .vscode/
 assets/
-hbf/hbf
 __pycache__
 henvs/
 core.*
 *.db
 hbf.db-wal
 hbf.db-shm
-hbf
