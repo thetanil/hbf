@@ -8,14 +8,53 @@ genrule(
         ["hbf/**/*", "static/**/*"],
         exclude = ["BUILD.bazel"],
         exclude_directories = 1,
-    ),
+    ) + [
+        "@htmx//file",
+        "@monaco_editor//:min_vs",
+    ],
     outs = ["fs.db"],
     cmd = """
-        mkdir -p hbf static
-        cp $(location hbf/server.js) hbf/server.js
-        cp $(location static/index.html) static/index.html
-        sqlite3 -A -cf $(location fs.db) hbf/server.js static/index.html
-        rm -rf hbf static
+        # Create staging directory structure
+        mkdir -p staging/hbf staging/static/vendor staging/static/monaco
+
+        # Copy local fs/ files using glob patterns
+        for src in $(SRCS); do
+            # Match files starting with 'fs/hbf/' (local files)
+            if [[ $$src == fs/hbf/* ]]; then
+                # Extract everything after 'fs/hbf/'
+                rel_path=$${src#fs/hbf/}
+                mkdir -p staging/hbf/$$(dirname $$rel_path)
+                cp $$src staging/hbf/$$rel_path
+            fi
+        done
+
+        # Copy all globbed static files
+        for src in $(SRCS); do
+            # Match files starting with 'fs/static/' (local files)
+            if [[ $$src == fs/static/* ]]; then
+                # Extract everything after 'fs/static/'
+                rel_path=$${src#fs/static/}
+                mkdir -p staging/static/$$(dirname $$rel_path)
+                cp $$src staging/static/$$rel_path
+            fi
+        done
+
+        # Stage HTMX
+        cp $(location @htmx//file) staging/static/vendor/htmx.min.js
+
+        # Stage Monaco Editor (preserving min/vs/** structure)
+        for monaco_file in $(locations @monaco_editor//:min_vs); do
+            # Extract path after 'min/' (e.g., .../min/vs/loader.js -> vs/loader.js)
+            rel_path=$${monaco_file##*/min/}
+            mkdir -p staging/static/monaco/$$(dirname $$rel_path)
+            cp $$monaco_file staging/static/monaco/$$rel_path
+        done
+
+        # Create SQLAR archive
+        cd staging && sqlite3 -A -cf ../$(location fs.db) hbf static
+
+        # Cleanup
+        cd .. && rm -rf staging
     """,
 )
 

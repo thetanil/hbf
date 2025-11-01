@@ -46,3 +46,33 @@ git_repository(
     tag = "v0.8.0",
     build_file = "//third_party/quickjs-ng:quickjs.BUILD",
 )
+
+# HTTP archive support for fetching third-party web assets
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# HTMX - Hypermedia-driven web framework (MIT license)
+# Version: 2.0.3 (latest stable)
+http_file(
+    name = "htmx",
+    url = "https://unpkg.com/htmx.org@2.0.3/dist/htmx.min.js",
+    sha256 = "491955cd1810747d7d7b9ccb936400afb760e06d25d53e4572b64b6563b2784e",
+    downloaded_file_path = "htmx.min.js",
+)
+
+# Monaco Editor - VS Code's text editor (MIT license)
+# Version: 0.52.0 (latest stable)
+# Note: Fetching pre-built 'min' distribution from npm registry
+http_archive(
+    name = "monaco_editor",
+    url = "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.52.0.tgz",
+    sha256 = "5dbda58750b13452de39affcea703af096022d8e3546c67ed5d3bd072763f939",
+    strip_prefix = "package",
+    build_file_content = """
+filegroup(
+    name = "min_vs",
+    srcs = glob(["min/vs/**/*"]),
+    visibility = ["//visibility:public"],
+)
+    """,
+)

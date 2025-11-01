@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Create HTTP server */
-	server = hbf_server_create(config.port, db);
+	server = hbf_server_create(config.port, config.dev, db);
 	if (!server) {
 		hbf_log_error("Failed to create HTTP server");
 		hbf_db_close(db);

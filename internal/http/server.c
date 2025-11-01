@@ -42,6 +42,18 @@ static const char *get_mime_type(const char *path)
 	if (strcmp(ext, ".ico") == 0) {
 		return "image/x-icon";
 	}
+	if (strcmp(ext, ".woff") == 0) {
+		return "font/woff";
+	}
+	if (strcmp(ext, ".woff2") == 0) {
+		return "font/woff2";
+	}
+	if (strcmp(ext, ".wasm") == 0) {
+		return "application/wasm";
+	}
+	if (strcmp(ext, ".md") == 0) {
+		return "text/markdown";
+	}
 
 	return "application/octet-stream";
 }
@@ -69,8 +81,8 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 	if (strcmp(uri, "/") == 0) {
 		snprintf(path, sizeof(path), "static/index.html");
 	} else {
-		/* Remove leading slash, prepend static/ */
-		snprintf(path, sizeof(path), "static%s", uri);
+		/* Remove leading slash */
+		snprintf(path, sizeof(path), "%s", uri + 1);
 	}
 
 	hbf_log_debug("Static request: %s -> %s", uri, path);
@@ -86,15 +98,20 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 	/* Determine MIME type */
 	mime_type = get_mime_type(path);
 
+	/* Set cache headers based on dev mode */
+	const char *cache_header = server->dev
+	    ? "Cache-Control: no-store\r\n"
+	    : "Cache-Control: public, max-age=3600\r\n";
+
 	/* Send response */
 	mg_printf(conn,
 	          "HTTP/1.1 200 OK\r\n"
 	          "Content-Type: %s\r\n"
 	          "Content-Length: %zu\r\n"
-	          "Cache-Control: public, max-age=3600\r\n"
+	          "%s"
 	          "Connection: close\r\n"
 	          "\r\n",
-	          mime_type, size);
+	          mime_type, size, cache_header);
 
 	mg_write(conn, data, size);
 	free(data);
@@ -121,7 +138,7 @@ static int health_handler(struct mg_connection *conn, void *cbdata)
 	return 200;
 }
 
-hbf_server_t *hbf_server_create(int port, sqlite3 *db)
+hbf_server_t *hbf_server_create(int port, int dev, sqlite3 *db)
 {
 	hbf_server_t *server;
 
@@ -137,6 +154,7 @@ hbf_server_t *hbf_server_create(int port, sqlite3 *db)
 	}
 
 	server->port = port;
+	server->dev = dev;  /* Store dev flag */
 	server->db = db;
 	server->ctx = NULL;
 

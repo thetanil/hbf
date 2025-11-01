@@ -10,6 +10,7 @@ struct mg_context;
 /* HTTP server structure */
 typedef struct hbf_server {
 	int port;
+	int dev;           /* Development mode flag */
 	sqlite3 *db;       /* Main database (contains SQLAR) */
 	struct mg_context *ctx;
 } hbf_server_t;
@@ -18,10 +19,11 @@ typedef struct hbf_server {
  * Create HTTP server
  *
  * @param port: HTTP server port
+ * @param dev: Development mode flag
  * @param db: Main database handle (contains SQLAR)
  * @return Server instance or NULL on error
  */
-hbf_server_t *hbf_server_create(int port, sqlite3 *db);
+hbf_server_t *hbf_server_create(int port, int dev, sqlite3 *db);
 
 /*
  * Start HTTP server
