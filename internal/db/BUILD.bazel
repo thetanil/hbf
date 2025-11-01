@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Database management
 
+# Export overlay schema for build-time application to fs.db
+exports_files(["overlay_schema.sql"])
+
 cc_library(
     name = "db",
     srcs = ["db.c"],
@@ -17,6 +20,13 @@ cc_library(
 cc_test(
     name = "db_test",
     srcs = ["db_test.c"],
+    deps = [":db"],
+    linkstatic = 1,
+)
+
+cc_test(
+    name = "overlay_test",
+    srcs = ["overlay_test.c"],
     deps = [":db"],
     linkstatic = 1,
 )

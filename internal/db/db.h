@@ -50,6 +50,22 @@ int hbf_db_read_file_from_main(sqlite3 *db, const char *path,
                                 unsigned char **data, size_t *size);
 
 /*
+ * Read file with optional overlay support (dev mode)
+ *
+ * When use_overlay=1, reads from latest_fs view (overlay + base).
+ * When use_overlay=0, reads from base sqlar only (prod mode).
+ *
+ * @param db: Main database handle
+ * @param path: File path within archive (e.g., "static/index.html")
+ * @param use_overlay: If 1, read from overlay; if 0, read from base only
+ * @param data: Output parameter for file data (caller must free)
+ * @param size: Output parameter for file size
+ * @return 0 on success, -1 on error
+ */
+int hbf_db_read_file(sqlite3 *db, const char *path, int use_overlay,
+                     unsigned char **data, size_t *size);
+
+/*
  * Check if file exists in main database SQLAR archive
  *
  * @param db: Main database handle

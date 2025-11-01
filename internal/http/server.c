@@ -87,8 +87,8 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 
 	hbf_log_debug("Static request: %s -> %s", uri, path);
 
-	/* Read file from main database SQLAR */
-	ret = hbf_db_read_file_from_main(server->db, path, &data, &size);
+	/* Read file from database (with overlay support in dev mode) */
+	ret = hbf_db_read_file(server->db, path, server->dev, &data, &size);
 	if (ret != 0) {
 		hbf_log_debug("File not found: %s", path);
 		mg_send_http_error(conn, 404, "Not Found");
@@ -103,15 +103,19 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 	    ? "Cache-Control: no-store\r\n"
 	    : "Cache-Control: public, max-age=3600\r\n";
 
+	/* Set dev header if in dev mode */
+	const char *dev_header = server->dev ? "X-HBF-Dev: 1\r\n" : "";
+
 	/* Send response */
 	mg_printf(conn,
 	          "HTTP/1.1 200 OK\r\n"
 	          "Content-Type: %s\r\n"
 	          "Content-Length: %zu\r\n"
-	          "%s"
+	          "%s"        /* Cache-Control */
+	          "%s"        /* X-HBF-Dev (if dev mode) */
 	          "Connection: close\r\n"
 	          "\r\n",
-	          mime_type, size, cache_header);
+	          mime_type, size, cache_header, dev_header);
 
 	mg_write(conn, data, size);
 	free(data);

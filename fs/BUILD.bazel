@@ -11,6 +11,7 @@ genrule(
     ) + [
         "@htmx//file",
         "@monaco_editor//:min_vs",
+        "//internal/db:overlay_schema.sql",
     ],
     outs = ["fs.db"],
     cmd = """
@@ -52,9 +53,13 @@ genrule(
 
         # Create SQLAR archive
         cd staging && sqlite3 -A -cf ../$(location fs.db) hbf static
+        cd ..
+
+        # Apply overlay schema at build time
+        sqlite3 $(location fs.db) < $(location //internal/db:overlay_schema.sql)
 
         # Cleanup
-        cd .. && rm -rf staging
+        rm -rf staging
     """,
 )
 

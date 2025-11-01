@@ -112,7 +112,7 @@ int hbf_db_init(int inmem, sqlite3 **db)
 			fs_data_copy,
 			(sqlite3_int64)fs_db_len,
 			(sqlite3_int64)fs_db_len,
-			SQLITE_DESERIALIZE_FREEONCLOSE
+			SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE
 		);
 
 		if (rc != SQLITE_OK) {
@@ -169,6 +169,9 @@ int hbf_db_init(int inmem, sqlite3 **db)
 		*db = NULL;
 		return -1;
 	}
+
+	/* Overlay schema already applied at build time in fs.db */
+	hbf_log_debug("Overlay filesystem schema present (applied at build time)");
 
 	/* Initialize filesystem database (embedded SQLAR) - kept private for template hydration */
 	rc = sqlite3_open(HBF_DB_INMEM, &g_fs_db);
@@ -311,6 +314,77 @@ int hbf_db_read_file_from_main(sqlite3 *db, const char *path,
 	}
 
 	hbf_log_debug("Read file '%s' from main DB (%zu bytes)", path, *size);
+	return 0;
+}
+
+int hbf_db_read_file(sqlite3 *db, const char *path, int use_overlay,
+                     unsigned char **data, size_t *size)
+{
+	sqlite3_stmt *stmt;
+	const char *sql;
+	int rc;
+	const void *blob_data;
+	int blob_size;
+
+	if (!db || !path || !data || !size) {
+		hbf_log_error("NULL parameter in hbf_db_read_file");
+		return -1;
+	}
+
+	*data = NULL;
+	*size = 0;
+
+	/* Choose table based on dev mode */
+	if (use_overlay) {
+		/* Query latest_fs view (overlay + base) */
+		sql = "SELECT sqlar_uncompress(data, sz) FROM latest_fs WHERE name = ?";
+	} else {
+		/* Query base sqlar only (production mode) */
+		sql = "SELECT sqlar_uncompress(data, sz) FROM sqlar WHERE name = ?";
+	}
+
+	rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if (rc != SQLITE_OK) {
+		hbf_log_error("Failed to prepare file read: %s", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+	if (rc != SQLITE_OK) {
+		hbf_log_error("Failed to bind path: %s", sqlite3_errmsg(db));
+		sqlite3_finalize(stmt);
+		return -1;
+	}
+
+	rc = sqlite3_step(stmt);
+	if (rc != SQLITE_ROW) {
+		/* File not found */
+		sqlite3_finalize(stmt);
+		hbf_log_debug("File not found in %s: %s",
+		              use_overlay ? "overlay" : "base", path);
+		return -1;
+	}
+
+	blob_data = sqlite3_column_blob(stmt, 0);
+	blob_size = sqlite3_column_bytes(stmt, 0);
+
+	if (blob_size > 0 && blob_data) {
+		*data = malloc((size_t)blob_size);
+		if (*data) {
+			memcpy(*data, blob_data, (size_t)blob_size);
+			*size = (size_t)blob_size;
+		}
+	}
+
+	sqlite3_finalize(stmt);
+
+	if (!*data && blob_size > 0) {
+		hbf_log_error("Failed to allocate memory for file");
+		return -1;
+	}
+
+	hbf_log_debug("Read file '%s' from %s (%zu bytes)",
+	              path, use_overlay ? "overlay" : "base", *size);
 	return 0;
 }
 

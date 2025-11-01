@@ -53,12 +53,13 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 500;
 	}
 
-		/* Load hbf/server.js from main database SQLAR */
+		/* Load hbf/server.js from database (with overlay support in dev mode) */
 		unsigned char *js_data = NULL;
 		size_t js_size = 0;
-		int ret = hbf_db_read_file_from_main(server ? server->db : NULL, "hbf/server.js", &js_data, &js_size);
+		int ret = hbf_db_read_file(server ? server->db : NULL, "hbf/server.js",
+		                           server ? server->dev : 0, &js_data, &js_size);
 		if (ret != 0 || !js_data || js_size == 0) {
-			hbf_log_error("hbf/server.js not found in main database SQLAR");
+			hbf_log_error("hbf/server.js not found in database");
 			hbf_qjs_ctx_destroy(qjs_ctx);
 			mg_send_http_error(conn, 503, "Service Unavailable");
 			return 503;
