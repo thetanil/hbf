@@ -1,6 +1,0 @@
-# Static web assets
-
-exports_files([
-    "index.html",
-    "style.css",
-])
