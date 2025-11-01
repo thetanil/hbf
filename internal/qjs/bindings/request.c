@@ -1,12 +1,13 @@
 /* Request object binding implementation */
 #include "internal/qjs/bindings/request.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "internal/core/log.h"
 
 /* Create JavaScript request object from CivetWeb request */
-JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn)
+JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn, int dev)
 {
 	const struct mg_request_info *ri;
 	JSValue req;
@@ -60,7 +61,28 @@ JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn)
 		JS_SetPropertyStr(ctx, req, "params", params);
 	}
 
-	/* TODO: Parse body for POST/PUT requests (Phase 3.3 or later) */
+	/* Set dev mode flag */
+	JS_SetPropertyStr(ctx, req, "dev", JS_NewBool(ctx, dev));
+
+	/* Read request body for POST/PUT/DELETE requests */
+	if (ri->content_length > 0) {
+		char *body_buf = malloc((size_t)ri->content_length + 1);
+		if (body_buf) {
+			int bytes_read = mg_read(conn, body_buf, (size_t)ri->content_length);
+			if (bytes_read > 0) {
+				body_buf[bytes_read] = '\0';
+				JS_SetPropertyStr(ctx, req, "body",
+				                  JS_NewStringLen(ctx, body_buf, (size_t)bytes_read));
+			} else {
+				JS_SetPropertyStr(ctx, req, "body", JS_NewString(ctx, ""));
+			}
+			free(body_buf);
+		} else {
+			JS_SetPropertyStr(ctx, req, "body", JS_NewString(ctx, ""));
+		}
+	} else {
+		JS_SetPropertyStr(ctx, req, "body", JS_NewString(ctx, ""));
+	}
 
 	return req;
 }

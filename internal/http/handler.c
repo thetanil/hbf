@@ -74,7 +74,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		}
 
 	/* Create request and response objects */
-	req = hbf_qjs_create_request(ctx, conn);
+	req = hbf_qjs_create_request(ctx, conn, server ? server->dev : 0);
 	if (JS_IsException(req) || JS_IsNull(req)) {
 		hbf_log_error("Failed to create request object");
 		hbf_qjs_ctx_destroy(qjs_ctx);
