@@ -71,7 +71,7 @@ Tip: set `.bazelrc` so `bazel run` defaults to debug for a better dev experience
 
 ### Multi-Pod Build System
 
-HBF uses a macro-based multi-pod build system that allows multiple independent pods to be built from a single codebase.
+HBF uses a macro-based multi-pod build system that allows multiple independent pods to be built from a single codebase. Pods are **manually registered** in the root BUILD.bazel file, providing explicit control over what gets built in CI/CD.
 
 **Pod Structure**: Each pod follows a standard directory layout:
 ```
@@ -87,26 +87,40 @@ pods/
 **Build Targets**: The `pod_binary()` macro in `tools/pod_binary.bzl` generates binary targets for each pod:
 - `//:hbf` - Base pod (default)
 - `//:hbf_<podname>` - Other pods (e.g., `//:hbf_test`)
-- `//:hbf_<podname>_unstripped` - Alias for convenience
+- `//:hbf_<podname>_unstripped` - Alias for convenience (points to same target)
 
-**Pod Embedding**: Each pod's content is embedded using:
-1. SQLAR archive created from pod files
-2. Conversion to C byte array via `db_to_c` script
-3. Standard C compilation and linking
-4. Symbols (fs_db_data, fs_db_len) provided per-pod and linked at binary level
+**How Pod Embedding Works**:
+
+The `pod_binary()` macro orchestrates a build pipeline:
+
+1. **SQLAR Creation**: Pod directory (hbf/*.js, static/*) → SQLite SQLAR archive
+2. **C Array Generation**: SQLAR binary → C source files via `db_to_c` tool
+   - Generates `<name>_fs_embedded.c` and `<name>_fs_embedded.h`
+   - Provides symbols: `fs_db_data` (byte array) and `fs_db_len` (size)
+3. **Library Creation**: `cc_library` with `alwayslink = True` ensures symbols are included
+4. **Binary Linking**: `cc_binary` links embedded library + core HBF libraries
+5. **Output**: Final binary copied to `bazel-bin/bin/<name>`
+
+Each pod gets its own embedded library (e.g., `//:hbf_embedded`, `//:hbf_test_embedded`) that provides the `fs_db_data`/`fs_db_len` symbols. Tests that need database access must depend on one of these embedded libraries.
 
 **Adding a New Pod**:
-1. Create `pods/<name>/` directory with BUILD.bazel
-2. Add `pod_binary(name = "hbf_<name>", pod = "//pods/<name>")` to root BUILD.bazel
-3. Add `"<name>"` to matrix pod list in `.github/workflows/pr.yml`
-4. (Optional) Add `"<name>"` to `.github/workflows/release.yml` for releases
+1. Create `pods/<name>/` directory with BUILD.bazel containing `pod_db` target
+2. Add `pod_binary(name = "hbf_<name>", pod = "//pods/<name>", tags = ["hbf_pod"])` to root BUILD.bazel
+3. Add `"<name>"` to matrix pod list in `.github/workflows/pr.yml` for CI builds
+4. (Optional) Add `"<name>"` to `.github/workflows/release.yml` for release artifacts
+
+**Why Manual Pod Registration?**
+- **Explicit control**: No surprises about what's being built
+- **Deliberate releases**: Only explicitly listed pods are released
+- **Bazel alignment**: Same manual approach in BUILD.bazel and GitHub Actions
+- **Simple and predictable**: Easy to understand what will be built
 
 **Discovering Pods**:
 ```bash
-# List all pod binaries
+# List all hbf pod binaries by name convention
 bazel query 'kind("cc_binary", //:*)' | grep '^//:hbf'
 
-# If tagged with hbf_pod
+# List pods tagged with hbf_pod
 bazel query 'attr(tags, "hbf_pod", kind("cc_binary", //...))'
 ```
 
@@ -179,13 +193,14 @@ All tests use minunit-style C macros with assert.h:
 - `hbf/shell:config_test` - CLI parsing tests
 - `hbf/db:db_test` - SQLite wrapper tests
 - `hbf/db:overlay_test` - Schema overlay tests
-- `hbf/qjs:engine_test` - QuickJS engine tests
-- `pods/base:fs_build_test` - SQLAR build tests
+- `hbf/qjs:engine_test` - QuickJS engine tests (includes db module integration)
+- `pods/base:fs_build_test` - SQLAR build tests for base pod
+- `pods/test:fs_build_test` - SQLAR build tests for test pod
 
 ```bash
 # Run all tests
 $ bazel test //...
-✅ 6 test targets, all passing
+✅ 7 test targets, all passing
 ```
 
 ## Current Implementation
@@ -195,19 +210,28 @@ $ bazel test //...
 - ✅ `hbf/db/` - SQLite wrapper with overlay schema support
 - ✅ `hbf/http/` - CivetWeb HTTP server with request routing
 - ✅ `hbf/qjs/` - QuickJS engine with host bindings (db, console, request/response)
-- ✅ `pods/base/` - Base pod with SQLAR build system
+- ✅ `pods/base/` - Base pod with example content
+- ✅ `pods/test/` - Test pod for validation
 
-**Pod Build System**:
-- Each pod directory contains static files (hbf/*.js, static/*.html, etc.)
-- BUILD.bazel creates SQLAR archive (SQLite archive format)
-- SQLAR archive embedded as an object file via objcopy and linked into the binary (faster compiles than large C arrays)
-- Overlay schema applied at build time for pod-specific tables
+**Multi-Pod Build System** (Completed):
+- ✅ Macro-based build system via `pod_binary()` in `tools/pod_binary.bzl`
+- ✅ Each pod directory contains static files (hbf/*.js, static/*.html, etc.)
+- ✅ SQLAR archive generated per-pod and embedded via `db_to_c` conversion to C arrays
+- ✅ Per-pod embedded libraries with `alwayslink = True` for symbol resolution
+- ✅ Overlay schema applied at build time for pod-specific tables
+- ✅ All binaries emit to unified `bazel-bin/bin/` directory
+- ✅ GitHub Actions matrix builds for multiple pods in parallel
 
 **Binary**:
-- Size: 5.3 MB stripped (statically linked with SQLite + QuickJS)
+- Size: 5.4 MB stripped (statically linked with SQLite + QuickJS)
 - 100% static linking with musl libc 1.2.3
 - Zero runtime dependencies
 - Compiles with `-Werror` and 30+ warning flags
+
+**Testing**:
+- ✅ All 7 test targets passing
+- ✅ Both base and test pod binaries build successfully
+- ✅ Pod discovery via Bazel query works
 
 ## Key Design Decisions
 
@@ -230,16 +254,6 @@ bazel-bin/bin/hbf_test
 
 - **Development setup**: `DOCS/development-setup.md`
 - **Coding standards**: `DOCS/coding-standards.md`
-
-## Discovering Pod Targets
-
-```bash
-# List all hbf pod binaries by name convention
-bazel query 'kind("cc_binary", //:*)' | grep '^//:hbf'
-
-# If pod binaries are tagged with "hbf_pod"
-bazel query 'attr(tags, "hbf_pod", kind("cc_binary", //...))'
-```
 
 ## Reproducible Builds and Version Stamping
 

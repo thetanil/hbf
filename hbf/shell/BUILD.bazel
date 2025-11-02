@@ -40,16 +40,5 @@ cc_test(
     linkstatic = 1,
 )
 
-cc_binary(
-    name = "hbf",
-    srcs = ["main.c"],
-    deps = [
-        ":config",
-        ":log",
-        "//hbf/db:db",
-        "//hbf/http:server",
-        "//hbf/qjs:engine",
-        "@sqlite3",
-    ],
-    visibility = ["//visibility:public"],
-)
+# Note: The hbf binary is now built via the pod_binary() macro in the root BUILD.bazel
+# This allows for multiple pod variants to be built (e.g., //:hbf, //:hbf_test)
