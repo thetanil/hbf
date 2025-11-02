@@ -69,10 +69,15 @@ runs:
         NAME_STRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}"
         NAME_UNSTRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}-unstripped"
 
-        # Copy binaries from unified bin/ layout
-        # The output symlinks in bazel-bin resolve to configuration-specific artifacts
-        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_STRIPPED"        # from opt --strip=always build
-        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_UNSTRIPPED"      # from dbg build (unstripped)
+        # Copy binaries from configuration-specific output directories
+        # Use -L to follow symlinks and get the actual binaries from their build configs
+        cp -L "$(bazel cquery --compilation_mode=opt --strip=always --output=files //:${TARGET_NAME})" "$NAME_STRIPPED"
+        cp -L "$(bazel cquery --compilation_mode=dbg --output=files //:${TARGET_NAME})" "$NAME_UNSTRIPPED"
+
+        # Strip the "stripped" binary to ensure it's actually stripped
+        # chmod needed because Bazel outputs are read-only
+        chmod +w "$NAME_STRIPPED"
+        strip "$NAME_STRIPPED"
 
         # Generate checksums
         sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
