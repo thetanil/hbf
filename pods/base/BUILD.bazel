@@ -52,14 +52,17 @@ genrule(
         done
 
         # Create SQLAR archive
-        cd staging && sqlite3 -A -cf ../$(location base.db) hbf static
+        cd staging && sqlite3 -A -cf ../temp.db hbf static
         cd ..
 
         # Apply overlay schema at build time
-        sqlite3 $(location base.db) < $(location //hbf/db:overlay_schema.sql)
+        sqlite3 temp.db < $(location //hbf/db:overlay_schema.sql)
+
+        # VACUUM to remove dead space and optimize database size
+        sqlite3 temp.db "VACUUM INTO '$(location base.db)'"
 
         # Cleanup
-        rm -rf staging
+        rm -rf staging temp.db
     """,
     visibility = ["//visibility:public"],
 )
