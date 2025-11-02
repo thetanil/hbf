@@ -47,8 +47,8 @@ runs:
         TAG="${{ inputs.tag }}"
         NAME_STRIPPED="hbf-${TAG}-linux-x86_64"
         NAME_UNSTRIPPED="hbf-${TAG}-linux-x86_64-unstripped"
-        cp bazel-bin/hbf "$NAME_STRIPPED"
-        cp bazel-bin/internal/core/hbf "$NAME_UNSTRIPPED"
+        cp bazel-bin/bin/hbf "$NAME_STRIPPED"
+        cp bazel-bin/hbf/shell/hbf "$NAME_UNSTRIPPED"
         sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
         sha256sum "$NAME_UNSTRIPPED" > "$NAME_UNSTRIPPED.sha256"
 
