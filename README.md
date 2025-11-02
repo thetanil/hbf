@@ -1,135 +1,177 @@
 # HBF
 
-a single-binary web runtime (C + SQLite + CivetWeb + QuickJS)
+Single, statically linked C99 web compute environment (SQLite + CivetWeb + QuickJS‑NG) built with Bazel 8 and bzlmod.
 
-HBF is a single executable that serves HTTP, runs a JavaScript handler per request (QuickJS), and stores both your app’s code and static files inside a SQLite database. The current behavior and interfaces are documented in DOCS/hbf_spec.md — this README is a concise Quickstart aligned with that spec.
+HBF is a single binary that serves HTTP, runs a JavaScript handler per request in QuickJS, and embeds your pod’s code and static files inside a SQLite database. This README is a concise quickstart; see `DOCS/hbf_spec.md` for full details.
 
-## What you get today
+## Highlights
 
-- CivetWeb HTTP server with three routes out of the box:
-  - GET /health → {"status":"ok"}
-  - GET /static/** → files loaded from the main DB’s SQLAR
-  - Catch‑all → executes hbf/server.js (from the main DB’s SQLAR) with a QuickJS context per request
-- QuickJS sandbox per request (fresh runtime/context, 64 MB limit, 5s timeout)
-- Embedded read‑only template DB (fs.db) compiled into the binary and used only to create a new main DB
+- CivetWeb HTTP server with health and static file handling
+- Request handling via QuickJS with per‑request sandbox
+  - Fresh runtime/context per request
+  - 64 MB memory limit and 5s execution timeout
+- Pod‑based architecture: each pod provides its own `server.js` and static assets
+- Single, fully static binary (musl) with zero runtime dependencies
 
-See full details in DOCS/hbf_spec.md.
+## Directory layout
+
+```
+hbf/
+  shell/   # CLI, main, logging, config
+  db/      # SQLite wrapper and overlay schema
+  http/    # CivetWeb server wrapper and routing
+  qjs/     # QuickJS engine and host bindings
+
+pods/
+  base/    # Base pod example (JS + static assets)
+  test/    # Test pod used by CI/tests
+
+third_party/  # Vendored deps (CivetWeb, QuickJS, SQLite, etc.)
+tools/        # Build scripts and helper tools
+DOCS/         # Documentation (specs, plans, standards)
+```
 
 ## Build
 
 Prerequisites:
 - Linux x86_64
-- Bazel (bzlmod enabled). All C libraries (SQLite, CivetWeb, QuickJS‑NG, zlib) are fetched by Bazel; no system packages required.
+- Bazel 8.x with bzlmod (no WORKSPACE)
 
 Commands:
 
 ```bash
-# Build stripped binary
+# Build default base pod binary
 bazel build //:hbf
 
-# Optionally, build unstripped binary for debugging
-bazel build //:hbf_unstripped
+# Build a specific pod binary (example: test pod)
+bazel build //:hbf_test
 
-# Run tests and lint
+# Run all tests
 bazel test //...
+
+# Lint (clang-tidy and checks)
 bazel run //:lint
 ```
 
-Artifacts:
-- Stripped binary: bazel-bin/hbf
-- Unstripped binary: bazel-bin/internal/core/hbf (via //:hbf_unstripped)
+Binary output layout (symlinked):
+- `bazel-bin/bin/hbf`
+- `bazel-bin/bin/hbf_test`
 
 ## Run
 
 ```bash
-# Default run (port 5309, persistent DB file ./hbf.db)
-./bazel-bin/hbf
+# Easiest for local dev
+bazel run //:hbf -- --port 5309 --log_level debug
 
-# Custom port and verbose logging
-./bazel-bin/hbf --port 8080 --log-level debug
-
-# In‑memory database (discard on exit)
-./bazel-bin/hbf --inmem
-
-# Or run through Bazel
-bazel run //:hbf -- --port 8080 --log-level info
+# Or run the built binary directly
+./bazel-bin/bin/hbf --port 8080 --log_level info
 ```
 
-Then:
+Health check:
 
 ```bash
 curl http://localhost:5309/health
 # {"status":"ok"}
 ```
 
-## CLI options
+## CLI
 
 ```text
---port <num>        HTTP port (default: 5309)
---log-level <lvl>   debug | info | warn | error (default: info)
---dev               development mode flag
---inmem             use an in‑memory main database (not persisted)
---help, -h          show help
+--port <num>         HTTP server port (default: 5309)
+--log_level <level>  debug | info | warn | error (default: info)
+--dev                Enable development mode
+--help, -h           Show help
 ```
 
-## Default app and routes
+## Pods and embedding
 
-At build time, fs/ is packed into an embedded SQLite archive (SQLAR) and linked into the binary. On first run (or with --inmem), the DB module creates the main database (./hbf.db) from that template and stores assets there. At runtime, all reads go to the main DB.
+HBF builds a separate static binary per pod using a macro‑based pipeline. Each pod includes JavaScript (`pods/<name>/hbf/server.js`) and static assets (`pods/<name>/static/**`), which are packed into a SQLAR SQLite database and embedded into the binary.
 
-Included content today:
-- JavaScript handler: fs/hbf/server.js (stored under hbf/server.js in SQLAR)
-- Static files: fs/static/index.html (served under /static/index.html)
+How it works at build time:
+1) Create SQLAR from the pod’s `hbf/*.js` and `static/*`
+2) Apply overlay schema and `VACUUM INTO` to optimize the DB
+3) Convert the optimized DB into C sources providing `fs_db_data`/`fs_db_len`
+4) Link the embedded DB library into the final `cc_binary`
+5) Copy output to `bazel-bin/bin/<name>`
 
-The default server.js implements:
-- GET / → HTML page listing sample routes
-- GET /hello → {"message":"Hello, World!"}
-- GET /user/:id → echoes userId
-- GET /echo → echoes method and URL
-- otherwise 404 Not Found
+Add a new pod:
+1) Create `pods/<name>/` with a `BUILD.bazel` that defines a `pod_db` target
+2) Register it in the root `BUILD.bazel` via `pod_binary(name = "hbf_<name>", pod = "//pods/<name>")`
+3) Build it with `bazel build //:hbf_<name>`
 
-## Customize your app
+## QuickJS integration
 
-Edit these files and rebuild:
-- fs/hbf/server.js → your request handler (global app.handle(req, res))
-- fs/static/** → any static assets served under /static/**
+- Engine: QuickJS‑NG
+- Limits: 64 MB/context, 5000 ms execution timeout
+- Host modules: `hbf:db`, `hbf:http` (request/response bindings), `hbf:console`
+- Content: `server.js` loaded from the embedded SQLAR archive
 
-Then rebuild to regenerate the embedded template and binary:
+## SQLite configuration
+
+Compile‑time flags:
+
+```c
+-DSQLITE_THREADSAFE=1
+-DSQLITE_ENABLE_FTS5
+-DSQLITE_ENABLE_SQLAR
+-DSQLITE_OMIT_LOAD_EXTENSION
+-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+-DSQLITE_ENABLE_JSON1
+```
+
+Runtime pragmas:
+
+```sql
+PRAGMA foreign_keys=ON;
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+```
+
+## Testing
+
+All tests are C99 and run via Bazel:
+- `//hbf/shell:hash_test`
+- `//hbf/shell:config_test`
+- `//hbf/db:db_test`
+- `//hbf/db:overlay_test`
+- `//hbf/qjs:engine_test`
+- `//pods/base:fs_build_test`
+- `//pods/test:fs_build_test`
+
+Run everything:
 
 ```bash
-bazel build //:hbf
+bazel test //...
 ```
 
-Notes:
-- The embedded template DB is used only to create a new main DB. If ./hbf.db already exists, it is not modified. Delete ./hbf.db (or use --inmem) to pick up new embedded content.
+## Licensing
 
-## How the embedded content pipeline works
+MIT for HBF. Third‑party components retain their original licenses. No GPL dependencies; only MIT/BSD/Apache‑2.0/Public Domain are allowed.
 
-Implemented in fs/BUILD.bazel:
-1) //fs:fs_archive → creates fs.db (SQLAR) from fs/hbf/server.js and fs/static/index.html
-2) //fs:fs_db_gen → converts fs.db into C sources (fs_embedded.c/.h)
-3) //fs:fs_embedded → linked into the final binary
+## References
 
-On startup, the DB module will create the main DB from that embedded template if needed; thereafter, only the main DB is used for reads.
+- Spec and behavior: `DOCS/hbf_spec.md`
+- Coding standards: `DOCS/coding-standards.md`
+- Developer guide: `CLAUDE.md`
 
-## End‑to‑end check
+## Next Steps, future dev
 
-Run the integration script (starts the server on a random free port and exercises endpoints):
+- in CI there is a 3rd build for just lint and test, but I think it might be
+  faster if it's just running on the hbf_test build instead of a seperate job?
+  there should be some way to optimize, it takes a lot longer than the other
+  tasks, or maybe it's just because there are only 2 jobs in parallel and this
+  is the third running after base and test? test (hbf_test) could be used to
+  test and lint check
 
-```bash
-./tools/integration_test.sh
-```
+- make the layered fs api / database tables which allows per file readthrough to
+  sqlar table as base.
 
-## Troubleshooting
+- base (hbf) is just a static site with a lite editor
 
-- Health returns 200 but other routes 5xx
-  - Ensure hbf/server.js evaluates to a global app with app.handle(req, res)
-- Static file 404
-  - Static files are served only under /static/**; confirm the path and rebuild
-- Changed fs/ content isn’t showing up
-  - Delete ./hbf.db (or use --inmem) so the main DB is recreated from the embedded template
+- dev (hbf_dev) includes monaco for jsfiddle / shadertoy like glsl fiddle examples
 
-## License
+- remove monaco from base, base should be static only content server (project docs?)
 
-MIT. Third‑party components retain their original licenses. See DOCS/hbf_spec.md for implementation details and limitations.
+- new pod bootstrap(hbf-bootstrap)
 
-For future roadmap and design directions, see `big_idea.md`.
+- v1 requires base to have local edit and sync with hosting working
