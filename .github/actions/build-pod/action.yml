@@ -19,12 +19,23 @@ inputs:
     description: Whether to run smoke test on built binary (default false)
     required: false
     default: 'false'
+  run-lint:
+    description: Whether to run lint checks (default false)
+    required: false
+    default: 'false'
 
 runs:
   using: composite
   steps:
     - name: Set up Bazelisk
       uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Install lint dependencies
+      if: inputs.run-lint == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-tidy-18
 
     - name: Cache Bazel directories
       uses: actions/cache@v4
@@ -55,6 +66,13 @@ runs:
 
         # Debug-symbols build
         bazel build --compilation_mode=dbg //:${TARGET_NAME}
+
+    - name: Run lint
+      if: inputs.run-lint == 'true'
+      shell: bash
+      run: |
+        echo "Running lint checks..."
+        bazel run //:lint
 
     - name: Run tests
       if: inputs.run-tests == 'true'

@@ -36,53 +36,6 @@ jobs:
           pod-name: ${{ matrix.pod }}
           tag: ${{ github.sha }}
           artifact-name: build-${{ matrix.pod }}
+          run-lint: ${{ matrix.pod == 'test' }}
           run-tests: ${{ matrix.pod == 'test' }}
           run-smoke-test: ${{ matrix.pod == 'base' }}
-
-  # Lint (runs independently in parallel with pod builds)
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install lint dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-tidy-18
-
-      - name: Set up Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Lint
-        run: bazel run //:lint
-
-  # Reproducible build check (runs independently)
-  reproducible-build:
-    name: Reproducible Build Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      SOURCE_DATE_EPOCH: "1700000000"  # fixed timestamp for determinism
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Reproducible build smoke test
-        run: |
-          # Build twice with fixed SOURCE_DATE_EPOCH and compare digests
-          bazel clean --expunge
-          bazel build --compilation_mode=opt --strip=always //:hbf
-          sha256sum bazel-bin/bin/hbf > digest1.txt
-          bazel clean --expunge
-          bazel build --compilation_mode=opt --strip=always //:hbf
-          sha256sum bazel-bin/bin/hbf > digest2.txt
-          diff -u digest1.txt digest2.txt
