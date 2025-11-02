@@ -37,6 +37,7 @@ cc_test(
     deps = [
         ":engine",
         "//hbf/shell:log",
+        "//:hbf_embedded",  # Provide embedded symbols for db module
     ],
     linkstatic = 1,
 )
