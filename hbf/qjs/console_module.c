@@ -1,11 +1,11 @@
 /* Console module implementation - binds console.log to HBF logger */
-#include "internal/qjs/console_module.h"
+#include "hbf/qjs/console_module.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "internal/core/log.h"
+#include "hbf/shell/log.h"
 #include "quickjs.h"
 
 /* Helper to convert JSValue to string for logging */

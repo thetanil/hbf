@@ -1,11 +1,11 @@
 /* Response object binding implementation */
-#include "internal/qjs/bindings/response.h"
+#include "hbf/qjs/bindings/response.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "internal/core/log.h"
+#include "hbf/shell/log.h"
 
 /*
  * Class ID for response objects.

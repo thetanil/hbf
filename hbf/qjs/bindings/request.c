@@ -1,10 +1,10 @@
 /* Request object binding implementation */
-#include "internal/qjs/bindings/request.h"
+#include "hbf/qjs/bindings/request.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "internal/core/log.h"
+#include "hbf/shell/log.h"
 
 /* Create JavaScript request object from CivetWeb request */
 JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn, int dev)

@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 #include "server.h"
-#include "internal/http/handler.h"
-#include "../core/log.h"
-#include "../db/db.h"
+#include "hbf/http/handler.h"
+#include "hbf/shell/log.h"
+#include "hbf/db/db.h"
 #include "civetweb.h"
 #include <stdio.h>
 #include <stdlib.h>

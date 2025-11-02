@@ -1,247 +1,122 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## Project Overview
 
 HBF is a single, statically linked C99 web compute environment built with Bazel 8.x using bzlmod that embeds:
 - **SQLite** as the application/data store (with WAL + FTS5)
-    - bazel_dep(name = "sqlite3", version = "3.50.4")
-- **CivetWeb** for HTTP and SSE (NO SSL NO TLS NO IPV6 NO FILES)
-    - bazel: third_party/civetweb/BUILD.bazel
-    - build flags: third_party/civetweb/civetweb.BUILD
+- **CivetWeb** for HTTP and SSE (NO SSL, NO TLS, NO IPV6, NO FILES)
 - **QuickJS-NG** for runtime extensibility and scripting
-    - third_party/quickjs-ng/quickjs.BUILD
 
-target org:
-
-DOCS/ - documentation
-hbf/ - directory for the c99 server part of the project
-hbf/MODULE.bazel - multi-target builds, per pod binary, builds hbf server for each pod defined
-hbf/shell - server cli and main around the pod (maps to internal/core)
-hbf/db - interface between shell, civet and sqlite. (maps to internal/db)
-hbf/http - interface between civetweb server and db (maps to internal/http) (uses hbf/store)
-hbf/store - filesystem like api to the database for static and dynamic request handling (new code, doesn't exist yet)
-hbf/qjs - javascript http request handlers which are user programmable (uses hbf/store) (maps to internal/qjs)
-pods/ - directory to contain multiple pod MODULE.bazel definitions, each in a subfolder
-pods/pod_a/.devcontainer - development container for hbf server content
-pods/pod_a/BUILD.bazel - a build of a pod outputs a single sqlite3 database file which contains at least a sqlar table
-pods/pod_b/* - another definition of a pod to build
-tools/ - miscellaneous scripts for usage in CI/Bazel/tests
-
-what is currently in fs/ should be moved to pods/base and a MODULE.bazel should
-be written for that updates required to build top level which enables `bazel
-build //:pods/base` and this should output an hbf binary which contains the
-embedded base pod. file name bould be hbf-base. for pod_a, bazel build
-//:pods/pod_a could output hbf-pod_a. if I run bazel test //... it should test
-each pod module and bazel build //... should build all pod bins
-
-
-
-**Current Status**: Phase 2b Complete ✅
-- ✅ Phase 0: Foundation, Bazel setup, musl toolchain, coding standards
-- ✅ Phase 1: HTTP server with CivetWeb, logging, CLI parsing, signal handling
-- ✅ Phase 2a: SQLite integration, database schema (document-graph + system tables, FTS5)
-- ✅ Phase 2b: User pod & connection management (connection caching, LRU eviction)
-- 🔄 Phase 3: JavaScript Runtime & Express-Style Routing (next: QuickJS-NG, server.js from DB, static content)
-
-**Architecture Shift**: Single-instance deployment (localhost or single k3s pod) with programmable routing via JavaScript. Multi-tenancy deferred to future phases.
-
-The comprehensive implementation plan is in `hbf_impl.md`. See `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, `DOCS/phase2b-completion.md`, and `DOCS/phase3.md` for completion reports and detailed plans.
-
-## Build System
-
-This project uses **Bazel 8 with bzlmod** (MODULE.bazel, no WORKSPACE).
-
-### Build Commands
-```bash
-# Build the static binary (musl toolchain)
-bazel build //:hbf
-
-# Run all tests (hash_test, config_test)
-bazel test //...
-
-# Run lint checks (clang-tidy with CERT rules)
-bazel run //:lint
-
-# Run specific test with output
-bazel test //internal/core:config_test --test_output=all
-```
-
-**Binary output**: `bazel-bin/hbf` (1.1 MB stripped, statically linked with SQLite)
-
-### Bazel Configuration
-- `.bazelrc` contains build settings including bzlmod enablement
-- Target toolchain: **musl only** (100% static linking, no glibc builds)
-- Single output: fully static `hbf` binary
-
-## Architecture & Design Constraints
-
-### Language & Standards
-- **Strict C99**: No C++, no language extensions
-- Compiler flags enforce warnings-as-errors: `-std=c99 -Wall -Wextra -Werror -Wpedantic`
-- Follow CERT C Coding Standard and Linux kernel coding style (approximated via `.clang-format`)
-- See `hbf_impl.md` Phase 0 for complete compiler flag list
-
-### Licensing Constraints
-**No GPL dependencies allowed**. Only MIT, BSD, Apache-2.0, or Public Domain:
-- SQLite (Public Domain)
-- CivetWeb (MIT)
-- QuickJS (MIT)
-- Argon2 (Apache-2.0)
-- All other vendored code must be MIT/BSD/Apache-2/PD
-
-### Static Linking Requirements
-- Use musl toolchain exclusively
-- Link flags: `-static -Wl,--gc-sections`
-- Output: single fully static binary with no runtime dependencies
-- Strip symbols for release builds
+**Architecture**: Single static binary that serves a pod (embedded SQLite database with content + JavaScript). Each pod defines its own routing, data model, and features. HBF core provides the runtime; pods provide the application logic.
 
 ## Directory Structure
 
 ```
-/third_party/       # Vendored dependencies (no git submodules)
-  civetweb/         # ✅ MIT - Fetched from Git (v1.16)
-  sqlite3/          # ✅ Public Domain - From Bazel Central Registry (v3.50.4)
-  quickjs-ng/       # 🔄 MIT (Phase 3) - JavaScript engine
-  simple_graph/     # 🔄 MIT (Phase 5)
-  argon2/           # 🔄 Apache-2.0 (Phase 4) - Password hashing
-  sha256_hmac/      # 🔄 MIT single-file (Phase 4) - JWT signing
+hbf/
+  shell/      - Server CLI, main, logging, config
+  db/         - SQLite wrapper and schema
+  http/       - CivetWeb server wrapper
+  qjs/        - QuickJS engine and bindings
 
-/internal/          # Core implementation (all C99)
-  core/             # ✅ Logging, config, CLI, hash generator, main
-  http/             # ✅ CivetWeb server wrapper
-  henv/             # ✅ User pod management with connection caching (Phase 2b)
-  db/               # ✅ SQLite wrapper, schema, embedded schema.sql (Phase 2a)
-  qjs/              # 🔄 QuickJS-NG engine, bindings, context pool (Phase 3)
-    bindings/       # 🔄 Request, response, db, ws host modules (Phase 3)
-  auth/             # 🔄 Argon2id, JWT HS256, sessions (Phase 4)
-  authz/            # 🔄 Table permissions, row policies (Phase 4)
-  document/         # 🔄 Document store with FTS5 search (Phase 5)
-  templates/        # 🔄 EJS template integration (Phase 6.1)
-  ws/               # 🔄 WebSocket handlers (Phase 8)
-  api/              # 🔄 REST endpoint implementations (Phase 7)
+pods/
+  base/       - Base pod with example content
+    hbf/      - JavaScript files (server.js)
+    static/   - Static assets (HTML, CSS, etc.)
 
-/static/            # 🔄 Build-time content (Phase 3)
-  server.js         # Express-style routing script
-  lib/              # router.js, static.js middleware
-  www/              # index.html, CSS, client assets
-
-/tools/
-  lint.sh           # ✅ clang-tidy wrapper script
-  sql_to_c.sh       # ✅ SQL to C byte array converter
-  inject_content.sh # 🔄 Static content → SQL INSERT statements (Phase 3)
-  pack_js/          # 🔄 JS bundler (Phase 6.2)
-
-/DOCS/              # ✅ Documentation
-  coding-standards.md
-  development-setup.md
-  phase3.md         # 🔄 Phase 3 detailed plan
-  phase0-completion.md
-  phase1-completion.md
-  phase2b-completion.md
+third_party/  - Vendored dependencies (CivetWeb, QuickJS)
+tools/        - Build scripts (lint, db_to_c, etc.)
+DOCS/         - Documentation
 ```
 
-**Legend**: ✅ Implemented | 🔄 Planned
+## Build System
 
-## Security & Crypto Implementation
+Uses **Bazel 8 with bzlmod** (MODULE.bazel, no WORKSPACE).
 
-- **Password hashing**: Argon2id (constant-time compare)
-- **JWT**: HS256 using in-house SHA-256 + HMAC (no external crypto libs)
-- **Base64url**: Pure C implementation (no dependencies)
-- **Session storage**: DB-backed with SHA-256 hashed tokens
-- **HTTPS**: Out of scope (use reverse proxy if needed)
-- **QuickJS sandboxing**: Memory limits, execution timeouts, no host FS/network access except via explicit shims
+### Build Commands
+
+```bash
+# Build default binary
+bazel build //:hbf
+
+# Build base pod binary
+bazel build //:hbf-base
+
+# Run all tests
+bazel test //...
+
+# Run lint checks
+bazel run //:lint
+
+# Run specific test with output
+bazel test //hbf/shell:config_test --test_output=all
+```
+
+**Binary output**:
+- `bazel-bin/bin/hbf` (5.3 MB stripped, statically linked)
+- `bazel-bin/bin/hbf-base` (base pod binary)
+
+### Bazel Configuration
+- `.bazelrc` contains build settings
+- **musl toolchain only** (100% static linking)
+- Single output: fully static binary with embedded pod database
+
+## Language & Standards
+
+- **Strict C99**: No C++, no language extensions
+- Compiler: `-std=c99 -Wall -Wextra -Werror -Wpedantic` + 20+ additional warning flags
+- Style: Linux kernel coding style (tabs, 8-space indent)
+- Linting: clang-tidy with CERT C rules
+
+### Licensing Constraints
+**No GPL dependencies**. Only MIT, BSD, Apache-2.0, or Public Domain:
+- SQLite (Public Domain)
+- CivetWeb (MIT)
+- QuickJS (MIT)
 
 ## SQLite Configuration
 
 Critical compile-time flags:
 ```c
--DSQLITE_THREADSAFE=0
+-DSQLITE_THREADSAFE=1
 -DSQLITE_ENABLE_FTS5
+-DSQLITE_ENABLE_SQLAR
 -DSQLITE_OMIT_LOAD_EXTENSION
 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
 -DSQLITE_ENABLE_JSON1
 ```
 
-Runtime pragmas on connection open:
+Runtime pragmas:
 ```sql
 PRAGMA foreign_keys=ON;
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 ```
 
-## QuickJS Integration (Phase 3)
+## QuickJS Integration
 
-- **Context pooling**: Pre-created contexts (default: 16) for request handling
-- **Memory limits**: 64 MB per context (configurable)
-- **Execution timeout**: Interrupt handler enforces timeout (default: 5000ms)
-- **Server.js loading**: Loaded from database (nodes table, name='server.js') at startup
-- **Express.js-compatible API**: `app.get()`, `app.post()`, `app.use()`, parameter extraction
-- **Host modules**:
-  - `hbf:router` - Express-style routing API (pure JavaScript)
-  - `hbf:db` - query/execute with prepared statements
-  - `hbf:http` - request/response objects
-  - `hbf:static` - Static file middleware (serves from nodes table)
-  - `hbf:util` - JSON, base64, time utilities (Phase 6+)
-- **Static content**: Injected into database at build time via `tools/inject_content.sh`
-- **Node compatibility** (Phase 6.2): CommonJS wrapper + minimal shims (fs backed by SQLite)
-- **No npm at runtime**: Pure JS modules only, vendored and packed via Bazel
+- **Engine**: QuickJS-NG (MIT license)
+- **Memory limits**: 64 MB per context
+- **Execution timeout**: 5000ms default
+- **Host modules**: `hbf:db`, `hbf:http` (request/response objects), `hbf:console`
+- **Content loading**: server.js loaded from embedded SQLAR archive
+- No npm at runtime; pure JS modules only
 
-## System Tables (Prefix: `_hbf_`)
+## CLI Arguments
 
-All system tables use `_hbf_` prefix:
-- `_hbf_users` - User accounts with Argon2id password hashes
-- `_hbf_sessions` - JWT session tracking with token hashes
-- `_hbf_table_permissions` - Table-level access control
-- `_hbf_row_policies` - Row-level security policies (SQL conditions)
-- `_hbf_config` - Per-cenv configuration key-value store
-- `_hbf_audit_log` - Audit trail for admin actions
-- `_hbf_documents` - Document store with binary support
-- `_hbf_document_tags` - Document tagging system
-- `_hbf_document_search` - FTS5 virtual table for full-text search
-- `_hbf_endpoints` - Dynamic QuickJS-powered HTTP endpoints
+```bash
+hbf [options]
 
-## Implementation Phases
+Options:
+  --port <num>         HTTP server port (default: 5309)
+  --log_level <level>  Log level: debug, info, warn, error (default: info)
+  --dev                Enable development mode
+  --help, -h           Show this help message
+```
 
-The project follows a phased implementation plan (see `hbf_impl.md` and `DOCS/phase3.md` for details):
+## Compiler Warnings (Enforced)
 
-1. ✅ **Phase 0**: Foundation (Bazel setup, musl toolchain, directory structure, DNS-safe hash)
-2. ✅ **Phase 1**: HTTP Server Bootstrap (CivetWeb, logging, CLI parsing, signal handling)
-3. ✅ **Phase 2a**: SQLite Integration & Database Schema (document-graph model, system tables, FTS5)
-4. ✅ **Phase 2b**: User Pod & Connection Management (connection caching, LRU eviction)
-5. 🔄 **Phase 3**: JavaScript Runtime & Express-Style Routing **(NEXT)**
-   - Phase 3.1: QuickJS integration, load server.js from DB, static content injection
-   - Phase 3.2: Express.js-compatible router (app.get/post/use, parameter extraction)
-   - Phase 3.3: Static file serving from database (nodes table)
-6. 🔄 **Phase 4**: Authentication & Authorization
-   - Phase 4.1: Argon2id, JWT HS256, sessions
-   - Phase 4.2: Table/row-level permissions, query rewriting
-7. 🔄 **Phase 5**: Document store + FTS5 search (simple-graph integration)
-8. 🔄 **Phase 6.1**: EJS template rendering
-9. 🔄 **Phase 6.2**: Node-compatible module system (CommonJS + shims)
-10. 🔄 **Phase 7**: REST API surface (admin endpoints, Monaco editor UI)
-11. 🔄 **Phase 8**: WebSocket support
-12. 🔄 **Phase 9**: Packaging & static linking optimization
-13. 🔄 **Phase 10**: Hardening & performance tuning
-
-**Key Architecture Decision**: Phase 3 moved QuickJS integration earlier (was Phase 6) to prioritize programmable routing. Single-instance deployment model initially (localhost or single k3s pod). Multi-tenant routing deferred to future phases.
-
-Each phase has specific deliverables, tests, and acceptance criteria. See completion reports in `DOCS/` for finished phases.
-
-## Testing Strategy
-
-- **Unit tests**: minunit-style C macros with assert.h
-- **Integration tests**: Black-box HTTP endpoint testing
-- **Build verification**: All tests must pass with `-Werror`
-- **Linting**: clang-tidy with CERT checks enabled
-- **Formatting**: clang-format (Linux kernel style approximation)
-- **CI**: lint → build → test pipeline
-- **Load testing**: Phase 10 includes benchmarking and memory leak checks (ASan/Valgrind)
-
-## Code Quality Requirements
-
-### Compiler Warnings (Enforced)
 ```
 -std=c99 -Wall -Wextra -Werror -Wpedantic -Wconversion -Wdouble-promotion
 -Wshadow -Wformat=2 -Wstrict-prototypes -Wold-style-definition
@@ -249,159 +124,61 @@ Each phase has specific deliverables, tests, and acceptance criteria. See comple
 -Wcast-align -Wundef -Wswitch-enum -Wswitch-default -Wbad-function-cast
 ```
 
-### Style Guidelines
-- Linux kernel coding style (tabs, 8-space indent, 80-100 column limit)
-- musl libc style principles (minimalism, no UB, simple macros)
-- CERT C Coding Standard (applicable C99 rules)
-- `.clang-format` and `.clang-tidy` configurations enforce these rules
+## Testing
 
-## HTTP API Endpoints
+All tests use minunit-style C macros with assert.h:
+- `hbf/shell:hash_test` - Hash function tests
+- `hbf/shell:config_test` - CLI parsing tests
+- `hbf/db:db_test` - SQLite wrapper tests
+- `hbf/db:overlay_test` - Schema overlay tests
+- `hbf/qjs:engine_test` - QuickJS engine tests
+- `pods/base:fs_build_test` - SQLAR build tests
 
-### Current (Phase 1)
-- ✅ `GET /health` - Health check with uptime
-- ✅ `404` - JSON error response for unmatched routes
-
-### Planned
-
-**System**:
-- 🔄 `POST /register` - User registration (Phase 4)
-- 🔄 `POST /login` - User login, returns JWT (Phase 4)
-
-**Admin API** (owner/admin only):
-- 🔄 `GET/POST/DELETE /_api/permissions` (Phase 4)
-- 🔄 `GET/POST /_api/policies` (Phase 4)
-- 🔄 `GET/POST/PUT/DELETE /_api/documents/{docID}` (Phase 5)
-- 🔄 `GET /_api/documents/search?q=...` - FTS5 search (Phase 5)
-- 🔄 `GET /_api/templates` - List templates (Phase 6.1)
-- 🔄 `POST /_api/templates/preview` - Render with data (Phase 6.1)
-- 🔄 `GET /_api/metrics` - System stats (Phase 10)
-- 🔄 `GET /_admin` - Monaco editor UI (Phase 7)
-
-**User Routes** (via server.js):
-- 🔄 All other paths handled by user's server.js (Phase 3)
-- 🔄 Default: serve static content from database (Phase 3.3)
-
-**WebSockets**:
-- 🔄 `/ws/{channel}?token=...` (Phase 8)
-
-## CLI Arguments
-
-### Current (Phase 2b)
 ```bash
-hbf [options]
-
-Options:
-  --port <num>         HTTP server port (default: 5309)
-  --storage_dir <path> Directory for user pod storage (default: ./henvs)
-  --log_level <level>  Log level: debug, info, warn, error (default: info)
-  --dev                Enable development mode
-  --help, -h           Show this help message
+# Run all tests
+$ bazel test //...
+✅ 6 test targets, all passing
 ```
 
-### Planned (Later Phases)
-```bash
-  --db_max_open <num>       Max database connections (default: 100) (Phase 9)
-```
+## Current Implementation
 
-**Notes**:
-- Connection limit is currently hardcoded to 100 in Phase 2b; will become configurable in Phase 9.
-- QuickJS settings (memory: 64MB, timeout: 5000ms) are hardcoded in main.c - no pool, single global context.
+**Core Components**:
+- ✅ `hbf/shell/` - Logging, config, CLI, main
+- ✅ `hbf/db/` - SQLite wrapper with overlay schema support
+- ✅ `hbf/http/` - CivetWeb HTTP server with request routing
+- ✅ `hbf/qjs/` - QuickJS engine with host bindings (db, console, request/response)
+- ✅ `pods/base/` - Base pod with SQLAR build system
 
-## Development Environment
+**Pod Build System**:
+- Each pod directory contains static files (hbf/*.js, static/*.html, etc.)
+- BUILD.bazel creates SQLAR archive (SQLite archive format)
+- SQLAR archive converted to C source and embedded in binary
+- Overlay schema applied at build time for pod-specific tables
 
-- **Container**: Custom devcontainer with Bazel 8.4.2, Go, Python (uv), Hugo
-- **Tools**: clang-tidy-18 (LLVM 18), musl toolchain 1.2.3
-- **Ports**: 80 (web services), 8080 (Traefik dashboard)
-- **VS Code extensions**: Python, Black formatter, JSON, Markdown, reStructuredText
-
-See [DOCS/development-setup.md](DOCS/development-setup.md) for detailed setup instructions.
+**Binary**:
+- Size: 5.3 MB stripped (statically linked with SQLite + QuickJS)
+- 100% static linking with musl libc 1.2.3
+- Zero runtime dependencies
+- Compiles with `-Werror` and 30+ warning flags
 
 ## Key Design Decisions
 
-1. **Single binary deployment**: All dependencies statically linked, no installation required
-2. **Single-instance model initially**: Localhost or single k3s pod deployment; multi-tenancy deferred to future phases
-3. **Programmable routing first**: QuickJS integration moved to Phase 3 (was Phase 6) to prioritize user-defined routing
-4. **Server.js from database**: JavaScript routing script loaded from SQLite at startup, reloadable without rebuild
-5. **Static content in database**: All static files (HTML, CSS, JS) injected into SQLite at build time, served dynamically
-6. **No HTTPS in binary**: Expect reverse proxy (nginx, Traefik, Caddy) for TLS termination
-7. **Pure JS modules only**: No native Node addons, no npm at runtime
-8. **SQLite as universal store**: App data, documents, FTS index, module cache, config, static content all in one DB
-9. **Stateless + stateful auth**: JWT for stateless auth, DB sessions for revocation (Phase 4)
-10. **Query rewriting for authz**: Row-level security via SQL WHERE clause injection (Phase 4)
+1. **Single binary deployment**: All dependencies statically linked
+2. **Pod-based architecture**: Each pod is self-contained (DB + JS + static files)
+3. **No HTTPS in binary**: Use reverse proxy (nginx, Traefik, Caddy) for TLS
+4. **SQLite as universal store**: Content, data, and static files in one database
+5. **QuickJS sandboxing**: Memory limits, execution timeouts, no host FS/network access
 
-## Current Implementation Status
+## Known Issues & Workarounds
 
-### Completed (Phase 0, 1, 2a, & 2b)
-
-**Core Components**:
-- ✅ `internal/core/hash.c|h` - DNS-safe hash generator (SHA-256 → base36, 8 chars)
-- ✅ `internal/core/log.c|h` - Logging with levels (DEBUG, INFO, WARN, ERROR) and UTC timestamps
-- ✅ `internal/core/config.c|h` - CLI argument parsing with validation (port, storage_dir, log_level, dev)
-- ✅ `internal/core/main.c` - Application lifecycle, signal handling, henv manager integration
-- ✅ `internal/http/server.c|h` - CivetWeb wrapper with graceful shutdown
-- ✅ `internal/db/db.c|h` - SQLite wrapper with WAL, foreign keys, transactions
-- ✅ `internal/db/schema.c|h` - Schema initialization with embedded SQL
-- ✅ `internal/db/schema.sql` - Document-graph + system tables + FTS5
-- ✅ `internal/henv/manager.c|h` - User pod management with LRU connection caching
-
-**Database Schema** (11 tables):
-- ✅ `nodes` - Document-graph nodes with JSON body
-- ✅ `edges` - Directed relationships
-- ✅ `tags` - Hierarchical labeling
-- ✅ `nodes_fts` - FTS5 full-text search with porter stemming
-- ✅ `_hbf_users`, `_hbf_sessions`, `_hbf_table_permissions`, `_hbf_row_policies`
-- ✅ `_hbf_config`, `_hbf_audit_log`, `_hbf_schema_version`
-
-**User Pod Management**:
-- ✅ Multi-tenancy infrastructure with isolated directories
-- ✅ LRU connection cache (max 100 connections, thread-safe)
-- ✅ Automatic schema initialization on pod creation
-- ✅ Hash collision detection
-- ✅ Secure file permissions (directories 0700, databases 0600)
-
-**Tests**:
-- ✅ `internal/core/hash_test.c` - 5 test cases
-- ✅ `internal/core/config_test.c` - 25 test cases
-- ✅ `internal/db/db_test.c` - 7 test cases (pragmas, transactions, etc.)
-- ✅ `internal/db/schema_test.c` - 9 test cases (schema init, FTS5, triggers, graph queries)
-- ✅ `internal/henv/manager_test.c` - 12 test cases (pod creation, caching, permissions)
-
-**Binary**:
-- ✅ Size: 1.1 MB (stripped, statically linked with SQLite)
-- ✅ 100% static linking with musl libc 1.2.3
-- ✅ Zero runtime dependencies
-- ✅ All code passes clang-tidy CERT checks
-- ✅ Compiles with `-Werror` and 30+ warning flags
-
-**Endpoints**:
-- ✅ `GET /health` - Returns JSON with status, version, uptime
-- ✅ `404 Not Found` - JSON error response for unmatched routes
-
-### Quality Gates (All Passing)
-
+### Bazel Build Output Conflicts
+When building all targets, avoid output path conflicts by using subdirectory for binaries:
 ```bash
-# Build
-$ bazel build //:hbf
-✅ Build completed successfully
-
-# Test
-$ bazel test //...
-✅ 5 test targets, 53+ test cases total, all passing
-   - hash_test: 5 tests
-   - config_test: 25 tests
-   - db_test: 7 tests
-   - schema_test: 9 tests
-   - manager_test: 12 tests
-
-# Lint
-$ bazel run //:lint
-✅ 8 source files checked, 0 issues
+# Outputs to bazel-bin/bin/ to avoid conflicts with bazel-bin/hbf/ directory
+genrule(name = "hbf_bin", outs = ["bin/hbf"], ...)
 ```
 
 ## References
 
-- **Primary spec**: `hbf_impl.md` (comprehensive phase-by-phase implementation guide)
-- **Completion reports**: `DOCS/phase0-completion.md`, `DOCS/phase1-completion.md`, `DOCS/phase2b-completion.md`
-- **Coding standards**: `DOCS/coding-standards.md`
 - **Development setup**: `DOCS/development-setup.md`
-- there is no router.js, it is removed. there is only server.js
+- **Coding standards**: `DOCS/coding-standards.md`

@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 #include "config.h"
 #include "log.h"
-#include "../db/db.h"
-#include "../http/server.h"
-#include "../qjs/engine.h"
+#include "hbf/db/db.h"
+#include "hbf/http/server.h"
+#include "hbf/qjs/engine.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>

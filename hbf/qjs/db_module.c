@@ -1,9 +1,9 @@
 /* JS module for DB access: db.query and db.execute */
 #include <stdint.h>
 #include "quickjs.h"
-#include "internal/db/db.h"
-#include "internal/qjs/engine.h"
-#include "internal/qjs/db_module.h"
+#include "hbf/db/db.h"
+#include "hbf/qjs/engine.h"
+#include "hbf/qjs/db_module.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

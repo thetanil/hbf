@@ -1,17 +1,17 @@
 /* QuickJS engine wrapper implementation */
-#include "internal/qjs/engine.h"
+#include "hbf/qjs/engine.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#include "internal/core/log.h"
+#include "hbf/shell/log.h"
 #include "quickjs.h"
 
-#include "internal/db/db.h"
-#include "internal/qjs/db_module.h"
-#include "internal/qjs/console_module.h"
-#include "internal/qjs/bindings/response.h"
+#include "hbf/db/db.h"
+#include "hbf/qjs/db_module.h"
+#include "hbf/qjs/console_module.h"
+#include "hbf/qjs/bindings/response.h"
 
 /* Global engine configuration */
 static struct {

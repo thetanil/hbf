@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "internal/qjs/engine.h"
-#include "internal/core/log.h"
+#include "hbf/qjs/engine.h"
+#include "hbf/shell/log.h"
 #include "quickjs.h"
 
 /* Read file into memory */

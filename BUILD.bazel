@@ -1,24 +1,71 @@
 # HBF - Web Compute Environment
 # Root build file
 
-# No exports needed here - static files are exported in their respective BUILD files
+# ============================================================================
+# Base Pod Embedding
+# ============================================================================
 
-# Stripped binary (smaller, production-ready)
+# Convert base pod database to C source files
 genrule(
-    name = "hbf",
-    srcs = ["//internal/core:hbf"],
-    outs = ["hbf"],
-    cmd = "cp $< $@ && chmod +w $@ && strip $@",
+    name = "base_pod_embedded_gen",
+    srcs = ["//pods/base:pod_db"],
+    outs = [
+        "fs_embedded.c",
+        "fs_embedded.h",
+    ],
+    cmd = "$(location //tools:db_to_c) $(location //pods/base:pod_db) $(location fs_embedded.c) $(location fs_embedded.h)",
+    tools = ["//tools:db_to_c"],
+)
+
+# Create library with embedded base pod database
+cc_library(
+    name = "base_pod_embedded",
+    srcs = ["fs_embedded.c"],
+    hdrs = ["fs_embedded.h"],
+    visibility = ["//visibility:public"],
+)
+
+# ============================================================================
+# Binary Targets
+# ============================================================================
+
+# Default stripped binary (base pod)
+genrule(
+    name = "hbf_bin",
+    srcs = ["//hbf/shell:hbf"],
+    outs = ["bin/hbf"],
+    cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +w $@ && strip $@",
     executable = True,
+    visibility = ["//visibility:public"],
+)
+
+# Base pod binary (same as default for now)
+genrule(
+    name = "hbf-base",
+    srcs = ["//hbf/shell:hbf"],
+    outs = ["bin/hbf-base"],
+    cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +w $@ && strip $@",
+    executable = True,
+    visibility = ["//visibility:public"],
+)
+
+# Alias for backward compatibility
+alias(
+    name = "hbf",
+    actual = ":hbf_bin",
     visibility = ["//visibility:public"],
 )
 
 # Unstripped binary (for debugging)
 alias(
     name = "hbf_unstripped",
-    actual = "//internal/core:hbf",
+    actual = "//hbf/shell:hbf",
     visibility = ["//visibility:public"],
 )
+
+# ============================================================================
+# Utility Targets
+# ============================================================================
 
 # Lint target
 alias(

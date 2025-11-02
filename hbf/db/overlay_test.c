@@ -2,7 +2,7 @@
 /* Overlay filesystem tests */
 
 #include "db.h"
-#include "../core/log.h"
+#include "hbf/shell/log.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

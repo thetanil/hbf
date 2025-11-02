@@ -9,8 +9,8 @@ cc_library(
     srcs = ["db.c"],
     hdrs = ["db.h"],
     deps = [
-        "//internal/core:log",
-        "//fs:fs_embedded",
+        "//hbf/shell:log",
+        "//:base_pod_embedded",
         "//third_party/sqlar",
         "@sqlite3//:sqlite3",
     ],

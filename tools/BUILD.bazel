@@ -28,8 +28,8 @@ cc_binary(
     name = "test_qjs",
     srcs = ["test_qjs.c"],
     deps = [
-        "//internal/core:log",
-        "//internal/qjs:engine",
+        "//hbf/shell:log",
+        "//hbf/qjs:engine",
     ],
     visibility = ["//visibility:public"],
 )

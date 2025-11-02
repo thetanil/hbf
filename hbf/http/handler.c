@@ -1,13 +1,13 @@
 /* QuickJS HTTP request handler implementation */
-#include "internal/http/handler.h"
-#include "internal/http/server.h"
+#include "hbf/http/handler.h"
+#include "hbf/http/server.h"
 #include <stdlib.h>
 
-#include "internal/core/log.h"
-#include "internal/db/db.h"
-#include "internal/qjs/bindings/request.h"
-#include "internal/qjs/bindings/response.h"
-#include "internal/qjs/engine.h"
+#include "hbf/shell/log.h"
+#include "hbf/db/db.h"
+#include "hbf/qjs/bindings/request.h"
+#include "hbf/qjs/bindings/response.h"
+#include "hbf/qjs/engine.h"
 #include "quickjs.h"
 #include "sqlite3.h"
 

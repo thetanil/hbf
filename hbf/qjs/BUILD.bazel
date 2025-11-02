@@ -7,9 +7,9 @@ cc_library(
     srcs = ["engine.c", "db_module.c", "console_module.c"],
     hdrs = ["engine.h", "db_module.h", "console_module.h"],
     deps = [
-        "//internal/core:log",
+        "//hbf/shell:log",
         "@quickjs-ng//:quickjs",
-        "//internal/db:db",
+        "//hbf/db:db",
         ":bindings",
     ],
 )
@@ -25,7 +25,7 @@ cc_library(
         "bindings/response.h",
     ],
     deps = [
-        "//internal/core:log",
+        "//hbf/shell:log",
         "@civetweb//:civetweb",
         "@quickjs-ng//:quickjs",
     ],
@@ -36,7 +36,7 @@ cc_test(
     srcs = ["engine_test.c"],
     deps = [
         ":engine",
-        "//internal/core:log",
+        "//hbf/shell:log",
     ],
     linkstatic = 1,
 )

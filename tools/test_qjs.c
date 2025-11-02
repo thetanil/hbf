@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "internal/core/log.h"
-#include "internal/qjs/engine.h"
+#include "hbf/shell/log.h"
+#include "hbf/qjs/engine.h"
 
 int main(void)
 {

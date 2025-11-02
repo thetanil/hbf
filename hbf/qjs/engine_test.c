@@ -1,11 +1,11 @@
 /* QuickJS engine tests */
-#include "internal/qjs/engine.h"
+#include "hbf/qjs/engine.h"
 
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "internal/core/log.h"
+#include "hbf/shell/log.h"
 #include "quickjs.h"
 
 /* Helper to evaluate and get integer result */
