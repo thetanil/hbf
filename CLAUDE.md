@@ -40,8 +40,8 @@ Uses **Bazel 8 with bzlmod** (MODULE.bazel, no WORKSPACE).
 # Build default binary
 bazel build //:hbf
 
-# Build base pod binary
-bazel build //:hbf-base
+# Build a specific pod binary (example: test pod)
+bazel build //:hbf_test
 
 # Run all tests
 bazel test //...
@@ -54,13 +54,20 @@ bazel test //hbf/shell:config_test --test_output=all
 ```
 
 **Binary output**:
-- `bazel-bin/bin/hbf` (5.3 MB stripped, statically linked)
-- `bazel-bin/bin/hbf-base` (base pod binary)
+- `bazel-bin/bin/hbf` (base pod binary)
+- Additional pods appear under `bazel-bin/bin/hbf_<pod>` (e.g., `hbf_test`)
+
+Build modes (recommended):
+- Release (stripped): `--compilation_mode=opt --strip=always`
+- Debug (symbols): `--compilation_mode=dbg`
+
+Tip: set `.bazelrc` so `bazel run` defaults to debug for a better dev experience.
 
 ### Bazel Configuration
 - `.bazelrc` contains build settings
 - **musl toolchain only** (100% static linking)
-- Single output: fully static binary with embedded pod database
+- Single output layout: all binaries under `bazel-bin/bin/`
+- Build-mode driven stripping (no manual strip genrule)
 
 ## Language & Standards
 
@@ -152,7 +159,7 @@ $ bazel test //...
 **Pod Build System**:
 - Each pod directory contains static files (hbf/*.js, static/*.html, etc.)
 - BUILD.bazel creates SQLAR archive (SQLite archive format)
-- SQLAR archive converted to C source and embedded in binary
+- SQLAR archive embedded as an object file via objcopy and linked into the binary (faster compiles than large C arrays)
 - Overlay schema applied at build time for pod-specific tables
 
 **Binary**:
@@ -171,14 +178,30 @@ $ bazel test //...
 
 ## Known Issues & Workarounds
 
-### Bazel Build Output Conflicts
-When building all targets, avoid output path conflicts by using subdirectory for binaries:
+### Bazel Build Output Layout
+All binaries are emitted under `bazel-bin/bin/` (symlinks to configuration-specific artifacts), e.g.:
 ```bash
-# Outputs to bazel-bin/bin/ to avoid conflicts with bazel-bin/hbf/ directory
-genrule(name = "hbf_bin", outs = ["bin/hbf"], ...)
+bazel-bin/bin/hbf
+bazel-bin/bin/hbf_test
 ```
 
 ## References
 
 - **Development setup**: `DOCS/development-setup.md`
 - **Coding standards**: `DOCS/coding-standards.md`
+
+## Discovering Pod Targets
+
+```bash
+# List all hbf pod binaries by name convention
+bazel query 'kind("cc_binary", //:*)' | grep '^//:hbf'
+
+# If pod binaries are tagged with "hbf_pod"
+bazel query 'attr(tags, "hbf_pod", kind("cc_binary", //...))'
+```
+
+## Reproducible Builds and Version Stamping
+
+- Use a `workspace_status_command` (e.g., `tools/status.sh`) with `stamp = True` to embed version/commit metadata.
+- For bit-for-bit artifacts, set `SOURCE_DATE_EPOCH` and add `-ffile-prefix-map`/`-fdebug-prefix-map` flags.
+- Validate determinism by building twice with a fixed `SOURCE_DATE_EPOCH` and comparing `sha256sum` of `bazel-bin/bin/hbf`.

@@ -22,8 +22,12 @@
 Create a unified multi-pod build system where:
 
 1. **Bazel Targets**: Each pod generates two targets:
-   - `//:hbf_<podname>` - Stripped release binary
-   - `//:hbf_<podname>_unstripped` - Debug binary with symbols
+  - `//:hbf_<podname>` - Canonical binary target for the pod (base is `//:hbf`)
+  - Optional convenience alias: `//:hbf_<podname>_unstripped` pointing to the same target
+
+  Build modes control stripping/symbols instead of a manual strip step:
+  - Release: `--compilation_mode=opt --strip=always` → stripped
+  - Debug: `--compilation_mode=dbg` → unstripped with symbols
 2. **GitHub Actions Matrix**:
    - PR: Build specified pods from manually maintained list (e.g., `["base", "test"]`)
    - Release: Build specified pods from manually maintained list (e.g., `["base"]`)
@@ -91,17 +95,17 @@ pod_binary(
 #### 2.2. Create tools/pod_binary.bzl Macro
 
 New Starlark macro that generates:
-1. `<name>_embedded_gen` - Convert pod DB to C source
-2. `<name>_embedded` - cc_library with embedded pod
-3. `<name>_core` - cc_binary with embedded pod (unstripped)
-4. `<name>` - genrule that strips the binary
-5. `<name>_unstripped` - alias to unstripped binary
+1. `<name>_sqlar` - Builds the pod SQLAR archive from `pods/<pod>` content
+2. `<name>_blob_o` - Generates an object file from SQLAR via objcopy (`ld -r -b binary` or `objcopy --input binary`)
+3. `<name>` - `cc_binary` linking the object, core libraries, and emitting output under `bin/<name>`
+4. `<name>_unstripped` (alias, optional) → `:<name>` for developer convenience
 
 **Key Features**:
-- Automatically wires up dependencies: pod → C source → cc_library → cc_binary
-- Handles stripping/unstripped variants
-- Consistent naming: `//:hbf_<podname>` and `//:hbf_<podname>_unstripped`
-- Output paths: `bazel-bin/bin/hbf_<podname>` and `bazel-bin/hbf/shell/hbf_<podname>`
+- Object embedding (faster compiles, smaller diffs) instead of generating large C arrays
+- Automatically wires up dependencies: pod → SQLAR → `.o` blob → `cc_binary`
+- Stripped/unstripped is determined by Bazel build mode flags (no manual strip step)
+- Consistent naming: `//:hbf_<podname>` (base remains `//:hbf`)
+- Output paths: all binaries (both modes) appear under `bazel-bin/bin/<target>`; no cross-package copies
 
 #### 2.3. Manual Pod Management
 
@@ -114,9 +118,12 @@ This explicit approach provides:
 - No surprises from auto-discovery
 - Deliberate control over PR and Release pod sets
 
+Recommended addition for discoverability in dev docs:
+- Tag pod binaries with `tags = ["hbf_pod"]` so we can list them via Bazel query.
+
 ### 3. GitHub Actions Matrix Strategy
 
-#### 3.1. Update build-full Action
+#### 3.1. Replace build-full with build-pod (mode-driven)
 
 **Current**: `.github/actions/build-full/action.yml` - Single binary only
 
@@ -149,12 +156,12 @@ runs:
         path: |
           ~/.cache/bazel
           ~/.cache/bazelisk
-        key: ${{ runner.os }}-bazel-${{ inputs.pod-name }}-${{ hashFiles('**/*.bzl', '**/*.bazel') }}
+        key: ${{ runner.os }}-bazel-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
         restore-keys: |
           ${{ runner.os }}-bazel-${{ inputs.pod-name }}-
           ${{ runner.os }}-bazel-
 
-    - name: Build pod binaries
+    - name: Build pod binaries (mode-driven)
       shell: bash
       run: |
         set -euo pipefail
@@ -167,15 +174,19 @@ runs:
           TARGET_NAME="hbf_${POD}"
         fi
 
-        bazel build //:${TARGET_NAME}
-        bazel build //:${TARGET_NAME}_unstripped
+        # Release-stripped build
+        bazel build --compilation_mode=opt --strip=always //:${TARGET_NAME}
 
-    - name: Prepare assets
+        # Debug-symbols build
+        bazel build --compilation_mode=dbg //:${TARGET_NAME}
+
+    - name: Prepare assets (reproducible names)
       shell: bash
       run: |
         set -euo pipefail
         POD="${{ inputs.pod-name }}"
         TAG="${{ inputs.tag }}"
+        ARCH="$(uname -m)"
 
         # Determine target name
         if [[ "$POD" == "base" ]]; then
@@ -187,12 +198,13 @@ runs:
         fi
 
         # Asset names
-        NAME_STRIPPED="${ASSET_BASE}-${TAG}-linux-x86_64"
-        NAME_UNSTRIPPED="${ASSET_BASE}-${TAG}-linux-x86_64-unstripped"
+        NAME_STRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}"
+        NAME_UNSTRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}-unstripped"
 
-        # Copy binaries
-        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_STRIPPED"
-        cp "bazel-bin/hbf/shell/${TARGET_NAME}" "$NAME_UNSTRIPPED"
+        # Copy binaries from unified bin/ layout
+        # The output symlinks in bazel-bin resolve to configuration-specific artifacts
+        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_STRIPPED"        # from opt --strip=always build
+        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_UNSTRIPPED"      # from dbg build (unstripped)
 
         # Generate checksums
         sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
@@ -203,7 +215,7 @@ runs:
       with:
         name: ${{ inputs.artifact-name }}
         path: |
-          hbf*-${{ inputs.tag }}-linux-x86_64*
+          hbf*-${{ inputs.tag }}-linux-*
         if-no-files-found: error
 ```
 
@@ -271,6 +283,19 @@ jobs:
 
       - name: Test
         run: bazel test //...
+
+      - name: Reproducible build smoke test
+        env:
+          SOURCE_DATE_EPOCH: "1700000000"  # fixed timestamp for determinism
+        run: |
+          # Build twice with fixed SOURCE_DATE_EPOCH and compare digests
+          bazel clean --expunge
+          bazel build --compilation_mode=opt --strip=always //:hbf
+          sha256sum bazel-bin/bin/hbf > digest1.txt
+          bazel clean --expunge
+          bazel build --compilation_mode=opt --strip=always //:hbf
+          sha256sum bazel-bin/bin/hbf > digest2.txt
+          diff -u digest1.txt digest2.txt
 ```
 
 #### 3.3. Update Release Workflow (Build Specified Pods)
@@ -342,7 +367,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            hbf*-${{ github.ref_name }}-linux-x86_64*
+            hbf*-${{ github.ref_name }}-linux-*
           draft: false
           prerelease: false
         env:
@@ -354,14 +379,17 @@ jobs:
 #### Phase 1: Foundation (Create Infrastructure)
 
 1. **Create `tools/pod_binary.bzl` macro**
-   - Define `pod_binary()` macro
-   - Wire up: pod_db → C source → cc_library → cc_binary → strip
-   - Handle naming: `hbf_<podname>` and `hbf_<podname>_unstripped`
+  - Define `pod_binary()` macro
+  - Wire up: pod_db → SQLAR → objcopy to `.o` → `cc_binary` (no manual strip)
+  - Handle naming: `hbf_<podname>` (base is `hbf`); optional alias `<name>_unstripped`
+  - Ensure outputs are declared under `bin/<target>` for a consistent layout
 
 2. **Refactor root `BUILD.bazel`**
-   - Replace hardcoded genrules with `pod_binary()` calls
-   - Start with just base pod: `pod_binary(name = "hbf", pod = "//pods/base")`
-   - Test: `bazel build //:hbf` and `bazel build //:hbf_unstripped` should work
+  - Replace hardcoded genrules with `pod_binary()` calls
+  - Start with just base pod: `pod_binary(name = "hbf", pod = "//pods/base")`
+  - Test:
+    - Stripped: `bazel build --compilation_mode=opt --strip=always //:hbf`
+    - Unstripped: `bazel build --compilation_mode=dbg //:hbf`
 
 #### Phase 2: Add Test Pod (Validate System)
 
@@ -393,16 +421,17 @@ jobs:
 #### Phase 3: GitHub Actions Integration
 
 7. **Create `.github/actions/build-pod/action.yml`**
-   - Implement per-pod build logic
-   - Handle naming conventions
-   - Generate artifacts with checksums
+  - Implement per-pod build logic using build modes (opt+strip vs dbg)
+  - Handle naming conventions with `${{ runner.os }}` and `uname -m`
+  - Generate artifacts with checksums
 
 8. **Update `.github/workflows/pr.yml`**
    - Add `build-pods` matrix job with `pod: ["base", "test"]`
    - Keep `lint-test` job separate
+  - Add reproducibility smoke test (fixed `SOURCE_DATE_EPOCH`) and compare sha256
 
 9. **Update `.github/workflows/release.yml`**
-   - Add `build-release-pods` matrix job with `pod: ["base"]`
+  - Add `build-release-pods` matrix job with `pod: ["base"]` (manually maintained)
    - Add `publish-release` job to aggregate artifacts
 
 10. **Remove old `.github/actions/build-full/action.yml`**
@@ -425,21 +454,21 @@ jobs:
     - Document how to add new pods
     - Document release pod selection process
 
-### 5. Build Target Naming Convention
+### 5. Build Target Naming Convention (mode-driven)
 
-| Pod Name | Stripped Target | Unstripped Target | Binary Path (stripped) | Binary Path (unstripped) |
-|----------|----------------|-------------------|------------------------|--------------------------|
-| base     | `//:hbf`       | `//:hbf_unstripped` | `bazel-bin/bin/hbf` | `bazel-bin/hbf/shell/hbf` |
-| test     | `//:hbf_test`  | `//:hbf_test_unstripped` | `bazel-bin/bin/hbf_test` | `bazel-bin/hbf/shell/hbf_test` |
-| myapp    | `//:hbf_myapp` | `//:hbf_myapp_unstripped` | `bazel-bin/bin/hbf_myapp` | `bazel-bin/hbf/shell/hbf_myapp` |
+| Pod Name | Target | Build for Release (stripped) | Build for Debug (symbols) | Binary Path |
+|----------|--------|------------------------------|---------------------------|-------------|
+| base     | `//:hbf` | `--compilation_mode=opt --strip=always` | `--compilation_mode=dbg` | `bazel-bin/bin/hbf` |
+| test     | `//:hbf_test` | `--compilation_mode=opt --strip=always` | `--compilation_mode=dbg` | `bazel-bin/bin/hbf_test` |
+| myapp    | `//:hbf_myapp` | `--compilation_mode=opt --strip=always` | `--compilation_mode=dbg` | `bazel-bin/bin/hbf_myapp` |
 
 ### 6. Release Asset Naming Convention
 
 | Pod Name | Tag | Stripped Asset | Unstripped Asset |
 |----------|-----|----------------|------------------|
-| base     | v1.0.0 | `hbf-v1.0.0-linux-x86_64` | `hbf-v1.0.0-linux-x86_64-unstripped` |
-| test     | v1.0.0 | `hbf-test-v1.0.0-linux-x86_64` | `hbf-test-v1.0.0-linux-x86_64-unstripped` |
-| myapp    | v1.0.0 | `hbf-myapp-v1.0.0-linux-x86_64` | `hbf-myapp-v1.0.0-linux-x86_64-unstripped` |
+| base     | v1.0.0 | `hbf-v1.0.0-linux-<arch>` | `hbf-v1.0.0-linux-<arch>-unstripped` |
+| test     | v1.0.0 | `hbf-test-v1.0.0-linux-<arch>` | `hbf-test-v1.0.0-linux-<arch>-unstripped` |
+| myapp    | v1.0.0 | `hbf-myapp-v1.0.0-linux-<arch>` | `hbf-myapp-v1.0.0-linux-<arch>-unstripped` |
 
 Each asset has accompanying `.sha256` checksum file.
 
@@ -452,9 +481,10 @@ Each asset has accompanying `.sha256` checksum file.
 - **Release safety**: Only pods you explicitly list get released
 
 **Why separate stripped/unstripped targets?**
-- Stripped: Production deployment (5.3 MB)
-- Unstripped: Debugging, coredump analysis (5.4 MB)
-- Developers can choose which to use
+We no longer implement stripping as a separate target; we rely on Bazel build modes:
+- Release builds use `--compilation_mode=opt --strip=always` (smallest binary)
+- Debug builds use `--compilation_mode=dbg` (symbols retained for coredumps)
+- An optional `:<name>_unstripped` alias may point to the same binary for developer ergonomics
 
 **Why base pod gets special name `//:hbf`?**
 - Backward compatibility
@@ -465,12 +495,43 @@ Each asset has accompanying `.sha256` checksum file.
 
 ✅ `bazel build //:hbf` builds base pod (backward compatible)
 ✅ `bazel build //:hbf_test` builds test pod
-✅ PR workflow discovers and builds all pods automatically
+✅ PR workflow builds explicitly listed pods (manual matrix)
 ✅ Release workflow builds only explicit list of pods
 ✅ Each pod generates 4 assets (stripped + unstripped + 2 checksums)
 ✅ Asset names distinguish between pods
 ✅ Local development: `bazel run //:hbf_test` launches test pod
 ✅ No code changes needed in hbf/ core (C code) - only build system
+### 9. Reproducibility, Stamping, and Hardening
+
+- Version stamping: add `tools/status.sh` and set `stamp = True` on binaries to include `STABLE_BUILD_SCM_REVISION`, `STABLE_BUILD_VERSION`.
+- Reproducible builds:
+  - In CI set `SOURCE_DATE_EPOCH` to a fixed value for deterministic opt builds.
+  - Add `-ffile-prefix-map`/`-fdebug-prefix-map` and `-fno-record-gcc-switches` to CFLAGS.
+  - Validate by building twice and comparing `sha256sum` (see PR workflow smoke test).
+- Static size and hardening (musl-friendly):
+  - Enable ThinLTO where feasible (`--features=thin_lto`).
+  - `-fvisibility=hidden`, export only required symbols.
+  - `-D_FORTIFY_SOURCE=2`, `-fstack-protector-strong`.
+  - Linker: `-Wl,-z,relro,-z,now`.
+  - Keep `-std=c99 -Wall -Wextra -Werror -Wpedantic` + existing warnings.
+
+These should live in a central config (toolchain feature or common flags file) to avoid drift.
+
+### 10. Developer Experience
+
+- `bazel run` should default to debug builds (`--compilation_mode=dbg`) for better DX; set this in `.bazelrc` under `run`.
+- Tag pod binaries with `hbf_pod` and document queries for quick discovery.
+
+Example queries to list pod targets:
+
+```bash
+# List all hbf pod binaries by name convention
+bazel query 'kind("cc_binary", //:*)' | grep '^//:hbf'
+
+# If tagged with hbf_pod
+bazel query 'attr(tags, "hbf_pod", kind("cc_binary", //...))'
+```
+
 
 ---
 
