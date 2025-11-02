@@ -36,12 +36,14 @@ jobs:
           pod-name: ${{ matrix.pod }}
           tag: ${{ github.sha }}
           artifact-name: build-${{ matrix.pod }}
+          run-tests: ${{ matrix.pod == 'test' }}
+          run-smoke-test: ${{ matrix.pod == 'base' }}
 
-  # Lint and Test (runs once, not per-pod)
-  lint-test:
-    name: Lint and Test
+  # Lint (runs independently in parallel with pod builds)
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -59,12 +61,22 @@ jobs:
       - name: Lint
         run: bazel run //:lint
 
-      - name: Test
-        run: bazel test //...
+  # Reproducible build check (runs independently)
+  reproducible-build:
+    name: Reproducible Build Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SOURCE_DATE_EPOCH: "1700000000"  # fixed timestamp for determinism
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
 
       - name: Reproducible build smoke test
-        env:
-          SOURCE_DATE_EPOCH: "1700000000"  # fixed timestamp for determinism
         run: |
           # Build twice with fixed SOURCE_DATE_EPOCH and compare digests
           bazel clean --expunge

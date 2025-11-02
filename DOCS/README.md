@@ -2,6 +2,8 @@
 
 This directory contains the planning and specification documents for HBF (web compute environment).
 
+> **Note**: Many documents in this directory reference the old `internal/` directory structure, which has been replaced by `hbf/`. These are historical planning documents and may not reflect the current codebase structure. Refer to the root `CLAUDE.md` for current architecture.
+
 ## Quick Navigation
 
 ### Current Status

@@ -37,4 +37,4 @@ CheckOptions:
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
 
-HeaderFilterRegex: 'internal/.*\.h$'
+HeaderFilterRegex: 'hbf/.*\.h$'

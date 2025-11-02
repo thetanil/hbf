@@ -11,6 +11,14 @@ inputs:
   artifact-name:
     description: Name for uploaded artifacts
     required: true
+  run-tests:
+    description: Whether to run tests after building (default false)
+    required: false
+    default: 'false'
+  run-smoke-test:
+    description: Whether to run smoke test on built binary (default false)
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -47,6 +55,34 @@ runs:
 
         # Debug-symbols build
         bazel build --compilation_mode=dbg //:${TARGET_NAME}
+
+    - name: Run tests
+      if: inputs.run-tests == 'true'
+      shell: bash
+      run: |
+        echo "Running all tests..."
+        bazel test //...
+
+    - name: Smoke test binary
+      if: inputs.run-smoke-test == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+
+        # Determine target name
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+        fi
+
+        # Get the debug binary path for smoke test
+        BINARY_PATH=$(bazel cquery --compilation_mode=dbg --output=files //:${TARGET_NAME})
+
+        echo "Running smoke test on $BINARY_PATH"
+        $BINARY_PATH --help
+        echo "Smoke test passed!"
 
     - name: Prepare assets (reproducible names)
       shell: bash

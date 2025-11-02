@@ -26,7 +26,7 @@ echo "Running clang-tidy on all C source files..."
 echo "Using: $CLANG_TIDY"
 
 # Find all C source files (excluding third_party and tests)
-C_FILES=$(find internal -name "*.c" -not -name "*_test.c" 2>/dev/null || true)
+C_FILES=$(find hbf -name "*.c" -not -name "*_test.c" 2>/dev/null || true)
 
 if [ -z "$C_FILES" ]; then
     echo "No C source files found to lint."
