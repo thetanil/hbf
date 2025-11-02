@@ -57,9 +57,12 @@ bazel test //hbf/shell:config_test --test_output=all
 - `bazel-bin/bin/hbf` (base pod binary)
 - Additional pods appear under `bazel-bin/bin/hbf_<pod>` (e.g., `hbf_test`)
 
-Build modes (recommended):
-- Release (stripped): `--compilation_mode=opt --strip=always`
-- Debug (symbols): `--compilation_mode=dbg`
+Build modes:
+- **Release (stripped)**: `--compilation_mode=opt --strip=always` → 5.3MB binary
+- **Debug (symbols)**: `--compilation_mode=dbg` → 13MB binary with debug info
+- **Local development**: Use `bazel run //:hbf` (defaults per `.bazelrc`)
+
+**Important**: After building with `--strip=always`, manually run `strip` on the binary to ensure symbols are removed (Bazel's `--strip` flag may not work with all toolchains). This is handled automatically in CI/CD.
 
 Tip: set `.bazelrc` so `bazel run` defaults to debug for a better dev experience.
 
@@ -93,13 +96,15 @@ pods/
 
 The `pod_binary()` macro orchestrates a build pipeline:
 
-1. **SQLAR Creation**: Pod directory (hbf/*.js, static/*) → SQLite SQLAR archive
-2. **C Array Generation**: SQLAR binary → C source files via `db_to_c` tool
+1. **SQLAR Creation**: Pod directory (hbf/*.js, static/*) → SQLite SQLAR archive (temp.db)
+2. **Schema Application**: Overlay schema SQL applied to temp.db
+3. **VACUUM Optimization**: `VACUUM INTO` removes dead space, creating final optimized .db file
+4. **C Array Generation**: Optimized SQLAR binary → C source files via `db_to_c` tool
    - Generates `<name>_fs_embedded.c` and `<name>_fs_embedded.h`
    - Provides symbols: `fs_db_data` (byte array) and `fs_db_len` (size)
-3. **Library Creation**: `cc_library` with `alwayslink = True` ensures symbols are included
-4. **Binary Linking**: `cc_binary` links embedded library + core HBF libraries
-5. **Output**: Final binary copied to `bazel-bin/bin/<name>`
+5. **Library Creation**: `cc_library` with `alwayslink = True` ensures symbols are included
+6. **Binary Linking**: `cc_binary` links embedded library + core HBF libraries
+7. **Output**: Final binary copied to `bazel-bin/bin/<name>`
 
 Each pod gets its own embedded library (e.g., `//:hbf_embedded`, `//:hbf_test_embedded`) that provides the `fs_db_data`/`fs_db_len` symbols. Tests that need database access must depend on one of these embedded libraries.
 
@@ -217,13 +222,17 @@ $ bazel test //...
 - ✅ Macro-based build system via `pod_binary()` in `tools/pod_binary.bzl`
 - ✅ Each pod directory contains static files (hbf/*.js, static/*.html, etc.)
 - ✅ SQLAR archive generated per-pod and embedded via `db_to_c` conversion to C arrays
+- ✅ `VACUUM INTO` optimization removes all dead space from embedded databases
 - ✅ Per-pod embedded libraries with `alwayslink = True` for symbol resolution
 - ✅ Overlay schema applied at build time for pod-specific tables
 - ✅ All binaries emit to unified `bazel-bin/bin/` directory
 - ✅ GitHub Actions matrix builds for multiple pods in parallel
+- ✅ CI produces both stripped (5.3MB) and unstripped (13MB) release artifacts
 
 **Binary**:
-- Size: 5.4 MB stripped (statically linked with SQLite + QuickJS)
+- Size: 5.3 MB stripped (statically linked with SQLite + QuickJS + CivetWeb)
+- Size: 13 MB unstripped (includes full debug symbols for gdb/lldb)
+- Embedded database: ~3.2 MB (VACUUMed, no dead space)
 - 100% static linking with musl libc 1.2.3
 - Zero runtime dependencies
 - Compiles with `-Werror` and 30+ warning flags
