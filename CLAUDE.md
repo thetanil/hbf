@@ -4,10 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HBF is a single, statically linked C99 web compute environment that embeds:
+HBF is a single, statically linked C99 web compute environment built with Bazel 8.x using bzlmod that embeds:
 - **SQLite** as the application/data store (with WAL + FTS5)
-- **CivetWeb** for HTTP and WebSockets
+    - bazel_dep(name = "sqlite3", version = "3.50.4")
+- **CivetWeb** for HTTP and SSE (NO SSL NO TLS NO IPV6 NO FILES)
+    - bazel: third_party/civetweb/BUILD.bazel
+    - build flags: third_party/civetweb/civetweb.BUILD
 - **QuickJS-NG** for runtime extensibility and scripting
+    - third_party/quickjs-ng/quickjs.BUILD
+
+target org:
+
+DOCS/ - documentation
+hbf/ - directory for the c99 server part of the project
+hbf/MODULE.bazel - multi-target builds, per pod binary, builds hbf server for each pod defined
+hbf/shell - server cli and main around the pod (maps to internal/core)
+hbf/db - interface between shell, civet and sqlite. (maps to internal/db)
+hbf/http - interface between civetweb server and db (maps to internal/http) (uses hbf/store)
+hbf/store - filesystem like api to the database for static and dynamic request handling (new code, doesn't exist yet)
+hbf/qjs - javascript http request handlers which are user programmable (uses hbf/store) (maps to internal/qjs)
+pods/ - directory to contain multiple pod MODULE.bazel definitions, each in a subfolder
+pods/pod_a/.devcontainer - development container for hbf server content
+pods/pod_a/BUILD.bazel - a build of a pod outputs a single sqlite3 database file which contains at least a sqlar table
+pods/pod_b/* - another definition of a pod to build
+tools/ - miscellaneous scripts for usage in CI/Bazel/tests
+
+what is currently in fs/ should be moved to pods/base and a MODULE.bazel should
+be written for that updates required to build top level which enables `bazel
+build //:pods/base` and this should output an hbf binary which contains the
+embedded base pod. file name bould be hbf-base. for pod_a, bazel build
+//:pods/pod_a could output hbf-pod_a. if I run bazel test //... it should test
+each pod module and bazel build //... should build all pod bins
+
+
 
 **Current Status**: Phase 2b Complete ✅
 - ✅ Phase 0: Foundation, Bazel setup, musl toolchain, coding standards
