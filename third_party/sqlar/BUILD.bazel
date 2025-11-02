@@ -9,6 +9,7 @@ cc_library(
         "-Wno-conversion",
         "-Wno-sign-conversion",
         "-Wno-sign-compare",
+        "-Wno-unused-parameter",
     ],
     deps = [
         "@sqlite3//:sqlite3",

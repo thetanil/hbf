@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: MIT
+# Test pod - SQLite database with SQLAR archive
+
+# Build SQLite database with SQLAR archive of pod content
+genrule(
+    name = "pod_db",
+    srcs = glob(
+        ["hbf/**/*", "static/**/*"],
+        exclude = ["BUILD.bazel"],
+        exclude_directories = 1,
+    ) + [
+        "@htmx//file",
+        "@monaco_editor//:min_vs",
+        "//hbf/db:overlay_schema.sql",
+    ],
+    outs = ["test.db"],
+    cmd = """
+        # Create staging directory structure
+        mkdir -p staging/hbf staging/static/vendor staging/static/monaco
+
+        # Copy local hbf/ files using glob patterns
+        for src in $(SRCS); do
+            # Match files starting with 'pods/test/hbf/' (local files)
+            if [[ $$src == pods/test/hbf/* ]]; then
+                # Extract everything after 'pods/test/hbf/'
+                rel_path=$${src#pods/test/hbf/}
+                mkdir -p staging/hbf/$$(dirname $$rel_path)
+                cp $$src staging/hbf/$$rel_path
+            fi
+        done
+
+        # Copy all globbed static files
+        for src in $(SRCS); do
+            # Match files starting with 'pods/test/static/' (local files)
+            if [[ $$src == pods/test/static/* ]]; then
+                # Extract everything after 'pods/test/static/'
+                rel_path=$${src#pods/test/static/}
+                mkdir -p staging/static/$$(dirname $$rel_path)
+                cp $$src staging/static/$$rel_path
+            fi
+        done
+
+        # Stage HTMX
+        cp $(location @htmx//file) staging/static/vendor/htmx.min.js
+
+        # Stage Monaco Editor (preserving min/vs/** structure)
+        for monaco_file in $(locations @monaco_editor//:min_vs); do
+            # Extract path after 'min/' (e.g., .../min/vs/loader.js -> vs/loader.js)
+            rel_path=$${monaco_file##*/min/}
+            mkdir -p staging/static/monaco/$$(dirname $$rel_path)
+            cp $$monaco_file staging/static/monaco/$$rel_path
+        done
+
+        # Create SQLAR archive
+        cd staging && sqlite3 -A -cf ../$(location test.db) hbf static
+        cd ..
+
+        # Apply overlay schema at build time
+        sqlite3 $(location test.db) < $(location //hbf/db:overlay_schema.sql)
+
+        # Cleanup
+        rm -rf staging
+    """,
+    visibility = ["//visibility:public"],
+)
+
+# Test that the pod database was created correctly
+sh_test(
+    name = "fs_build_test",
+    srcs = ["fs_build_test.sh"],
+    args = ["$(location :pod_db)"],
+    data = [":pod_db"],
+)

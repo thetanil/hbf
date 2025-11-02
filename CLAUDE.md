@@ -69,6 +69,47 @@ Tip: set `.bazelrc` so `bazel run` defaults to debug for a better dev experience
 - Single output layout: all binaries under `bazel-bin/bin/`
 - Build-mode driven stripping (no manual strip genrule)
 
+### Multi-Pod Build System
+
+HBF uses a macro-based multi-pod build system that allows multiple independent pods to be built from a single codebase.
+
+**Pod Structure**: Each pod follows a standard directory layout:
+```
+pods/
+  <podname>/
+    BUILD.bazel          # Must contain pod_db target
+    hbf/                 # JavaScript source files
+      server.js
+    static/              # Static assets
+      *.html, *.css
+```
+
+**Build Targets**: The `pod_binary()` macro in `tools/pod_binary.bzl` generates binary targets for each pod:
+- `//:hbf` - Base pod (default)
+- `//:hbf_<podname>` - Other pods (e.g., `//:hbf_test`)
+- `//:hbf_<podname>_unstripped` - Alias for convenience
+
+**Pod Embedding**: Each pod's content is embedded using:
+1. SQLAR archive created from pod files
+2. Conversion to C byte array via `db_to_c` script
+3. Standard C compilation and linking
+4. Symbols (fs_db_data, fs_db_len) provided per-pod and linked at binary level
+
+**Adding a New Pod**:
+1. Create `pods/<name>/` directory with BUILD.bazel
+2. Add `pod_binary(name = "hbf_<name>", pod = "//pods/<name>")` to root BUILD.bazel
+3. Add `"<name>"` to matrix pod list in `.github/workflows/pr.yml`
+4. (Optional) Add `"<name>"` to `.github/workflows/release.yml` for releases
+
+**Discovering Pods**:
+```bash
+# List all pod binaries
+bazel query 'kind("cc_binary", //:*)' | grep '^//:hbf'
+
+# If tagged with hbf_pod
+bazel query 'attr(tags, "hbf_pod", kind("cc_binary", //...))'
+```
+
 ## Language & Standards
 
 - **Strict C99**: No C++, no language extensions

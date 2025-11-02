@@ -1,5 +1,8 @@
 # Core utilities and foundational code
 
+# Export main.c for pod_binary macro
+exports_files(["main.c"])
+
 cc_library(
     name = "hash",
     srcs = ["hash.c"],

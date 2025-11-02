@@ -13,14 +13,18 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build and publish release
+  build-release-pods:
+    name: Build Pod - ${{ matrix.pod }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: true  # Fail fast on release
+      matrix:
+        # MANUALLY MAINTAINED: Only release-ready pods
+        pod: ["base"]   # Add more as needed: ["base", "myapp"]
     env:
       BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-
       - name: Validate tag is semver vMAJ.MIN.PATCH
         run: |
           TAG="${GITHUB_REF_NAME}"
@@ -34,22 +38,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build and upload artifacts (composite action)
-        uses: ./.github/actions/build-full
+      - name: Build pod
+        uses: ./.github/actions/build-pod
         with:
+          pod-name: ${{ matrix.pod }}
           tag: ${{ github.ref_name }}
-          artifact-name: build-assets
-          retention-days: 7
+          artifact-name: build-${{ matrix.pod }}
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-release-pods
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Flatten artifacts
+        run: |
+          find artifacts/ -type f -exec mv {} . \;
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            hbf-${{ github.ref_name }}-linux-x86_64
-            hbf-${{ github.ref_name }}-linux-x86_64.sha256
-            hbf-${{ github.ref_name }}-linux-x86_64-unstripped
-            hbf-${{ github.ref_name }}-linux-x86_64-unstripped.sha256
+            hbf*-${{ github.ref_name }}-linux-*
           draft: false
           prerelease: false
         env:

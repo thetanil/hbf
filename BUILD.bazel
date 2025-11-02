@@ -1,66 +1,26 @@
 # HBF - Web Compute Environment
 # Root build file
 
-# ============================================================================
-# Base Pod Embedding
-# ============================================================================
-
-# Convert base pod database to C source files
-genrule(
-    name = "base_pod_embedded_gen",
-    srcs = ["//pods/base:pod_db"],
-    outs = [
-        "fs_embedded.c",
-        "fs_embedded.h",
-    ],
-    cmd = "$(location //tools:db_to_c) $(location //pods/base:pod_db) $(location fs_embedded.c) $(location fs_embedded.h)",
-    tools = ["//tools:db_to_c"],
-)
-
-# Create library with embedded base pod database
-cc_library(
-    name = "base_pod_embedded",
-    srcs = ["fs_embedded.c"],
-    hdrs = ["fs_embedded.h"],
-    visibility = ["//visibility:public"],
-)
+load("//tools:pod_binary.bzl", "pod_binary")
 
 # ============================================================================
-# Binary Targets
+# Pod Binaries
 # ============================================================================
 
-# Default stripped binary (base pod)
-genrule(
-    name = "hbf_bin",
-    srcs = ["//hbf/shell:hbf"],
-    outs = ["bin/hbf"],
-    cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +w $@ && strip $@",
-    executable = True,
-    visibility = ["//visibility:public"],
-)
-
-# Base pod binary (same as default for now)
-genrule(
-    name = "hbf-base",
-    srcs = ["//hbf/shell:hbf"],
-    outs = ["bin/hbf-base"],
-    cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +w $@ && strip $@",
-    executable = True,
-    visibility = ["//visibility:public"],
-)
-
-# Alias for backward compatibility
-alias(
+# Base pod (default binary)
+pod_binary(
     name = "hbf",
-    actual = ":hbf_bin",
+    pod = "//pods/base",
     visibility = ["//visibility:public"],
+    tags = ["hbf_pod"],
 )
 
-# Unstripped binary (for debugging)
-alias(
-    name = "hbf_unstripped",
-    actual = "//hbf/shell:hbf",
+# Test pod
+pod_binary(
+    name = "hbf_test",
+    pod = "//pods/test",
     visibility = ["//visibility:public"],
+    tags = ["hbf_pod"],
 )
 
 # ============================================================================

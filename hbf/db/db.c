@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: MIT */
 #include "db.h"
 #include "hbf/shell/log.h"
-#include "fs_embedded.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Forward declarations for embedded pod data symbols */
+/* These are provided by the pod-specific embedded library linked at binary level */
+extern const unsigned char fs_db_data[];
+extern const unsigned long fs_db_len;
 
 #define HBF_DB_PATH "./hbf.db"
 #define HBF_DB_INMEM ":memory:"

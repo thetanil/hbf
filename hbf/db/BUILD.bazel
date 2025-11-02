@@ -10,9 +10,11 @@ cc_library(
     hdrs = ["db.h"],
     deps = [
         "//hbf/shell:log",
-        "//:base_pod_embedded",
         "//third_party/sqlar",
         "@sqlite3//:sqlite3",
+        # Note: In production builds, the binary links a specific pod's embedded library.
+        # For this library to compile, we need access to fs_embedded.h.
+        # The actual symbols come from whichever pod binary links this library.
     ],
     visibility = ["//visibility:public"],
 )
@@ -20,13 +22,19 @@ cc_library(
 cc_test(
     name = "db_test",
     srcs = ["db_test.c"],
-    deps = [":db"],
+    deps = [
+        ":db",
+        "//:hbf_embedded",  # Use base pod's embedded library for testing
+    ],
     linkstatic = 1,
 )
 
 cc_test(
     name = "overlay_test",
     srcs = ["overlay_test.c"],
-    deps = [":db"],
+    deps = [
+        ":db",
+        "//:hbf_embedded",  # Use base pod's embedded library for testing
+    ],
     linkstatic = 1,
 )

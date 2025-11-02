@@ -1,0 +1,87 @@
+name: build-pod
+description: Build stripped and unstripped binaries for a single pod
+
+inputs:
+  pod-name:
+    description: Name of the pod (e.g., "base", "test")
+    required: true
+  tag:
+    description: Version tag for naming assets
+    required: true
+  artifact-name:
+    description: Name for uploaded artifacts
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Bazelisk
+      uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Cache Bazel directories
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/bazel
+          ~/.cache/bazelisk
+        key: ${{ runner.os }}-bazel-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
+        restore-keys: |
+          ${{ runner.os }}-bazel-${{ inputs.pod-name }}-
+          ${{ runner.os }}-bazel-
+
+    - name: Build pod binaries (mode-driven)
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+
+        # Special case: "base" pod uses //:hbf target
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+        fi
+
+        # Release-stripped build
+        bazel build --compilation_mode=opt --strip=always //:${TARGET_NAME}
+
+        # Debug-symbols build
+        bazel build --compilation_mode=dbg //:${TARGET_NAME}
+
+    - name: Prepare assets (reproducible names)
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+        TAG="${{ inputs.tag }}"
+        ARCH="$(uname -m)"
+
+        # Determine target name
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+          ASSET_BASE="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+          ASSET_BASE="hbf-${POD}"
+        fi
+
+        # Asset names
+        NAME_STRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}"
+        NAME_UNSTRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}-unstripped"
+
+        # Copy binaries from unified bin/ layout
+        # The output symlinks in bazel-bin resolve to configuration-specific artifacts
+        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_STRIPPED"        # from opt --strip=always build
+        cp "bazel-bin/bin/${TARGET_NAME}" "$NAME_UNSTRIPPED"      # from dbg build (unstripped)
+
+        # Generate checksums
+        sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
+        sha256sum "$NAME_UNSTRIPPED" > "$NAME_UNSTRIPPED.sha256"
+
+    - name: Upload build assets
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          hbf*-${{ inputs.tag }}-linux-*
+        if-no-files-found: error
