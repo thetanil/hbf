@@ -156,13 +156,6 @@ MIT for HBF. Third‑party components retain their original licenses. No GPL dep
 
 ## Next Steps, future dev
 
-- in CI there is a 3rd build for just lint and test, but I think it might be
-  faster if it's just running on the hbf_test build instead of a seperate job?
-  there should be some way to optimize, it takes a lot longer than the other
-  tasks. maybe it's just because there are only 2 jobs in parallel and this
-  is the third running after base and test? test (hbf_test) could be used to
-  test and lint check
-
 - make the layered fs api / database tables which allows per file readthrough to
   sqlar table as base.
 
