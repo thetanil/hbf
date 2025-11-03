@@ -78,8 +78,9 @@ test --test_verbose_timeout_warnings
 
 # Performance optimizations
 build --jobs=auto
-build --local_resources=memory=2048
-build --local_resources=cpu=4
+# Note: Removed explicit resource limits to allow Bazel to auto-detect available resources.
+# This is especially important for CI where GitHub Actions runners have 7GB RAM available.
+# For local development with constrained resources, add limits to ~/.bazelrc.user (not checked into git).
 
 # Color output
 common --color=yes
