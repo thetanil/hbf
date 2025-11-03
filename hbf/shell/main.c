@@ -7,7 +7,11 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+
+#define HBF_QJS_MEMORY_LIMIT_MB 64
+#define HBF_QJS_TIMEOUT_MS 5000
 
 static volatile sig_atomic_t running = 1;
 
@@ -43,8 +47,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* Initialize QuickJS engine (64 MB memory limit, 5000 ms timeout) */
-	ret = hbf_qjs_init(64, 5000);
+	/* Initialize QuickJS engine */
+	ret = hbf_qjs_init(HBF_QJS_MEMORY_LIMIT_MB, HBF_QJS_TIMEOUT_MS);
 	if (ret != 0) {
 		hbf_log_error("Failed to initialize QuickJS engine");
 		hbf_db_close(db);
@@ -55,6 +59,7 @@ int main(int argc, char *argv[])
 	server = hbf_server_create(config.port, config.dev, db);
 	if (!server) {
 		hbf_log_error("Failed to create HTTP server");
+		hbf_qjs_shutdown();
 		hbf_db_close(db);
 		return 1;
 	}
@@ -64,13 +69,19 @@ int main(int argc, char *argv[])
 	if (ret != 0) {
 		hbf_log_error("Failed to start HTTP server");
 		hbf_server_destroy(server);
+		hbf_qjs_shutdown();
 		hbf_db_close(db);
 		return 1;
 	}
 
 	/* Setup signal handlers */
-	signal(SIGINT, signal_handler);
-	signal(SIGTERM, signal_handler);
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = signal_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
 
 	/* Main loop */
 	hbf_log_info("HBF running (press Ctrl+C to stop)");
