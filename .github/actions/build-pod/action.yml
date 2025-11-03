@@ -43,6 +43,11 @@ runs:
         path: |
           ~/.cache/bazel
           ~/.cache/bazelisk
+        # Cache key includes pod name to isolate per-pod builds
+        # Note: Both release and debug configs share the same cache because:
+        # 1. The disk cache (~/.cache/bazel/ac, cas) is shared and benefits both
+        # 2. The analysis cache will be discarded once when switching configs (expected)
+        # 3. Using separate keys would double cache storage with minimal benefit
         key: ${{ runner.os }}-bazel-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
         restore-keys: |
           ${{ runner.os }}-bazel-${{ inputs.pod-name }}-
@@ -61,11 +66,11 @@ runs:
           TARGET_NAME="hbf_${POD}"
         fi
 
-        # Release-stripped build
-        bazel build --compilation_mode=opt --strip=always //:${TARGET_NAME}
+        # Release-stripped build using named config
+        bazel build --config=release //:${TARGET_NAME}
 
-        # Debug-symbols build
-        bazel build --compilation_mode=dbg //:${TARGET_NAME}
+        # Debug-symbols build using named config
+        bazel build --config=debug //:${TARGET_NAME}
 
     - name: Run lint
       if: inputs.run-lint == 'true'
@@ -96,7 +101,7 @@ runs:
         fi
 
         # Get the debug binary path for smoke test
-        BINARY_PATH=$(bazel cquery --compilation_mode=dbg --output=files //:${TARGET_NAME})
+        BINARY_PATH=$(bazel cquery --config=debug --output=files //:${TARGET_NAME})
 
         echo "Running smoke test on $BINARY_PATH"
         $BINARY_PATH --help
@@ -125,8 +130,8 @@ runs:
 
         # Copy binaries from configuration-specific output directories
         # Use -L to follow symlinks and get the actual binaries from their build configs
-        cp -L "$(bazel cquery --compilation_mode=opt --strip=always --output=files //:${TARGET_NAME})" "$NAME_STRIPPED"
-        cp -L "$(bazel cquery --compilation_mode=dbg --output=files //:${TARGET_NAME})" "$NAME_UNSTRIPPED"
+        cp -L "$(bazel cquery --config=release --output=files //:${TARGET_NAME})" "$NAME_STRIPPED"
+        cp -L "$(bazel cquery --config=debug --output=files //:${TARGET_NAME})" "$NAME_UNSTRIPPED"
 
         # Strip the "stripped" binary to ensure it's actually stripped
         # chmod needed because Bazel outputs are read-only

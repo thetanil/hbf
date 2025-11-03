@@ -57,12 +57,15 @@ build --linkopt=-Wl,--gc-sections
 # Platform-specific settings (kept for compatibility)
 build:linux --copt=-D_GNU_SOURCE
 
-# Development mode
+# Development mode (unstripped debug build)
 build:dev --compilation_mode=dbg
 build:dev --conlyopt=-O0
 build:dev --conlyopt=-g
 
-# Release mode
+# Debug mode (for CI - unstripped symbols build)
+build:debug --compilation_mode=dbg
+
+# Release mode (for CI - stripped optimized build)
 build:release --compilation_mode=opt
 build:release --conlyopt=-O3
 build:release --linkopt=-s
@@ -86,3 +89,13 @@ build --verbose_failures
 
 # Cache settings
 build --disk_cache=~/.cache/bazel
+
+# Strict mode: error on analysis cache discard (useful for local development)
+# This prevents accidental flag changes that would slow down builds.
+# Not enabled by default because CI needs to build both release and debug.
+# Usage: bazel build --config=strict //:hbf
+build:strict --noallow_analysis_cache_discard
+
+# Note: Use named configs (--config=release, --config=debug, --config=dev) to
+# minimize cache invalidation. For personal strict enforcement during development,
+# add "build --noallow_analysis_cache_discard" to ~/.bazelrc.user (not checked into git).
