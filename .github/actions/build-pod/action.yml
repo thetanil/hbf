@@ -37,23 +37,21 @@ runs:
         sudo apt-get update
         sudo apt-get install -y clang-tidy-18
 
-    - name: Cache Bazel directories
+    - name: Cache Bazel directories (release build)
       uses: actions/cache@v4
       with:
         path: |
           ~/.cache/bazel
           ~/.cache/bazelisk
-        # Cache key includes pod name to isolate per-pod builds
-        # Note: Both release and debug configs share the same cache because:
-        # 1. The disk cache (~/.cache/bazel/ac, cas) is shared and benefits both
-        # 2. The analysis cache will be discarded once when switching configs (expected)
-        # 3. Using separate keys would double cache storage with minimal benefit
-        key: ${{ runner.os }}-bazel-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
+        # Separate cache keys for release and debug builds to prevent cache thrashing
+        # Release and debug configs use different compiler flags (-O3 vs -g, etc.)
+        # which invalidate each other's analysis cache
+        key: ${{ runner.os }}-bazel-release-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
         restore-keys: |
-          ${{ runner.os }}-bazel-${{ inputs.pod-name }}-
-          ${{ runner.os }}-bazel-
+          ${{ runner.os }}-bazel-release-${{ inputs.pod-name }}-
+          ${{ runner.os }}-bazel-release-
 
-    - name: Build pod binaries (mode-driven)
+    - name: Build release binary
       shell: bash
       run: |
         set -euo pipefail
@@ -68,6 +66,31 @@ runs:
 
         # Release-stripped build using named config
         bazel build --config=release //:${TARGET_NAME}
+
+    - name: Cache Bazel directories (debug build)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/bazel
+          ~/.cache/bazelisk
+        # Separate cache for debug builds with different compiler flags
+        key: ${{ runner.os }}-bazel-debug-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
+        restore-keys: |
+          ${{ runner.os }}-bazel-debug-${{ inputs.pod-name }}-
+          ${{ runner.os }}-bazel-debug-
+
+    - name: Build debug binary
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+
+        # Special case: "base" pod uses //:hbf target
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+        fi
 
         # Debug-symbols build using named config
         bazel build --config=debug //:${TARGET_NAME}
