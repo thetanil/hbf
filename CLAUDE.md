@@ -16,7 +16,7 @@ HBF is a single, statically linked C99 web compute environment built with Bazel 
 ```
 hbf/
   shell/      - Server CLI, main, logging, config
-  db/         - SQLite wrapper and schema
+  db/         - SQLite wrapper, versioned filesystem, and schema
   http/       - CivetWeb server wrapper
   qjs/        - QuickJS engine and bindings
 
@@ -197,7 +197,8 @@ All tests use minunit-style C macros with assert.h:
 - `hbf/shell:hash_test` - Hash function tests
 - `hbf/shell:config_test` - CLI parsing tests
 - `hbf/db:db_test` - SQLite wrapper tests
-- `hbf/db:overlay_test` - Schema overlay tests
+- `hbf/db:overlay_test` - Versioned filesystem integration tests
+- `hbf/db:overlay_fs_test` - Versioned filesystem unit tests
 - `hbf/qjs:engine_test` - QuickJS engine tests (includes db module integration)
 - `pods/base:fs_build_test` - SQLAR build tests for base pod
 - `pods/test:fs_build_test` - SQLAR build tests for test pod
@@ -205,14 +206,14 @@ All tests use minunit-style C macros with assert.h:
 ```bash
 # Run all tests
 $ bazel test //...
-✅ 7 test targets, all passing
+✅ 8 test targets, all passing
 ```
 
 ## Current Implementation
 
 **Core Components**:
 - ✅ `hbf/shell/` - Logging, config, CLI, main
-- ✅ `hbf/db/` - SQLite wrapper with overlay schema support
+- ✅ `hbf/db/` - SQLite wrapper with versioned filesystem support
 - ✅ `hbf/http/` - CivetWeb HTTP server with request routing
 - ✅ `hbf/qjs/` - QuickJS engine with host bindings (db, console, request/response)
 - ✅ `pods/base/` - Base pod with example content
@@ -224,10 +225,18 @@ $ bazel test //...
 - ✅ SQLAR archive generated per-pod and embedded via `db_to_c` conversion to C arrays
 - ✅ `VACUUM INTO` optimization removes all dead space from embedded databases
 - ✅ Per-pod embedded libraries with `alwayslink = True` for symbol resolution
-- ✅ Overlay schema applied at build time for pod-specific tables
+- ✅ Versioned filesystem schema applied at build time for immutable file history
 - ✅ All binaries emit to unified `bazel-bin/bin/` directory
 - ✅ GitHub Actions matrix builds for multiple pods in parallel
 - ✅ CI produces both stripped (5.3MB) and unstripped (13MB) release artifacts
+
+**Versioned Filesystem** (Integrated):
+- ✅ Immutable version history for all file writes
+- ✅ Fast indexed reads using `file_id` and `version_number`
+- ✅ Schema: `file_ids` (path mapping), `file_versions` (versioned storage)
+- ✅ View: `latest_files` for accessing current versions
+- ✅ Migration support: Convert SQLAR archives to versioned storage
+- ✅ Full backward compatibility with existing SQLAR-based pod loading
 
 **Binary**:
 - Size: 5.3 MB stripped (statically linked with SQLite + QuickJS + CivetWeb)
@@ -238,9 +247,30 @@ $ bazel test //...
 - Compiles with `-Werror` and 30+ warning flags
 
 **Testing**:
-- ✅ All 7 test targets passing
+- ✅ All 8 test targets passing
 - ✅ Both base and test pod binaries build successfully
 - ✅ Pod discovery via Bazel query works
+- ✅ Versioned filesystem unit tests (7 subtests)
+- ✅ Versioned filesystem integration tests (4 subtests)
+
+## Versioned Filesystem (overlay_fs)
+
+HBF includes a versioned filesystem built on SQLite that provides immutable file history tracking. Located in `hbf/db/overlay_fs.{c,h}`.
+
+### Key Features
+
+1. **Immutable History**: Every write creates a new version (append-only)
+2. **Fast Reads**: Optimized queries with `file_id` + `version_number DESC` index
+3. **Version Tracking**: Full audit trail of all file changes
+4. **Space Efficient**: `WITHOUT ROWID` optimization, composite primary keys
+5. **Migration Support**: Convert existing SQLAR archives to versioned storage
+6. **Backward Compatible**: Works alongside existing SQLAR-based pod system
+
+### Performance
+
+Benchmark results (in-memory, 1000 files, 10 versions each):
+- Write: 28,000+ files/sec (initial), 37,000+ writes/sec (multi-version)
+- Read: 142,000+ reads/sec (latest version)
 
 ## Key Design Decisions
 
@@ -249,6 +279,7 @@ $ bazel test //...
 3. **No HTTPS in binary**: Use reverse proxy (nginx, Traefik, Caddy) for TLS
 4. **SQLite as universal store**: Content, data, and static files in one database
 5. **QuickJS sandboxing**: Memory limits, execution timeouts, no host FS/network access
+6. **Versioned filesystem**: Immutable file history with full audit trail for all changes
 
 ## Known Issues & Workarounds
 

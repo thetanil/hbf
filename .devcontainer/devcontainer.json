@@ -6,15 +6,8 @@
     },
     "workspaceFolder": "/workspaces/hbf",
     "features": {
-        // "ghcr.io/devcontainers/features/docker-in-docker:2": {
-        //     "version": "latest",
-        //     "enableNonRootDocker": "true"
-        // },
         "ghcr.io/devcontainers/features/git:1": {},
         "ghcr.io/devcontainers/features/github-cli:1": {},
-        "ghcr.io/devcontainers/features/go:1": {},
-        "ghcr.io/devcontainers/features/hugo:1": {},
-        "ghcr.io/devcontainers-extra/features/uv:1": {}
     },
     "customizations": {
         "vscode": {
