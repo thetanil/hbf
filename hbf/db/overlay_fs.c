@@ -6,7 +6,15 @@
 #include <string.h>
 #include <time.h>
 
-/* Embedded schema (from schema.sql) */
+/*
+ * Embedded fallback schema
+ *
+ * NOTE: The authoritative schema is defined in hbf/db/overlay_schema.sql and is
+ * applied at pod build time (see pods/.../BUILD.bazel). The definitions below are
+ * a conservative fallback used only when a database is created programmatically
+ * at runtime outside the pod build pipeline. Normal binaries do not rely on
+ * this path because the embedded pod DB already contains the full schema.
+ */
 extern const unsigned char fs_db_data[];
 extern const unsigned long fs_db_len;
 
@@ -22,6 +30,32 @@ static int exec_sql_file(sqlite3 *db, const char *sql)
 	if (rc != SQLITE_OK) {
 		hbf_log_error("SQL error: %s", errmsg);
 		sqlite3_free(errmsg);
+		return -1;
+	}
+	return 0;
+}
+
+/* Require that schema objects already exist; no runtime creation */
+static int require_schema(sqlite3 *db)
+{
+	const char *sql =
+		"SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('file_versions','file_ids')";
+	sqlite3_stmt *stmt = NULL;
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if (rc != SQLITE_OK) {
+		hbf_log_error("overlay_fs: schema check prepare failed: %s", sqlite3_errmsg(db));
+		return -1;
+	}
+	rc = sqlite3_step(stmt);
+	if (rc != SQLITE_ROW) {
+		sqlite3_finalize(stmt);
+		hbf_log_error("overlay_fs: schema check step failed: %s", sqlite3_errmsg(db));
+		return -1;
+	}
+	int cnt = sqlite3_column_int(stmt, 0);
+	sqlite3_finalize(stmt);
+	if (cnt < 2) {
+		hbf_log_error("FATAL: overlay_fs schema is missing. Expected tables 'file_versions' and 'file_ids'. This DB must be built with hbf/db/overlay_schema.sql at build time.");
 		return -1;
 	}
 	return 0;
@@ -44,42 +78,22 @@ int overlay_fs_init(const char *db_path, sqlite3 **db)
 	}
 
 	/* Enable foreign keys and set pragmas */
-	if (exec_sql_file(*db, "PRAGMA foreign_keys=ON;") < 0)
+	if (exec_sql_file(*db, "PRAGMA foreign_keys=ON;") < 0) {
 		goto err;
-	if (exec_sql_file(*db, "PRAGMA journal_mode=WAL;") < 0)
+	}
+	if (exec_sql_file(*db, "PRAGMA journal_mode=WAL;") < 0) {
 		goto err;
-	if (exec_sql_file(*db, "PRAGMA synchronous=NORMAL;") < 0)
+	}
+	if (exec_sql_file(*db, "PRAGMA synchronous=NORMAL;") < 0) {
 		goto err;
+	}
 
-	/* Load embedded schema */
-	const char *schema =
-		"CREATE TABLE IF NOT EXISTS file_versions (\n"
-		"    file_id         INTEGER NOT NULL,\n"
-		"    path            TEXT NOT NULL,\n"
-		"    version_number  INTEGER NOT NULL,\n"
-		"    mtime           INTEGER NOT NULL,\n"
-		"    size            INTEGER NOT NULL,\n"
-		"    data            BLOB NOT NULL,\n"
-		"    PRIMARY KEY (file_id, version_number)\n"
-		") WITHOUT ROWID;\n"
-		"\n"
-		"CREATE INDEX IF NOT EXISTS idx_file_versions_path\n"
-		"    ON file_versions(path);\n"
-		"\n"
-		"CREATE INDEX IF NOT EXISTS idx_file_versions_file_id_version\n"
-		"    ON file_versions(file_id, version_number DESC);\n"
-		"\n"
-		"-- Covering index so metadata queries avoid reading BLOB pages\n"
-		"CREATE INDEX IF NOT EXISTS idx_file_versions_latest_cover\n"
-		"    ON file_versions(file_id, version_number DESC, path, mtime, size);\n"
-		"\n"
-		"CREATE TABLE IF NOT EXISTS file_ids (\n"
-		"    file_id  INTEGER PRIMARY KEY AUTOINCREMENT,\n"
-		"    path     TEXT NOT NULL UNIQUE\n"
-		");\n";
-
-	if (exec_sql_file(*db, schema) < 0)
+	/* Require schema to already exist; do not create fallback here */
+	if (require_schema(*db) < 0) {
 		goto err;
+	}
+
+	/* No embedded fallback schema application here */
 
 	return 0;
 
@@ -119,11 +133,17 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 	hbf_log_info("Migrating SQLAR archive to file_versions...");
 
 	/* Begin transaction */
-	if (exec_sql_file(db, "BEGIN TRANSACTION;") < 0)
+	if (exec_sql_file(db, "BEGIN TRANSACTION;") < 0) {
 		return -1;
+	}
 
 	/* Read from sqlar and insert into file_versions */
 	/* Use sqlar_uncompress to decompress data before migration */
+			/* Ensure required schema is present */
+			if (require_schema(db) < 0) {
+				hbf_log_error("overlay_fs_migrate_sqlar: required schema missing");
+				return -1;
+			}
 	const char *select_sql =
 		"SELECT name, sqlar_uncompress(data, sz) FROM sqlar";
 
@@ -185,13 +205,15 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 	}
 
 	/* Commit transaction */
-	if (exec_sql_file(db, "COMMIT;") < 0)
+	if (exec_sql_file(db, "COMMIT;") < 0) {
 		return -1;
+	}
 
 	/* VACUUM to reclaim space */
 	hbf_log_info("Vacuuming database...");
-	if (exec_sql_file(db, "VACUUM;") < 0)
+	if (exec_sql_file(db, "VACUUM;") < 0) {
 		return -1;
+	}
 
 	return 0;
 }
@@ -255,15 +277,17 @@ int overlay_fs_read(sqlite3 *db, const char *path,
 		}
 		sqlite3_finalize(stmt);
 		return 0;
-	} else if (rc == SQLITE_DONE) {
+	}
+
+	if (rc == SQLITE_DONE) {
 		/* File not found */
 		sqlite3_finalize(stmt);
 		return -1;
-	} else {
-		hbf_log_error("Error reading file: %s", sqlite3_errmsg(db));
-		sqlite3_finalize(stmt);
-		return -1;
 	}
+
+	hbf_log_error("Error reading file: %s", sqlite3_errmsg(db));
+	sqlite3_finalize(stmt);
+	return -1;
 }
 
 int overlay_fs_write(sqlite3 *db, const char *path,
@@ -394,12 +418,13 @@ int overlay_fs_exists(sqlite3 *db, const char *path)
 	rc = sqlite3_step(stmt);
 	sqlite3_finalize(stmt);
 
-	if (rc == SQLITE_ROW)
+	if (rc == SQLITE_ROW) {
 		return 1;
-	else if (rc == SQLITE_DONE)
+	}
+	if (rc == SQLITE_DONE) {
 		return 0;
-	else
-		return -1;
+	}
+	return -1;
 }
 
 int overlay_fs_version_count(sqlite3 *db, const char *path)
@@ -433,8 +458,9 @@ int overlay_fs_version_count(sqlite3 *db, const char *path)
 
 	sqlite3_finalize(stmt);
 
-	if (rc != SQLITE_ROW)
+	if (rc != SQLITE_ROW) {
 		return -1;
+	}
 
 	return count;
 }
@@ -517,16 +543,18 @@ int overlay_fs_read_file(const char *path, int dev,
 		sqlite3_finalize(stmt);
 		hbf_log_debug("overlay_fs: Read file '%s' (%zu bytes)", path, *size);
 		return 0;
-	} else if (rc == SQLITE_DONE) {
+	}
+
+	if (rc == SQLITE_DONE) {
 		/* File not found */
 		sqlite3_finalize(stmt);
 		hbf_log_debug("overlay_fs: File not found: %s", path);
 		return -1;
-	} else {
-		hbf_log_error("Error reading file: %s", sqlite3_errmsg(g_overlay_db));
-		sqlite3_finalize(stmt);
-		return -1;
 	}
+
+	hbf_log_error("Error reading file: %s", sqlite3_errmsg(g_overlay_db));
+	sqlite3_finalize(stmt);
+	return -1;
 }
 
 int overlay_fs_write_file(const char *path,

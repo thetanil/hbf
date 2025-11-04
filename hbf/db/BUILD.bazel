@@ -4,6 +4,14 @@
 # Export overlay schema for build-time application to fs.db
 exports_files(["overlay_schema.sql"])
 
+genrule(
+    name = "overlay_schema_c",
+    srcs = ["overlay_schema.sql"],
+    outs = ["overlay_schema_gen.c"],
+    cmd = "$(location //tools:sql_to_c) $(location overlay_schema.sql) $@",
+    tools = ["//tools:sql_to_c"],
+)
+
 cc_library(
     name = "db",
     srcs = ["db.c"],
@@ -55,7 +63,10 @@ cc_test(
 
 cc_test(
     name = "overlay_fs_test",
-    srcs = ["overlay_fs_test.c"],
+    srcs = [
+        "overlay_fs_test.c",
+        ":overlay_schema_gen.c",
+    ],
     deps = [
         ":overlay_fs",
         "//hbf/shell:log",

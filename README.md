@@ -198,27 +198,38 @@ To remove ambiguity and large copies, dev API endpoints are owned as follows:
 
 The native handler for `/__dev/api/files` is registered before the catch‑all JS request handler, so JS must not implement this route. Both base and test pods have had their JS versions removed.
 
+## Schema sourcing (authoritative)
+
+The authoritative database schema for the versioned filesystem lives in `hbf/db/overlay_schema.sql` and is applied at pod build time (see the `pod_db` rules in each pod's `BUILD.bazel`). Every embedded pod database ships with the correct tables, indexes, views, the materialized `latest_files_meta`, and triggers.
+
+At runtime, we do not create or migrate the schema in code. `overlay_fs.c` requires the schema to already exist and fails fast if it is missing. This avoids divergence and ensures a single source of truth.
+
+### Using the schema in C tests
+
+To apply the same authoritative schema in unit tests without duplicating SQL in C files, a Bazel genrule converts `overlay_schema.sql` into a small C translation unit that exposes the schema as a `const char*`:
+
+- Target: `//hbf/db:overlay_schema_c`
+- Output: `overlay_schema_gen.c` (auto-generated from `overlay_schema.sql` via `//tools:sql_to_c`)
+- Usage in a test target:
+  - Add `:overlay_schema_gen.c` to the test's `srcs`
+  - Declare and use the generated symbols in your test:
+    - `extern const char * const hbf_schema_sql_ptr;`
+    - `extern const unsigned long hbf_schema_sql_len;`
+    - `sqlite3_exec(db, hbf_schema_sql_ptr, NULL, NULL, &errmsg);`
+
+This keeps `overlay_schema.sql` as the single source for both pods and tests.
+
 ## Next Steps, future dev
-
-- there is mg_set_request_handler(server->ctx, "/__dev/api/files", dev_files_list_handler, server);
-  and in server.js : if (path === "/__dev/api/files" && method === "GET")
-  so there is confusion in the code about who is handling this query and we want
-  the optimized special C handler to avoid large data copies
-  but now it is unclear, is __dev/ a javascript feature, or a C handler?
-
-- hbf/db/overlay_fs.c contains "embedded schema", but bazel should be building with hbf/db/overlay_schema.sql
 
 - benchmark is using base pod, not test pod
 
-- /__dev/api/files still slow but we implemented Create a new view without the data column (e.g., latest_files_metadata) and didn't test it yet. benchmark worst case with 750+ms to return the whole database in every query essentially.
-
 - need js_db_test.md
+
+- need to 'include' or whatever for qjs to overlay_fs
 
 - each pod's server.js and i guess http module for static file access all have
   their own methods for reading and writing new content to the latest_fs tables.
   i would like an api which is in db which is reused in all of those cases
-
-  
 
 - dev (hbf_dev) includes monaco for jsfiddle / shadertoy like glsl fiddle examples
 

@@ -6,12 +6,32 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Generated from hbf/db/overlay_schema.sql via //hbf/db:overlay_schema_c */
+extern const char * const hbf_schema_sql_ptr;
+extern const unsigned long hbf_schema_sql_len;
+
+static int open_test_db(sqlite3 **db)
+{
+	int rc = sqlite3_open(":memory:", db);
+	if (rc != SQLITE_OK) return -1;
+	char *errmsg = NULL;
+    rc = sqlite3_exec(*db, hbf_schema_sql_ptr, NULL, NULL, &errmsg);
+	if (rc != SQLITE_OK) {
+		fprintf(stderr, "Failed to apply test schema: %s\n", errmsg ? errmsg : "unknown");
+		sqlite3_free(errmsg);
+		sqlite3_close(*db);
+		*db = NULL;
+		return -1;
+	}
+	return 0;
+}
+
 static void test_init(void)
 {
 	sqlite3 *db = NULL;
 	int ret;
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 	assert(db != NULL);
 
@@ -27,7 +47,7 @@ static void test_write_and_read(void)
 	size_t size = 0;
 	int ret;
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 
 	/* Write file */
@@ -57,7 +77,7 @@ static void test_multiple_versions(void)
 	size_t size = 0;
 	int ret, count;
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 
 	/* Write version 1 */
@@ -103,7 +123,7 @@ static void test_file_exists(void)
 	sqlite3 *db = NULL;
 	int ret;
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 
 	/* Check non-existent file */
@@ -134,7 +154,7 @@ static void test_multiple_files(void)
 	int ret, i;
 	const int num_files = 100;
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 
 	/* Write multiple files */
@@ -179,7 +199,7 @@ static void test_empty_file(void)
 	size_t size = 0;
 	int ret;
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 
 	/* Write empty file */
@@ -207,7 +227,7 @@ static void test_large_file(void)
 	int ret, i;
 	const size_t large_size = 1024 * 1024; /* 1 MB */
 
-	ret = overlay_fs_init(":memory:", &db);
+	ret = open_test_db(&db);
 	assert(ret == 0);
 
 	/* Create large data */
