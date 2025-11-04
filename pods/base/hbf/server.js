@@ -258,23 +258,7 @@ app.handle = function (req, res) {
         return;
     }
 
-    // Dev API: List all files
-    if (path === "/__dev/api/files" && method === "GET") {
-        if (!req.dev) {
-            res.status(403);
-            res.set("Content-Type", "text/plain");
-            res.send("Dev mode not enabled");
-            return;
-        }
-
-        const files = db.query(
-            "SELECT path AS name, mtime, size AS sz FROM latest_files_metadata ORDER BY path"
-        );
-
-        res.set("Content-Type", "application/json");
-        res.send(JSON.stringify(files));
-        return;
-    }
+    // Note: GET /__dev/api/files is handled by native C handler for performance
 
     // Default: 404
     res.status(404);

@@ -185,6 +185,19 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 - Coding standards: `DOCS/coding-standards.md`
 - Developer guide: `CLAUDE.md`
 
+## Dev endpoints ownership
+
+To remove ambiguity and large copies, dev API endpoints are owned as follows:
+
+- Native C (fast path):
+  - GET `/__dev/api/files` — implemented in `hbf/http/server.c` (see `dev_files_list_handler`).
+    - Builds JSON in SQLite (JSON1) and streams directly, avoiding QuickJS and BLOB reads.
+    - Only enabled in `--dev` mode.
+- JavaScript (pod):
+  - `/__dev/` (Dev UI page) and single‑file APIs `/__dev/api/file` (GET/PUT/DELETE) remain in `server.js`.
+
+The native handler for `/__dev/api/files` is registered before the catch‑all JS request handler, so JS must not implement this route. Both base and test pods have had their JS versions removed.
+
 ## Next Steps, future dev
 
 - there is mg_set_request_handler(server->ctx, "/__dev/api/files", dev_files_list_handler, server);
