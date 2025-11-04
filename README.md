@@ -195,9 +195,7 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
   their own methods for reading and writing new content to the latest_fs tables.
   i would like an api which is in db which is reused in all of those cases
 
-- split db and fs module so that http and qjs use fs module and the db pointer
-  is protected and handles locking (related to memory corruption bug under heavy
-  write contention)
+  
 
 - dev (hbf_dev) includes monaco for jsfiddle / shadertoy like glsl fiddle examples
 
@@ -215,91 +213,4 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 - try to add ffmpeg to statically compiled musl bin, but this might be tough
   given the number of deps ffmpeg has
 
-## memory corruption
-
- Root Cause: Heap Corruption from Malloc Contention Under High Concurrency
-
-  The Crash
-
-  Location: Thread 1 (LWP 26911) crashed in QuickJS's JS_SetPropertyInternal2() at hbf/http/handler.c:85 while creating a response object.
-
-  Memory corruption: The crash occurred when trying to dereference a corrupted pointer value 0x8a42d22900012400 (clearly invalid - not a real memory address).
-
-  Why It Happened
-
-  1. Multi-threaded Architecture
-  - CivetWeb configured with 4 worker threads (hbf/http/server.c:173)
-  - Each thread handles requests concurrently
-  - All threads share the same SQLite database handle (server->db)
-
-  2. Benchmark Load (from .claude/skills/benchmark/benchmark.sh)
-  - Default: 10,000 requests at 10 concurrent connections
-  - Server running with --inmem --dev --log-level error flags
-  - Testing QuickJS runtime routes (/hello, /user/42, /echo) and filesystem writes
-
-  3. The Fatal Pattern
-  Looking at the thread states in the core dump:
-  - Thread 1: Crashed in JS_SetPropertyInternal2() during response creation
-  - Thread 2: Running JavaScript JSON stringification
-  - Threads 3 & 4: Both stuck in __lock() inside __libc_malloc_impl() ← Key evidence!
-
-  This shows severe malloc contention. Each request:
-  1. Creates a fresh QuickJS runtime + context (allocates ~MB of memory)
-  2. Loads and executes hbf/server.js
-  3. Processes the request (more allocations)
-  4. Destroys the context (frees all memory)
-
-  With 4 threads doing this simultaneously under benchmark load, musl's global malloc lock becomes a bottleneck.
-
-  4. Heap Corruption
-  The musl allocator uses a single lock for all malloc/free operations. Under extreme contention:
-  - Race conditions can corrupt heap metadata
-  - When Thread 1 tried to access a QuickJS object, it read corrupted heap data
-  - The pointer at offset 0x20 contained garbage: 0x8a42d22900012400
-  - Attempting to dereference 0x30(%rax) → SIGSEGV
-
-  Evidence Chain
-
-  Assembly at crash point:
-  0x42c820: mov    0x20(%rax),%rax      ; Load pointer from structure
-  0x42c824: test   %rax,%rax            ; Check if null
-  0x42c827: je     0x42c6d8             ; Jump if null
-  0x42c82d: mov    0x30(%rax),%r10      ; CRASH - dereference bad pointer
-
-  The corrupted value 0x8a42d22900012400 passed the null check but was invalid memory, causing the segfault.
-
-  Contributing Factors
-
-  1. Per-request context creation (hbf/http/handler.c:41): While correct for isolation, it creates massive memory churn under load
-  2. No SQLite connection pooling: Single shared connection being accessed by 4 threads
-  3. Musl's single-lock allocator: Not optimized for high-concurrency workloads
-  4. In-memory database (--inmem): Increases memory pressure
-
-FIX: Handler mutex + overlay_fs WITHOUT mutex (hybrid)
-
-  QuickJS handler: handler_mutex_lock → overlay_fs_read_file → SQLite (internal locking)
-  Static handler:  (no lock) → overlay_fs_read_file → SQLite (internal locking)
-  Pros:
-  - Clean abstraction (SQLite hidden behind overlay_fs)
-  - Static files stay parallel (no overlay_fs mutex)
-  - QuickJS malloc contention eliminated (handler mutex)
-  - SQLite thread safety via SQLITE_THREADSAFE=1 + WAL mode
-
-  Cons: Relies on SQLite's internal locking (but that's what it's designed for!)
-
-  My Recommendation: Option 4 (Hybrid)
-
-  Why:
-  1. The crash was from QuickJS malloc contention, not SQLite access issues
-  2. SQLite with SQLITE_THREADSAFE=1 + WAL mode handles concurrent reads perfectly
-  3. Adding overlay_fs mutex would kill static file performance (currently parallel)
-  4. The architectural cleanup (hiding sqlite3*) is still valuable
-
-  Implementation:
-  1. Move filesystem operations from hbf/db/db.c to hbf/db/overlay_fs.c:
-    - overlay_fs_read_file(path, dev, data, size)
-    - overlay_fs_write_file(path, data, size)
-  2. Make overlay_fs own the sqlite3* handle internally (static)
-  3. Add handler mutex to hbf_qjs_request_handler()
-  4. No mutex in overlay_fs - rely on SQLite's built-in locking
 

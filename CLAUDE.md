@@ -209,6 +209,18 @@ $ bazel test //...
 ✅ 8 test targets, all passing
 ```
 
+## Threading and concurrency model
+
+- HTTP server: CivetWeb runs with 4 worker threads (see `hbf/http/server.c`, option `num_threads=4`).
+- QuickJS requests: Serialized with a global `handler_mutex` in `hbf/http/handler.c` that protects the entire lifecycle of per-request QuickJS runtime/context creation, execution, and destruction. This eliminates malloc contention and the prior crash under load. Only one JavaScript request executes at a time.
+- Static files: Served in parallel (no mutex) via `overlay_fs_read_file()` in `hbf/http/server.c`.
+- Database handle: A single SQLite handle is shared across threads. It is registered globally for filesystem ops via `overlay_fs_init_global(db)` (in `hbf/db/db.c`), and is also passed to each QuickJS context (`ctx->db`) for JS `db.query()/db.execute()`.
+- SQLite safety: Built with `SQLITE_THREADSAFE=1` and `PRAGMA journal_mode=WAL`, so concurrent access is safe and internally serialized by SQLite; readers and writers generally do not block each other in WAL mode.
+- Dev mode: `server->dev` toggles overlay behavior and cache headers; does not affect locking semantics.
+
+Implications:
+- Static routes remain parallel; dynamic (QuickJS) routes are serialized. If higher dynamic throughput is needed later, narrow the mutex scope to just context create/destroy.
+
 ## Current Implementation
 
 **Core Components**:
