@@ -187,6 +187,10 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 
 ## Next Steps, future dev
 
+- /__dev/api/files still slow but we implemented Create a new view without the data column (e.g., latest_files_metadata) and didn't test it yet. benchmark worst case with 750+ms to return the whole database in every query essentially.
+
+- need js_db_test.md
+
 - each pod's server.js and i guess http module for static file access all have
   their own methods for reading and writing new content to the latest_fs tables.
   i would like an api which is in db which is reused in all of those cases
