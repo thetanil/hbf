@@ -300,3 +300,4 @@ bazel-bin/bin/hbf_test
 - Use a `workspace_status_command` (e.g., `tools/status.sh`) with `stamp = True` to embed version/commit metadata.
 - For bit-for-bit artifacts, set `SOURCE_DATE_EPOCH` and add `-ffile-prefix-map`/`-fdebug-prefix-map` flags.
 - Validate determinism by building twice with a fixed `SOURCE_DATE_EPOCH` and comparing `sha256sum` of `bazel-bin/bin/hbf`.
+- use pods/test/hbf/server.js test pod for tests
