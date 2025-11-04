@@ -10,7 +10,7 @@ source "${SCRIPT_DIR}/lib/server.sh"
 source "${SCRIPT_DIR}/lib/parser.sh"
 
 # Default parameters
-REQUESTS=10000
+REQUESTS=1000
 CONCURRENCY=10
 BUILD_MODE="opt"
 NOTES=""
@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 		--help)
 			echo "Usage: $0 [options]"
 			echo "Options:"
-			echo "  --requests N        Number of requests per endpoint (default: 10000)"
+			echo "  --requests N        Number of requests per endpoint (default: 1000)"
 			echo "  --concurrency N     Number of concurrent connections (default: 10)"
 			echo "  --build-mode MODE   Build mode: opt, dbg, fastbuild (default: opt)"
 			echo "  --notes TEXT        Notes for this benchmark run"

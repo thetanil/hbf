@@ -58,6 +58,7 @@ int overlay_fs_init(const char *db_path, sqlite3 **db)
 		"    path            TEXT NOT NULL,\n"
 		"    version_number  INTEGER NOT NULL,\n"
 		"    mtime           INTEGER NOT NULL,\n"
+		"    size            INTEGER NOT NULL,\n"
 		"    data            BLOB NOT NULL,\n"
 		"    PRIMARY KEY (file_id, version_number)\n"
 		") WITHOUT ROWID;\n"
@@ -338,8 +339,8 @@ int overlay_fs_write(sqlite3 *db, const char *path,
 
 	/* Insert new version */
 	const char *insert_sql =
-		"INSERT INTO file_versions (file_id, path, version_number, mtime, data) "
-		"VALUES (?, ?, ?, ?, ?)";
+		"INSERT INTO file_versions (file_id, path, version_number, mtime, size, data) "
+		"VALUES (?, ?, ?, ?, ?, ?)";
 
 	rc = sqlite3_prepare_v2(db, insert_sql, -1, &stmt, NULL);
 	if (rc != SQLITE_OK) {
@@ -353,7 +354,8 @@ int overlay_fs_write(sqlite3 *db, const char *path,
 	sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
 	sqlite3_bind_int(stmt, 3, next_version);
 	sqlite3_bind_int64(stmt, 4, (sqlite3_int64)now);
-	sqlite3_bind_blob(stmt, 5, data, (int)size, SQLITE_STATIC);
+	sqlite3_bind_int64(stmt, 5, (sqlite3_int64)size);
+	sqlite3_bind_blob(stmt, 6, data, (int)size, SQLITE_STATIC);
 
 	rc = sqlite3_step(stmt);
 	sqlite3_finalize(stmt);

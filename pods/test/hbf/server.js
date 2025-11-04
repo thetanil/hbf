@@ -266,7 +266,7 @@ app.handle = function (req, res) {
         }
 
         const files = db.query(
-            "SELECT path AS name, mtime, LENGTH(data) AS sz FROM latest_files ORDER BY path"
+            "SELECT path AS name, mtime, size AS sz FROM latest_files_metadata ORDER BY path"
         );
 
         res.set("Content-Type", "application/json");

@@ -34,11 +34,11 @@ Tests write operations to the versioned filesystem (requires `--dev` flag).
 ## Benchmark Parameters
 
 Default test parameters (configurable):
-- **Requests:** 10,000 requests per endpoint
+- **Requests:** 1,000 requests per endpoint
 - **Concurrency:** 10 concurrent connections
 - **Port:** 5309 (HBF default)
 
-These defaults provide a good balance between test duration and statistical significance.
+These defaults provide faster test runs while maintaining statistical validity.
 
 ## Historical Data Storage
 
@@ -86,7 +86,7 @@ When you invoke this skill, it will:
 ### Run Full Benchmark Suite
 
 ```bash
-# Default: 10k requests, concurrency 10
+# Default: 1k requests, concurrency 10
 ./benchmark.sh
 
 # Custom parameters

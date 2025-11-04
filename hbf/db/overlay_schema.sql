@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS file_versions (
     path            TEXT NOT NULL,       -- Full file path
     version_number  INTEGER NOT NULL,    -- Version counter for this file_id
     mtime           INTEGER NOT NULL,    -- Unix timestamp
+    size            INTEGER NOT NULL,    -- File size in bytes (pre-computed for performance)
     data            BLOB NOT NULL,       -- Uncompressed content
     PRIMARY KEY (file_id, version_number)
 ) WITHOUT ROWID;
@@ -37,7 +38,26 @@ SELECT
     fv.path,
     fv.version_number,
     fv.mtime,
+    fv.size,
     fv.data
+FROM file_versions fv
+INNER JOIN latest_versions lv
+    ON fv.file_id = lv.file_id
+    AND fv.version_number = lv.max_version;
+
+-- View to get latest file metadata WITHOUT data blobs (fast for listings)
+CREATE VIEW IF NOT EXISTS latest_files_metadata AS
+WITH latest_versions AS (
+    SELECT file_id, MAX(version_number) as max_version
+    FROM file_versions
+    GROUP BY file_id
+)
+SELECT
+    fv.file_id,
+    fv.path,
+    fv.version_number,
+    fv.mtime,
+    fv.size
 FROM file_versions fv
 INNER JOIN latest_versions lv
     ON fv.file_id = lv.file_id

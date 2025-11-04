@@ -163,15 +163,16 @@ static void test_file_versions_basic(void)
 
 	/* Insert a version */
 	const char *insert_version_sql =
-		"INSERT INTO file_versions (file_id, path, version_number, mtime, data) "
-		"VALUES (?, ?, 1, 1234567890, ?)";
+		"INSERT INTO file_versions (file_id, path, version_number, mtime, size, data) "
+		"VALUES (?, ?, 1, 1234567890, ?, ?)";
 
 	rc = sqlite3_prepare_v2(db, insert_version_sql, -1, &stmt, NULL);
 	assert(rc == SQLITE_OK);
 
 	sqlite3_bind_int(stmt, 1, file_id);
 	sqlite3_bind_text(stmt, 2, test_path, -1, SQLITE_STATIC);
-	sqlite3_bind_blob(stmt, 3, test_content, (int)strlen(test_content), SQLITE_STATIC);
+	sqlite3_bind_int64(stmt, 3, (sqlite3_int64)strlen(test_content));
+	sqlite3_bind_blob(stmt, 4, test_content, (int)strlen(test_content), SQLITE_STATIC);
 
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);

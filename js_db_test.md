@@ -106,6 +106,49 @@ PRAGMA journal_mode=WAL  // Write-Ahead Logging for reader/writer concurrency
 
 **Current Status**: Adequate for typical workloads. Revisit if benchmarks show database access as bottleneck.
 
+### Benchmark Results: Handler Mutex Fix Validation
+
+**Date**: 2025-11-04
+**Git Commit**: 45b36bf
+**Test**: 10,000 requests per endpoint, concurrency=10
+
+**Primary Goal: Prevent Memory Corruption ✅ ACHIEVED**
+- **NO CRASHES** - Server remained stable throughout benchmark
+- **Zero failed requests** across 30,000+ total requests
+- The handler mutex successfully prevents malloc contention in QuickJS
+
+**Performance Impact: Severe Serialization ⚠️**
+
+| Category | Endpoint | Req/sec | Avg Time | Status |
+|----------|----------|---------|----------|--------|
+| **Static** | /static/favicon.ico | 18,109 | 0.6ms | ✅ |
+| **Static** | /static/style.css | 1,764 | 5.7ms | ✅ |
+| **QuickJS** | /hello | 209 | 47.8ms | ⚠️ |
+| **QuickJS** | /user/42 | 222 | 45.1ms | ⚠️ |
+| **QuickJS** | /echo | 224 | 44.6ms | ⚠️ |
+
+**Performance Analysis**:
+- **Expected**: 30,000-50,000 req/sec for QuickJS routes (from README.md)
+- **Actual**: 209-224 req/sec (**~100-150x slower**)
+- **Root cause**: Handler mutex locks entire request lifecycle, serializing JavaScript execution
+- **Static files**: Less affected (1.7k-18k req/sec) but still slower than baseline
+
+**Trade-off Confirmation**:
+The "Keep current (serialized execution)" choice means:
+- ✅ **Stability**: No crashes, safe for production
+- ❌ **Performance**: Only 1 JavaScript request executes at a time
+- ✅ **Simplicity**: No complex concurrency management
+- ⚠️ **Scalability**: Limited to ~200 req/sec for dynamic routes
+
+**Next Steps**:
+1. ✅ Crash fix validated - ready for production use
+2. Document performance characteristics in README.md
+3. Consider narrow mutex scope if higher throughput needed
+4. Benchmark connection pooling if database becomes bottleneck
+
+**Recommendation**:
+The fix achieves its primary goal (stability). For low-to-moderate traffic workloads (<200 dynamic req/sec), this is acceptable. For higher throughput requirements, implement narrower mutex scope that only protects context creation/destruction.
+
 ## Implementation Plan
 
 ### File Changes
