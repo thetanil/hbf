@@ -208,6 +208,9 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 
 - what if repo template for own pod which can deploy to your hosted site
 
+- try to add ffmpeg to statically compiled musl bin, but this might be tough
+  given the number of deps ffmpeg has
+
 ## memory corruption
 
  Root Cause: Heap Corruption from Malloc Contention Under High Concurrency
