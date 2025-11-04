@@ -190,9 +190,14 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 
 ## Next Steps, future dev
 
-- benchmark is using base pod, not test pod
+read https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules
 
-- need js_db_test.md
+we need support for javascript modules. this needs to work well from the new pod creation through to import into the browser
+a use should be able to name an npm module, have this vendored into the source control, built into the pod from the sqlar stage
+these modules should be served from the static http server in a way that they can be used
+- from the server js like import { name, draw, reportArea, reportPerimeter } from "./modules/square.js";
+- from the browser like import {EditorView, keymap} from "@codemirror/view"
+
 
 - need to 'include' or whatever for qjs to overlay_fs
 
@@ -206,6 +211,8 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
   for blog and js edit. 
 
 - new pod bootstrap(hbf-bootstrap)
+
+- need js_db_test.md
 
 - v1 requires base to have local edit and sync with hosting working
 
