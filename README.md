@@ -271,18 +271,31 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
   3. Musl's single-lock allocator: Not optimized for high-concurrency workloads
   4. In-memory database (--inmem): Increases memory pressure
 
-  Recommendations
+FIX: Handler mutex + overlay_fs WITHOUT mutex (hybrid)
 
-  Immediate fixes:
-  1. Add per-thread context pooling - Reuse QuickJS contexts instead of create/destroy per request
-  2. Enable SQLite FULLMUTEX mode - Explicitly configure thread-safe mode:
-  sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
-  3. Reduce CivetWeb threads - Test with 2 threads instead of 4 to reduce contention
-  4. Consider alternative allocators - jemalloc or tcmalloc have better concurrency characteristics than musl
+  QuickJS handler: handler_mutex_lock → overlay_fs_read_file → SQLite (internal locking)
+  Static handler:  (no lock) → overlay_fs_read_file → SQLite (internal locking)
+  Pros:
+  - Clean abstraction (SQLite hidden behind overlay_fs)
+  - Static files stay parallel (no overlay_fs mutex)
+  - QuickJS malloc contention eliminated (handler mutex)
+  - SQLite thread safety via SQLITE_THREADSAFE=1 + WAL mode
 
-  Longer-term:
-  1. Connection pooling - One SQLite connection per worker thread
-  2. Shared QuickJS runtime with per-thread contexts (requires locking)
-  3. Performance profiling - Benchmark with different thread counts and allocators
+  Cons: Relies on SQLite's internal locking (but that's what it's designed for!)
 
-  The crash is not a QuickJS bug but rather heap corruption from malloc contention under the specific combination of per-request context creation + 4 worker threads + high benchmark load.
+  My Recommendation: Option 4 (Hybrid)
+
+  Why:
+  1. The crash was from QuickJS malloc contention, not SQLite access issues
+  2. SQLite with SQLITE_THREADSAFE=1 + WAL mode handles concurrent reads perfectly
+  3. Adding overlay_fs mutex would kill static file performance (currently parallel)
+  4. The architectural cleanup (hiding sqlite3*) is still valuable
+
+  Implementation:
+  1. Move filesystem operations from hbf/db/db.c to hbf/db/overlay_fs.c:
+    - overlay_fs_read_file(path, dev, data, size)
+    - overlay_fs_write_file(path, data, size)
+  2. Make overlay_fs own the sqlite3* handle internally (static)
+  3. Add handler mutex to hbf_qjs_request_handler()
+  4. No mutex in overlay_fs - rely on SQLite's built-in locking
+
