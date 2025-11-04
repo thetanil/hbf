@@ -313,3 +313,37 @@ bazel-bin/bin/hbf_test
 - For bit-for-bit artifacts, set `SOURCE_DATE_EPOCH` and add `-ffile-prefix-map`/`-fdebug-prefix-map` flags.
 - Validate determinism by building twice with a fixed `SOURCE_DATE_EPOCH` and comparing `sha256sum` of `bazel-bin/bin/hbf`.
 - use pods/test/hbf/server.js test pod for tests
+
+## Dev endpoints ownership
+
+To remove ambiguity and large copies, dev API endpoints are owned as follows:
+
+- Native C (fast path):
+  - GET `/__dev/api/files` — implemented in `hbf/http/server.c` (see `dev_files_list_handler`).
+    - Builds JSON in SQLite (JSON1) and streams directly, avoiding QuickJS and BLOB reads.
+    - Only enabled in `--dev` mode.
+- JavaScript (pod):
+  - `/__dev/` (Dev UI page) and single‑file APIs `/__dev/api/file` (GET/PUT/DELETE) remain in `server.js`.
+
+The native handler for `/__dev/api/files` is registered before the catch‑all JS request handler, so JS must not implement this route. Both base and test pods have had their JS versions removed.
+
+## Schema sourcing (authoritative)
+
+The authoritative database schema for the versioned filesystem lives in `hbf/db/overlay_schema.sql` and is applied at pod build time (see the `pod_db` rules in each pod's `BUILD.bazel`). Every embedded pod database ships with the correct tables, indexes, views, the materialized `latest_files_meta`, and triggers.
+
+At runtime, we do not create or migrate the schema in code. `overlay_fs.c` requires the schema to already exist and fails fast if it is missing. This avoids divergence and ensures a single source of truth.
+
+### Using the schema in C tests
+
+To apply the same authoritative schema in unit tests without duplicating SQL in C files, a Bazel genrule converts `overlay_schema.sql` into a small C translation unit that exposes the schema as a `const char*`:
+
+- Target: `//hbf/db:overlay_schema_c`
+- Output: `overlay_schema_gen.c` (auto-generated from `overlay_schema.sql` via `//tools:sql_to_c`)
+- Usage in a test target:
+  - Add `:overlay_schema_gen.c` to the test's `srcs`
+  - Declare and use the generated symbols in your test:
+    - `extern const char * const hbf_schema_sql_ptr;`
+    - `extern const unsigned long hbf_schema_sql_len;`
+    - `sqlite3_exec(db, hbf_schema_sql_ptr, NULL, NULL, &errmsg);`
+
+This keeps `overlay_schema.sql` as the single source for both pods and tests.
