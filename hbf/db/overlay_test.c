@@ -53,23 +53,23 @@ static void test_overlay_tables_exist(void)
 	printf("PASS: Versioned file system tables exist\n\n");
 }
 
-/* Test 2: Base sqlar table still exists and is readable */
-static void test_sqlar_base_readable(void)
+/* Test 2: SQLAR migrated to versioned filesystem */
+static void test_sqlar_migrated(void)
 {
 	sqlite3 *db = NULL;
 	int ret;
 
-	printf("TEST: Base sqlar table exists and is readable\n");
+	printf("TEST: SQLAR migrated to versioned filesystem\n");
 
 	ret = hbf_db_init(1, &db);
 	assert(ret == 0);
 	assert(db != NULL);
 
-	/* Check sqlar table exists (base pod data) */
-	assert(table_exists(db, "sqlar") == 1);
-	printf("  ✓ sqlar table exists\n");
+	/* Check sqlar table no longer exists after migration */
+	assert(table_exists(db, "sqlar") == 0);
+	printf("  ✓ sqlar table dropped after migration\n");
 
-	/* Try reading a file from embedded pod */
+	/* Verify we can still read files through versioned filesystem */
 	unsigned char *data = NULL;
 	size_t size = 0;
 
@@ -78,11 +78,11 @@ static void test_sqlar_base_readable(void)
 	assert(data != NULL);
 	assert(size > 0);
 
-	printf("  ✓ Read hbf/server.js from sqlar (%zu bytes)\n", size);
+	printf("  ✓ Read hbf/server.js from versioned filesystem (%zu bytes)\n", size);
 
 	free(data);
 	hbf_db_close(db);
-	printf("PASS: Base sqlar works\n\n");
+	printf("PASS: SQLAR migration successful\n\n");
 }
 
 /* Test 3: latest_files view exists */
@@ -213,7 +213,7 @@ int main(void)
 	printf("=== Versioned File System Integration Tests ===\n\n");
 
 	test_overlay_tables_exist();
-	test_sqlar_base_readable();
+	test_sqlar_migrated();
 	test_latest_files_view();
 	test_file_versions_basic();
 

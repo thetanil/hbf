@@ -82,7 +82,7 @@ app.handle = function (req, res) {
 
         // Serve dev editor UI
         const result = db.query(
-            "SELECT sqlar_uncompress(data, sz) AS content FROM latest_fs WHERE name = ?",
+            "SELECT data AS content FROM latest_files WHERE path = ?",
             ["static/dev/index.html"]
         );
 
@@ -116,9 +116,9 @@ app.handle = function (req, res) {
             return;
         }
 
-        // Query latest_fs view (overlay-aware)
+        // Query latest_files view (versioned filesystem)
         const result = db.query(
-            "SELECT sqlar_uncompress(data, sz) AS content FROM latest_fs WHERE name = ?",
+            "SELECT data AS content FROM latest_files WHERE path = ?",
             [fileName]
         );
 
@@ -164,13 +164,40 @@ app.handle = function (req, res) {
         }
 
         const content = req.body;
-        const sz = content.length;
         const mtime = Math.floor(Date.now() / 1000);
 
-        // Insert into fs_layer (trigger auto-updates overlay_sqlar)
+        // Write to versioned filesystem
+        // 1. Get or create file_id
         db.execute(
-            "INSERT INTO fs_layer (layer_id, name, op, mtime, sz, data) VALUES (1, ?, 'modify', ?, ?, ?)",
-            [fileName, mtime, sz, content]
+            "INSERT OR IGNORE INTO file_ids (path) VALUES (?)",
+            [fileName]
+        );
+
+        const fileIdResult = db.query(
+            "SELECT file_id FROM file_ids WHERE path = ?",
+            [fileName]
+        );
+
+        if (fileIdResult.length === 0) {
+            res.status(500);
+            res.send("Failed to get file_id");
+            return;
+        }
+
+        const fileId = fileIdResult[0].file_id;
+
+        // 2. Get next version number
+        const versionResult = db.query(
+            "SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM file_versions WHERE file_id = ?",
+            [fileId]
+        );
+
+        const nextVersion = versionResult[0].next_version;
+
+        // 3. Insert new version
+        db.execute(
+            "INSERT INTO file_versions (file_id, path, version_number, mtime, data) VALUES (?, ?, ?, ?, ?)",
+            [fileId, fileName, nextVersion, mtime, content]
         );
 
         res.status(200);
@@ -196,11 +223,31 @@ app.handle = function (req, res) {
             return;
         }
 
-        const mtime = Math.floor(Date.now() / 1000);
+        // Delete from versioned filesystem
+        // 1. Get file_id
+        const fileIdResult = db.query(
+            "SELECT file_id FROM file_ids WHERE path = ?",
+            [fileName]
+        );
 
+        if (fileIdResult.length === 0) {
+            res.status(404);
+            res.send("File not found");
+            return;
+        }
+
+        const fileId = fileIdResult[0].file_id;
+
+        // 2. Delete all versions
         db.execute(
-            "INSERT INTO fs_layer (layer_id, name, op, mtime, sz, data) VALUES (1, ?, 'delete', ?, 0, NULL)",
-            [fileName, mtime]
+            "DELETE FROM file_versions WHERE file_id = ?",
+            [fileId]
+        );
+
+        // 3. Delete file_id entry
+        db.execute(
+            "DELETE FROM file_ids WHERE file_id = ?",
+            [fileId]
         );
 
         res.status(200);
@@ -219,7 +266,7 @@ app.handle = function (req, res) {
         }
 
         const files = db.query(
-            "SELECT name, mtime, sz FROM latest_fs ORDER BY name"
+            "SELECT path AS name, mtime, LENGTH(data) AS sz FROM latest_files ORDER BY path"
         );
 
         res.set("Content-Type", "application/json");

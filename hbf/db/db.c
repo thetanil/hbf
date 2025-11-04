@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "db.h"
+#include "overlay_fs.h"
 #include "hbf/shell/log.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -177,6 +178,15 @@ int hbf_db_init(int inmem, sqlite3 **db)
 	/* Overlay schema already applied at build time in fs.db */
 	hbf_log_debug("Overlay filesystem schema present (applied at build time)");
 
+	/* Migrate SQLAR data to versioned filesystem if sqlar table exists */
+	rc = overlay_fs_migrate_sqlar(*db);
+	if (rc != 0) {
+		hbf_log_error("Failed to migrate SQLAR data to versioned filesystem");
+		sqlite3_close(*db);
+		*db = NULL;
+		return -1;
+	}
+
 	/* Initialize filesystem database (embedded SQLAR) - kept private for template hydration */
 	rc = sqlite3_open(HBF_DB_INMEM, &g_fs_db);
 	if (rc != SQLITE_OK) {
@@ -272,8 +282,8 @@ int hbf_db_read_file_from_main(sqlite3 *db, const char *path,
 	*data = NULL;
 	*size = 0;
 
-	/* Use sqlar_uncompress to get uncompressed data from main DB */
-	sql = "SELECT sqlar_uncompress(data, sz) FROM sqlar WHERE name = ?";
+	/* Read from latest_files view (sqlar data was migrated to versioned filesystem) */
+	sql = "SELECT data FROM latest_files WHERE path = ?";
 
 	rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
 	if (rc != SQLITE_OK) {
@@ -294,11 +304,11 @@ int hbf_db_read_file_from_main(sqlite3 *db, const char *path,
 	if (rc != SQLITE_ROW) {
 		/* File not found */
 		sqlite3_finalize(stmt);
-		hbf_log_debug("File not found in main DB archive: %s", path);
+		hbf_log_debug("File not found in latest_files: %s", path);
 		return -1;
 	}
 
-	/* Get uncompressed data */
+	/* Get data (already uncompressed in versioned filesystem) */
 	blob_data = sqlite3_column_blob(stmt, 0);
 	blob_size = sqlite3_column_bytes(stmt, 0);
 
@@ -317,7 +327,7 @@ int hbf_db_read_file_from_main(sqlite3 *db, const char *path,
 		return -1;
 	}
 
-	hbf_log_debug("Read file '%s' from main DB (%zu bytes)", path, *size);
+	hbf_log_debug("Read file '%s' from latest_files (%zu bytes)", path, *size);
 	return 0;
 }
 
@@ -338,14 +348,10 @@ int hbf_db_read_file(sqlite3 *db, const char *path, int use_overlay,
 	*data = NULL;
 	*size = 0;
 
-	/* Choose table based on dev mode */
-	if (use_overlay) {
-		/* Query latest_fs view (overlay + base) */
-		sql = "SELECT sqlar_uncompress(data, sz) FROM latest_fs WHERE name = ?";
-	} else {
-		/* Query base sqlar only (production mode) */
-		sql = "SELECT sqlar_uncompress(data, sz) FROM sqlar WHERE name = ?";
-	}
+	/* Always read from latest_files view (which contains migrated SQLAR data + overlays) */
+	/* SQLAR table is dropped after migration, so all data is now in versioned filesystem */
+	(void)use_overlay; /* Suppress unused parameter warning */
+	sql = "SELECT data FROM latest_files WHERE path = ?";
 
 	rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
 	if (rc != SQLITE_OK) {
@@ -364,8 +370,7 @@ int hbf_db_read_file(sqlite3 *db, const char *path, int use_overlay,
 	if (rc != SQLITE_ROW) {
 		/* File not found */
 		sqlite3_finalize(stmt);
-		hbf_log_debug("File not found in %s: %s",
-		              use_overlay ? "overlay" : "base", path);
+		hbf_log_debug("File not found in latest_files: %s", path);
 		return -1;
 	}
 
@@ -387,8 +392,7 @@ int hbf_db_read_file(sqlite3 *db, const char *path, int use_overlay,
 		return -1;
 	}
 
-	hbf_log_debug("Read file '%s' from %s (%zu bytes)",
-	              path, use_overlay ? "overlay" : "base", *size);
+	hbf_log_debug("Read file '%s' from latest_files (%zu bytes)", path, *size);
 	return 0;
 }
 
@@ -404,7 +408,8 @@ int hbf_db_file_exists_in_main(sqlite3 *db, const char *path)
 		return -1;
 	}
 
-	sql = "SELECT 1 FROM sqlar WHERE name = ?";
+	/* Use latest_files view instead of sqlar table (migrated data) */
+	sql = "SELECT 1 FROM latest_files WHERE path = ?";
 
 	rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
 	if (rc != SQLITE_OK) {

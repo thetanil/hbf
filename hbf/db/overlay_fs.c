@@ -114,8 +114,9 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 		return -1;
 
 	/* Read from sqlar and insert into file_versions */
+	/* Use sqlar_uncompress to decompress data before migration */
 	const char *select_sql =
-		"SELECT name, mtime, data, sz FROM sqlar";
+		"SELECT name, sqlar_uncompress(data, sz) FROM sqlar";
 
 	rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
 	if (rc != SQLITE_OK) {
@@ -128,20 +129,28 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 
 	while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
 		const char *name = (const char *)sqlite3_column_text(stmt, 0);
-		/* mtime from sqlar is ignored; overlay_fs_write sets current time */
-		const void *data = sqlite3_column_blob(stmt, 2);
-		int sz = sqlite3_column_int(stmt, 3);
+		const void *data = sqlite3_column_blob(stmt, 1);
+		int data_size = sqlite3_column_bytes(stmt, 1);
 
-		if (!name || !data || sz < 0) {
-			hbf_log_error("Invalid sqlar entry");
+		if (!name) {
+			hbf_log_debug("Skipping entry with NULL name");
 			continue;
 		}
 
-		/* Decompress if needed (sz < 0 means compressed in SQLAR) */
-		/* For now, assume uncompressed data */
+		/* Handle empty files or directories (data can be NULL for size 0) */
+		if (data_size == 0 || !data) {
+			/* Skip directories and empty entries */
+			hbf_log_debug("Skipping empty entry: %s", name);
+			continue;
+		}
 
-		/* Write to file_versions using overlay_fs_write */
-		if (overlay_fs_write(db, name, data, (size_t)sz) < 0) {
+		if (data_size < 0) {
+			hbf_log_error("Invalid data size for: %s", name);
+			continue;
+		}
+
+		/* Write decompressed data to file_versions using overlay_fs_write */
+		if (overlay_fs_write(db, name, data, (size_t)data_size) < 0) {
 			hbf_log_error("Failed to migrate file: %s", name);
 			sqlite3_finalize(stmt);
 			exec_sql_file(db, "ROLLBACK;");

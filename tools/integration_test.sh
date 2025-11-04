@@ -138,7 +138,7 @@ main() {
     echo ""
 
     echo -e "${YELLOW}Starting server on port $PORT...${NC}"
-    ./bazel-bin/hbf --port "$PORT" --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
+    ./bazel-bin/bin/hbf --port "$PORT" --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
     SERVER_PID=$!
     echo -e "${GREEN}Server started (PID: $SERVER_PID)${NC}"
     echo ""
@@ -230,7 +230,7 @@ main() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
     rm -f ./hbf.db ./hbf.db-shm ./hbf.db-wal
-    ./bazel-bin/hbf --port "$PORT" --dev --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
+    ./bazel-bin/bin/hbf --port "$PORT" --dev --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
     SERVER_PID=$!
     if ! wait_for_server "$PORT"; then
         exit 1

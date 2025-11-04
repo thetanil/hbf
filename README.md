@@ -187,6 +187,10 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 
 ## Next Steps, future dev
 
+- each pod's server.js and i guess http module for static file access all have
+  their own methods for reading and writing new content to the latest_fs tables.
+  i would like an api which is in db which is reused in all of those cases
+
 - dev (hbf_dev) includes monaco for jsfiddle / shadertoy like glsl fiddle examples
 
 - remove monaco from base, base (hbf) is just a static site with a lite editor
