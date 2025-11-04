@@ -2,14 +2,28 @@
 #include "hbf/http/handler.h"
 #include "hbf/http/server.h"
 #include <stdlib.h>
+#include <pthread.h>
 
 #include "hbf/shell/log.h"
-#include "hbf/db/db.h"
+#include "hbf/db/overlay_fs.h"
 #include "hbf/qjs/bindings/request.h"
 #include "hbf/qjs/bindings/response.h"
 #include "hbf/qjs/engine.h"
 #include "quickjs.h"
 #include "sqlite3.h"
+
+/*
+ * Handler mutex to prevent QuickJS malloc contention
+ *
+ * The crash was caused by heap corruption from malloc contention when
+ * multiple threads simultaneously created/destroyed QuickJS contexts.
+ * This mutex serializes QuickJS context creation/destruction, eliminating
+ * the malloc contention while allowing SQLite to handle concurrency with
+ * its built-in locking (SQLITE_THREADSAFE=1 + WAL mode).
+ *
+ * Static file serving remains parallel (no mutex) since it doesn't use QuickJS.
+ */
+static pthread_mutex_t handler_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* QuickJS request handler */
 /* NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex request handling logic */
@@ -21,6 +35,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	JSValue global, app, handle_func, req, res, result;
 	hbf_response_t response;
 	int status;
+	int mutex_locked = 0;
 	/* cbdata is expected to be hbf_server_t* for access to db */
 	hbf_server_t *server = (hbf_server_t *)cbdata;
 
@@ -34,6 +49,15 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	hbf_log_debug("QuickJS handler: %s %s", ri->request_method, ri->local_uri);
 
 	/*
+	 * CRITICAL: Lock mutex BEFORE creating QuickJS context to prevent malloc contention.
+	 * The mutex serializes context creation/destruction across threads, eliminating
+	 * heap corruption from concurrent malloc/free operations in QuickJS.
+	 */
+	pthread_mutex_lock(&handler_mutex);
+	mutex_locked = 1;
+	hbf_log_debug("Handler mutex locked");
+
+	/*
 	 * CRITICAL: Create a fresh JSRuntime + JSContext for each request.
 	 * This prevents stack overflow errors and ensures complete isolation.
 	 * DO NOT reuse contexts between requests - this is a QuickJS best practice.
@@ -41,6 +65,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	qjs_ctx = hbf_qjs_ctx_create_with_db(server ? server->db : NULL);
 	if (!qjs_ctx) {
 		hbf_log_error("Failed to create QuickJS context for request");
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -49,6 +77,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	if (!ctx) {
 		hbf_log_error("Failed to get JS context");
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -56,11 +88,15 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		/* Load hbf/server.js from database (with overlay support in dev mode) */
 		unsigned char *js_data = NULL;
 		size_t js_size = 0;
-		int ret = hbf_db_read_file(server ? server->db : NULL, "hbf/server.js",
-		                           server ? server->dev : 0, &js_data, &js_size);
+		int ret = overlay_fs_read_file("hbf/server.js",
+		                               server ? server->dev : 0, &js_data, &js_size);
 		if (ret != 0 || !js_data || js_size == 0) {
 			hbf_log_error("hbf/server.js not found in database");
 			hbf_qjs_ctx_destroy(qjs_ctx);
+			if (mutex_locked) {
+				pthread_mutex_unlock(&handler_mutex);
+				hbf_log_debug("Handler mutex unlocked (early exit)");
+			}
 			mg_send_http_error(conn, 503, "Service Unavailable");
 			return 503;
 		}
@@ -69,6 +105,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		if (ret != 0) {
 			hbf_log_error("Failed to load hbf/server.js: %s", hbf_qjs_get_error(qjs_ctx));
 			hbf_qjs_ctx_destroy(qjs_ctx);
+			if (mutex_locked) {
+				pthread_mutex_unlock(&handler_mutex);
+				hbf_log_debug("Handler mutex unlocked (early exit)");
+			}
 			mg_send_http_error(conn, 500, "Internal Server Error");
 			return 500;
 		}
@@ -78,6 +118,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	if (JS_IsException(req) || JS_IsNull(req)) {
 		hbf_log_error("Failed to create request object");
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -87,6 +131,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		hbf_log_error("Failed to create response object");
 		JS_FreeValue(ctx, req);
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -100,6 +148,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, req);
 		hbf_response_free(&response);
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -117,6 +169,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, global);
 		hbf_response_free(&response);
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -129,6 +185,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, global);
 		hbf_response_free(&response);
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
@@ -145,6 +205,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, global);
 		hbf_response_free(&response);
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -159,6 +223,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		JS_FreeValue(ctx, global);
 		hbf_response_free(&response);
 		hbf_qjs_ctx_destroy(qjs_ctx);
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (early exit)");
+		}
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -234,6 +302,11 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		/* Destroy context after error */
 		hbf_qjs_ctx_destroy(qjs_ctx);
 
+		if (mutex_locked) {
+			pthread_mutex_unlock(&handler_mutex);
+			hbf_log_debug("Handler mutex unlocked (error exit)");
+		}
+
 		mg_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
@@ -253,6 +326,16 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 
 	/* Destroy the context and runtime (per-request isolation) */
 	hbf_qjs_ctx_destroy(qjs_ctx);
+
+	/*
+	 * Unlock mutex AFTER destroying QuickJS context.
+	 * This ensures malloc contention is eliminated by serializing
+	 * the entire lifecycle of QuickJS context creation and destruction.
+	 */
+	if (mutex_locked) {
+		pthread_mutex_unlock(&handler_mutex);
+		hbf_log_debug("Handler mutex unlocked (success)");
+	}
 
 	return status;
 }

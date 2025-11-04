@@ -2,7 +2,7 @@
 #include "server.h"
 #include "hbf/http/handler.h"
 #include "hbf/shell/log.h"
-#include "hbf/db/db.h"
+#include "hbf/db/overlay_fs.h"
 #include "civetweb.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,7 +88,8 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 	hbf_log_debug("Static request: %s -> %s", uri, path);
 
 	/* Read file from database (with overlay support in dev mode) */
-	ret = hbf_db_read_file(server->db, path, server->dev, &data, &size);
+	/* NO MUTEX - static file serving stays parallel */
+	ret = overlay_fs_read_file(path, server->dev, &data, &size);
 	if (ret != 0) {
 		hbf_log_debug("File not found: %s", path);
 		mg_send_http_error(conn, 404, "Not Found");

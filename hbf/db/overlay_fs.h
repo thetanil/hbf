@@ -92,4 +92,45 @@ int overlay_fs_version_count(sqlite3 *db, const char *path);
  */
 void overlay_fs_close(sqlite3 *db);
 
+/*
+ * Initialize global overlay_fs database handle
+ *
+ * Sets the internal database handle for file operations.
+ * Must be called before using overlay_fs_read_file or overlay_fs_write_file.
+ *
+ * @param db: Database handle to use for all filesystem operations
+ */
+void overlay_fs_init_global(sqlite3 *db);
+
+/*
+ * Read file with optional overlay support (dev mode)
+ *
+ * Reads from the global database handle set by overlay_fs_init_global.
+ * Uses latest_files view (overlay + base) for file access.
+ * NO MUTEX - relies on SQLite's internal locking (SQLITE_THREADSAFE=1 + WAL).
+ *
+ * @param path: File path (e.g., "static/index.html" or "hbf/server.js")
+ * @param dev: Development mode flag (currently unused, reserved for future)
+ * @param data: Output parameter for file data (caller must free)
+ * @param size: Output parameter for file size
+ * @return 0 on success, -1 on error (file not found or SQL error)
+ */
+int overlay_fs_read_file(const char *path, int dev,
+                         unsigned char **data, size_t *size);
+
+/*
+ * Write file to versioned filesystem
+ *
+ * Writes to the global database handle set by overlay_fs_init_global.
+ * Creates new version entry with incremented version_number.
+ * NO MUTEX - relies on SQLite's internal locking (SQLITE_THREADSAFE=1 + WAL).
+ *
+ * @param path: File path
+ * @param data: File data
+ * @param size: File size
+ * @return 0 on success, -1 on error
+ */
+int overlay_fs_write_file(const char *path,
+                          const unsigned char *data, size_t size);
+
 #endif /* OVERLAY_FS_H */

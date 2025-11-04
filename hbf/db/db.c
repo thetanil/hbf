@@ -248,6 +248,9 @@ int hbf_db_init(int inmem, sqlite3 **db)
 
 	hbf_log_info("Loaded embedded filesystem database (%lu bytes)", fs_db_len);
 
+	/* Initialize overlay_fs global database handle */
+	overlay_fs_init_global(*db);
+
 	return 0;
 }
 

@@ -10,6 +10,10 @@
 extern const unsigned char fs_db_data[];
 extern const unsigned long fs_db_len;
 
+/* Global database handle for filesystem operations */
+/* Set by overlay_fs_init_global(), used by overlay_fs_read_file/overlay_fs_write_file */
+static sqlite3 *g_overlay_db = NULL;
+
 static int exec_sql_file(sqlite3 *db, const char *sql)
 {
 	char *errmsg = NULL;
@@ -434,4 +438,99 @@ void overlay_fs_close(sqlite3 *db)
 	if (db) {
 		sqlite3_close(db);
 	}
+}
+
+void overlay_fs_init_global(sqlite3 *db)
+{
+	g_overlay_db = db;
+	if (db) {
+		hbf_log_info("overlay_fs: Global database handle initialized");
+	} else {
+		hbf_log_warn("overlay_fs: Global database handle set to NULL");
+	}
+}
+
+int overlay_fs_read_file(const char *path, int dev,
+                         unsigned char **data, size_t *size)
+{
+	sqlite3_stmt *stmt = NULL;
+	int rc;
+
+	if (!g_overlay_db) {
+		hbf_log_error("overlay_fs_read_file: global database not initialized");
+		return -1;
+	}
+
+	if (!path || !data || !size) {
+		hbf_log_error("overlay_fs_read_file: invalid arguments");
+		return -1;
+	}
+
+	*data = NULL;
+	*size = 0;
+
+	/* Read from latest_files view (contains migrated SQLAR data + overlays) */
+	/* dev parameter reserved for future use */
+	(void)dev; /* Suppress unused parameter warning */
+
+	const char *sql = "SELECT data FROM latest_files WHERE path = ?";
+
+	rc = sqlite3_prepare_v2(g_overlay_db, sql, -1, &stmt, NULL);
+	if (rc != SQLITE_OK) {
+		hbf_log_error("Failed to prepare file read: %s",
+		              sqlite3_errmsg(g_overlay_db));
+		return -1;
+	}
+
+	sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+
+	rc = sqlite3_step(stmt);
+	if (rc == SQLITE_ROW) {
+		const void *blob = sqlite3_column_blob(stmt, 0);
+		int blob_size = sqlite3_column_bytes(stmt, 0);
+
+		if (blob_size > 0) {
+			*data = malloc((size_t)blob_size);
+			if (!*data) {
+				hbf_log_error("Memory allocation failed");
+				sqlite3_finalize(stmt);
+				return -1;
+			}
+			memcpy(*data, blob, (size_t)blob_size);
+			*size = (size_t)blob_size;
+		} else {
+			/* Empty file - allocate minimal buffer */
+			*data = malloc(1);
+			if (!*data) {
+				hbf_log_error("Memory allocation failed");
+				sqlite3_finalize(stmt);
+				return -1;
+			}
+			*size = 0;
+		}
+		sqlite3_finalize(stmt);
+		hbf_log_debug("overlay_fs: Read file '%s' (%zu bytes)", path, *size);
+		return 0;
+	} else if (rc == SQLITE_DONE) {
+		/* File not found */
+		sqlite3_finalize(stmt);
+		hbf_log_debug("overlay_fs: File not found: %s", path);
+		return -1;
+	} else {
+		hbf_log_error("Error reading file: %s", sqlite3_errmsg(g_overlay_db));
+		sqlite3_finalize(stmt);
+		return -1;
+	}
+}
+
+int overlay_fs_write_file(const char *path,
+                          const unsigned char *data, size_t size)
+{
+	if (!g_overlay_db) {
+		hbf_log_error("overlay_fs_write_file: global database not initialized");
+		return -1;
+	}
+
+	/* Delegate to existing overlay_fs_write implementation */
+	return overlay_fs_write(g_overlay_db, path, data, size);
 }
