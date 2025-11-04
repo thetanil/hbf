@@ -19,6 +19,18 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# Versioned file system library (overlay_fs integration)
+cc_library(
+    name = "overlay_fs",
+    srcs = ["overlay_fs.c"],
+    hdrs = ["overlay_fs.h"],
+    deps = [
+        "//hbf/shell:log",
+        "@sqlite3//:sqlite3",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "db_test",
     srcs = ["db_test.c"],
@@ -35,6 +47,17 @@ cc_test(
     deps = [
         ":db",
         "//:hbf_embedded",  # Use base pod's embedded library for testing
+    ],
+    linkstatic = 1,
+)
+
+cc_test(
+    name = "overlay_fs_test",
+    srcs = ["overlay_fs_test.c"],
+    deps = [
+        ":overlay_fs",
+        "//hbf/shell:log",
+        "@sqlite3//:sqlite3",
     ],
     linkstatic = 1,
 )

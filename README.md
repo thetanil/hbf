@@ -156,8 +156,29 @@ MIT for HBF. Third‑party components retain their original licenses. No GPL dep
 
 ## Next Steps, future dev
 
-- make the layered fs api / database tables which allows per file readthrough to
-  sqlar table as base.
+we need a thoroughly testable special feature which we will develop first outside
+of the context of hbf. this feature will be called overlay_fs. it will have it's
+own development directory in ./overlay_fs. overlay_fs will be as much as possible
+SQL only. it should be very fast to query for a file path, and get the most recent version 
+
+CREATE TABLE file_versions (
+  file_id         INTEGER /* or blob unique ID for each file “path” */,
+  path            TEXT,    /* full path of file */
+  version_number  INTEGER, /* increment for that file_id */
+  mtime           INTEGER, /* modification time */
+  data            BLOB,    /* uncompressed content */
+);
+
+a CTE with SELECT MAX(version_number) should be performant if the indexes are 
+correct.
+
+we need a c program like hbf with only the sqlite3 dependency (no civet or
+quickjs) which can test many reads, writes, and performance. when overlay_fs is
+built, it should be built like hbf in the way that it contains a pod. this will
+be the test pod always. when overlay_fs starts, it should decompress and copy
+the rows into file_versions table, and all reads and writes should use
+file_versions afterward. it would be fine to drop the sqlar table and vacuum
+once the table is copied (and decompressed)
 
 - dev (hbf_dev) includes monaco for jsfiddle / shadertoy like glsl fiddle examples
 

@@ -1,60 +1,44 @@
 -- SPDX-License-Identifier: MIT
--- Overlay filesystem schema for dev mode live editing
--- Base sqlar table is never modified; all edits recorded in fs_layer
+-- Versioned file system schema for overlay_fs
+-- Each file write creates a new version; reads get the latest version
 
--- Append-only change log (all dev edits recorded here)
-CREATE TABLE IF NOT EXISTS fs_layer (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    layer_id INT NOT NULL DEFAULT 1,  -- Future: support multiple dev layers
-    name TEXT NOT NULL,
-    op TEXT NOT NULL CHECK(op IN ('add', 'modify', 'delete')),
-    mtime INT NOT NULL,               -- Unix timestamp of change
-    sz INT NOT NULL,                  -- Uncompressed size
-    data BLOB                         -- Uncompressed content (NULL for delete)
+-- File versions table - stores all versions of all files
+CREATE TABLE IF NOT EXISTS file_versions (
+    file_id         INTEGER NOT NULL,    -- Unique ID for each file path
+    path            TEXT NOT NULL,       -- Full file path
+    version_number  INTEGER NOT NULL,    -- Version counter for this file_id
+    mtime           INTEGER NOT NULL,    -- Unix timestamp
+    data            BLOB NOT NULL,       -- Uncompressed content
+    PRIMARY KEY (file_id, version_number)
+) WITHOUT ROWID;
+
+-- Index for fast path lookups (path -> file_id)
+CREATE INDEX IF NOT EXISTS idx_file_versions_path ON file_versions(path);
+
+-- Index for getting latest version efficiently
+CREATE INDEX IF NOT EXISTS idx_file_versions_file_id_version
+    ON file_versions(file_id, version_number DESC);
+
+-- File ID mapping table (path -> file_id)
+CREATE TABLE IF NOT EXISTS file_ids (
+    file_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    path     TEXT NOT NULL UNIQUE
 );
 
--- Index for fast lookups by name
-CREATE INDEX IF NOT EXISTS idx_fs_layer_name ON fs_layer(name);
-
--- Materialized current overlay state (fast O(1) lookups)
-CREATE TABLE IF NOT EXISTS overlay_sqlar (
-    name TEXT PRIMARY KEY,
-    mtime INT NOT NULL,
-    sz INT NOT NULL,
-    data BLOB,
-    deleted INT NOT NULL DEFAULT 0  -- 1 = tombstone (hides base file)
-);
-
--- Read-through view (overlay overrides base)
--- This view shows the current state: overlay files + base files not in overlay
-CREATE VIEW IF NOT EXISTS latest_fs AS
-SELECT name, 33188 AS mode, mtime, sz, data
-FROM overlay_sqlar
-WHERE deleted = 0
-UNION ALL
-SELECT name, mode, mtime, sz, data
-FROM sqlar
-WHERE name NOT IN (SELECT name FROM overlay_sqlar);
-
--- Trigger to auto-update overlay_sqlar when fs_layer changes
-CREATE TRIGGER IF NOT EXISTS fs_layer_apply
-AFTER INSERT ON fs_layer
-BEGIN
-    -- Handle delete operation (create tombstone)
-    UPDATE overlay_sqlar SET deleted = 1, mtime = NEW.mtime, sz = 0, data = NULL
-    WHERE NEW.op = 'delete' AND name = NEW.name;
-
-    INSERT INTO overlay_sqlar (name, mtime, sz, data, deleted)
-    SELECT NEW.name, NEW.mtime, 0, NULL, 1
-    WHERE NEW.op = 'delete' AND (SELECT changes() = 0);
-
-    -- Handle add/modify operations (upsert content)
-    INSERT INTO overlay_sqlar (name, mtime, sz, data, deleted)
-    SELECT NEW.name, NEW.mtime, NEW.sz, NEW.data, 0
-    WHERE NEW.op IN ('add', 'modify')
-    ON CONFLICT(name) DO UPDATE SET
-        mtime = excluded.mtime,
-        sz = excluded.sz,
-        data = excluded.data,
-        deleted = 0;
-END;
+-- View to get latest version of each file
+CREATE VIEW IF NOT EXISTS latest_files AS
+WITH latest_versions AS (
+    SELECT file_id, MAX(version_number) as max_version
+    FROM file_versions
+    GROUP BY file_id
+)
+SELECT
+    fv.file_id,
+    fv.path,
+    fv.version_number,
+    fv.mtime,
+    fv.data
+FROM file_versions fv
+INNER JOIN latest_versions lv
+    ON fv.file_id = lv.file_id
+    AND fv.version_number = lv.max_version;
