@@ -265,22 +265,18 @@ Implications:
 - ✅ Versioned filesystem unit tests (7 subtests)
 - ✅ Versioned filesystem integration tests (4 subtests)
 
-## Versioned Filesystem (overlay_fs)
+## Versioned Filesystem
 
-HBF includes a versioned filesystem built on SQLite that provides immutable file history tracking. Located in `hbf/db/overlay_fs.{c,h}`.
+Located in `hbf/db/overlay_fs.{c,h}`. Provides immutable file history tracking using SQLite.
 
-### Key Features
+**Features**:
+- Append-only versioning (every write creates new version)
+- Indexed reads via `file_id` + `version_number DESC`
+- `WITHOUT ROWID` optimization for space efficiency
+- SQLAR migration support via `overlay_fs_migrate_sqlar()`
+- Full backward compatibility with existing pod system
 
-1. **Immutable History**: Every write creates a new version (append-only)
-2. **Fast Reads**: Optimized queries with `file_id` + `version_number DESC` index
-3. **Version Tracking**: Full audit trail of all file changes
-4. **Space Efficient**: `WITHOUT ROWID` optimization, composite primary keys
-5. **Migration Support**: Convert existing SQLAR archives to versioned storage
-6. **Backward Compatible**: Works alongside existing SQLAR-based pod system
-
-### Performance
-
-Benchmark results (in-memory, 1000 files, 10 versions each):
+**Performance** (in-memory, 1000 files, 10 versions):
 - Write: 28,000+ files/sec (initial), 37,000+ writes/sec (multi-version)
 - Read: 142,000+ reads/sec (latest version)
 
@@ -314,36 +310,56 @@ bazel-bin/bin/hbf_test
 - Validate determinism by building twice with a fixed `SOURCE_DATE_EPOCH` and comparing `sha256sum` of `bazel-bin/bin/hbf`.
 - use pods/test/hbf/server.js test pod for tests
 
-## Dev endpoints ownership
+## Dev Endpoints
 
-To remove ambiguity and large copies, dev API endpoints are owned as follows:
+Development mode API endpoints are split between native C (for performance) and JavaScript (for flexibility):
 
-- Native C (fast path):
-  - GET `/__dev/api/files` — implemented in `hbf/http/server.c` (see `dev_files_list_handler`).
-    - Builds JSON in SQLite (JSON1) and streams directly, avoiding QuickJS and BLOB reads.
-    - Only enabled in `--dev` mode.
-- JavaScript (pod):
-  - `/__dev/` (Dev UI page) and single‑file APIs `/__dev/api/file` (GET/PUT/DELETE) remain in `server.js`.
+**Native C endpoints** (`hbf/http/server.c`):
+- `GET /__dev/api/files` - File listing API (see `dev_files_list_handler`)
+  - Builds JSON directly in SQLite using JSON1 extension
+  - Streams output without QuickJS overhead or BLOB reads
+  - Only enabled with `--dev` flag
+  - Registered before JavaScript catch-all handler
 
-The native handler for `/__dev/api/files` is registered before the catch‑all JS request handler, so JS must not implement this route. Both base and test pods have had their JS versions removed.
+**JavaScript endpoints** (`server.js` in each pod):
+- `GET /__dev/` - Dev UI page
+- `GET /__dev/api/file?name=<path>` - Read single file
+- `PUT /__dev/api/file?name=<path>` - Write file version
+- `DELETE /__dev/api/file?name=<path>` - Delete file
 
-## Schema sourcing (authoritative)
+This split optimizes the file listing endpoint (high volume, read-heavy) while keeping single-file operations in JavaScript for pod customization.
 
-The authoritative database schema for the versioned filesystem lives in `hbf/db/overlay_schema.sql` and is applied at pod build time (see the `pod_db` rules in each pod's `BUILD.bazel`). Every embedded pod database ships with the correct tables, indexes, views, the materialized `latest_files_meta`, and triggers.
+## Schema Management
 
-At runtime, we do not create or migrate the schema in code. `overlay_fs.c` requires the schema to already exist and fails fast if it is missing. This avoids divergence and ensures a single source of truth.
+**Single Source of Truth**: The authoritative database schema lives in `hbf/db/overlay_schema.sql` and is applied at pod build time.
 
-### Using the schema in C tests
+### Build-time Schema Application
 
-To apply the same authoritative schema in unit tests without duplicating SQL in C files, a Bazel genrule converts `overlay_schema.sql` into a small C translation unit that exposes the schema as a `const char*`:
+Every pod embeds the complete schema:
+- Applied during pod build via `pod_db` rules in each pod's `BUILD.bazel`
+- Embedded database includes tables, indexes, views, materialized `latest_files_meta`, and triggers
+- No runtime schema creation or migration in `overlay_fs.c`
+- Fails fast if schema is missing at runtime
 
+This approach prevents schema drift and ensures consistency across all pods.
+
+### Schema in C Tests
+
+Tests use the same authoritative schema via Bazel code generation:
+
+**Generated artifacts**:
 - Target: `//hbf/db:overlay_schema_c`
-- Output: `overlay_schema_gen.c` (auto-generated from `overlay_schema.sql` via `//tools:sql_to_c`)
-- Usage in a test target:
-  - Add `:overlay_schema_gen.c` to the test's `srcs`
-  - Declare and use the generated symbols in your test:
-    - `extern const char * const hbf_schema_sql_ptr;`
-    - `extern const unsigned long hbf_schema_sql_len;`
-    - `sqlite3_exec(db, hbf_schema_sql_ptr, NULL, NULL, &errmsg);`
+- Tool: `//tools:sql_to_c` converts SQL → C source
+- Output: `overlay_schema_gen.c` with embedded schema string
 
-This keeps `overlay_schema.sql` as the single source for both pods and tests.
+**Usage in test code**:
+```c
+// Add overlay_schema_gen.c to test's srcs in BUILD.bazel
+extern const char * const hbf_schema_sql_ptr;
+extern const unsigned long hbf_schema_sql_len;
+
+// Apply schema in test
+sqlite3_exec(db, hbf_schema_sql_ptr, NULL, NULL, &errmsg);
+```
+
+This eliminates SQL duplication in C files and maintains `overlay_schema.sql` as the sole source for both production and tests.

@@ -85,7 +85,10 @@ curl http://localhost:5309/health
 
 ## Pods and embedding
 
-HBF builds a separate static binary per pod using a macro‑based pipeline. Each pod includes JavaScript (`pods/<name>/hbf/server.js`) and static assets (`pods/<name>/static/**`), which are packed into a SQLAR SQLite database and embedded into the binary.
+HBF builds a separate static binary per pod using a macro‑based pipeline. Each
+pod includes JavaScript (`pods/<name>/hbf/server.js`) and static assets
+(`pods/<name>/static/**`), which are packed into a SQLAR SQLite database and
+embedded into the binary.
 
 How it works at build time:
 1) Create SQLAR from the pod's `hbf/*.js` and `static/*`
