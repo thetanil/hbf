@@ -6,7 +6,7 @@ app = {};
 function parseQuery(queryString) {
     const params = {};
     if (!queryString) return params;
-    queryString.split('&').forEach(function(pair) {
+    queryString.split('&').forEach(function (pair) {
         const parts = pair.split('=');
         if (parts[0]) {
             params[decodeURIComponent(parts[0])] = parts[1] ? decodeURIComponent(parts[1]) : '';
@@ -195,9 +195,11 @@ app.handle = function (req, res) {
         const nextVersion = versionResult[0].next_version;
 
         // 3. Insert new version
+        // 3. Insert new version (store size to avoid reading BLOBs during listings)
+        const size = content ? content.length : 0;
         db.execute(
-            "INSERT INTO file_versions (file_id, path, version_number, mtime, data) VALUES (?, ?, ?, ?, ?)",
-            [fileId, fileName, nextVersion, mtime, content]
+            "INSERT INTO file_versions (file_id, path, version_number, mtime, size, data) VALUES (?, ?, ?, ?, ?, ?)",
+            [fileId, fileName, nextVersion, mtime, size, content]
         );
 
         res.status(200);
@@ -266,7 +268,7 @@ app.handle = function (req, res) {
         }
 
         const files = db.query(
-            "SELECT path AS name, mtime, LENGTH(data) AS sz FROM latest_files ORDER BY path"
+            "SELECT path AS name, mtime, size AS sz FROM latest_files_metadata ORDER BY path"
         );
 
         res.set("Content-Type", "application/json");

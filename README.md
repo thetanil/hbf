@@ -187,6 +187,16 @@ Benchmark results (in-memory, 1000 files, 10 versions each):
 
 ## Next Steps, future dev
 
+- there is mg_set_request_handler(server->ctx, "/__dev/api/files", dev_files_list_handler, server);
+  and in server.js : if (path === "/__dev/api/files" && method === "GET")
+  so there is confusion in the code about who is handling this query and we want
+  the optimized special C handler to avoid large data copies
+  but now it is unclear, is __dev/ a javascript feature, or a C handler?
+
+- hbf/db/overlay_fs.c contains "embedded schema", but bazel should be building with hbf/db/overlay_schema.sql
+
+- benchmark is using base pod, not test pod
+
 - /__dev/api/files still slow but we implemented Create a new view without the data column (e.g., latest_files_metadata) and didn't test it yet. benchmark worst case with 750+ms to return the whole database in every query essentially.
 
 - need js_db_test.md

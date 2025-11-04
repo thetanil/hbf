@@ -265,10 +265,8 @@ if [ -n "${PREV_RUN_ID}" ]; then
 	echo ""
 
 	for endpoint in "${endpoints_static[@]}" "${endpoints_runtime[@]}" "GET /__dev/api/files" "PUT /__dev/api/file?name=static/bench.txt"; do
-		result=$(compare_endpoint "${endpoint}" "${PREV_RUN_ID}" "${RUN_ID}")
-		if [ -n "${result}" ]; then
-			echo "${result}" | sqlite3 -column "${DB_FILE}"
-		fi
+		# compare_endpoint already executes the query and prints formatted output
+		compare_endpoint "${endpoint}" "${PREV_RUN_ID}" "${RUN_ID}"
 	done
 	echo ""
 fi

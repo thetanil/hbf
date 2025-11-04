@@ -105,7 +105,7 @@ compare_endpoint() {
 	local run1="$2"
 	local run2="$3"
 
-	sqlite3 "${DB_FILE}" <<-EOF
+	sqlite3 -header -column "${DB_FILE}" <<-EOF
 	SELECT
 		'${endpoint}' as endpoint,
 		r1.requests_per_sec as previous_rps,
