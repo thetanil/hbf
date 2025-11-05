@@ -278,15 +278,15 @@ Implications:
 - ✅ Full backward compatibility with existing SQLAR-based pod loading
 
 **Binary**:
-- Size: 5.3 MB stripped (statically linked with SQLite + QuickJS + CivetWeb)
-- Size: 13 MB unstripped (includes full debug symbols for gdb/lldb)
-- Embedded database: ~3.2 MB (VACUUMed, no dead space)
+- Size: ~3.0 MB stripped (statically linked with SQLite + QuickJS + CivetWeb)
+- Size: ~3.1 MB unstripped (includes full debug symbols for gdb/lldb)
+- Embedded database: ~359 KB (VACUUMed, no dead space)
 - 100% static linking with musl libc 1.2.3
 - Zero runtime dependencies
 - Compiles with `-Werror` and 30+ warning flags
 
 **Testing**:
-- ✅ All 8 test targets passing
+- ✅ All 9 test targets passing
 - ✅ Both base and test pod binaries build successfully
 - ✅ Pod discovery via Bazel query works
 - ✅ Versioned filesystem unit tests (7 subtests)
