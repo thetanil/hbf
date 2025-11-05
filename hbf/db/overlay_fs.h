@@ -27,6 +27,18 @@
 int overlay_fs_init(const char *db_path, sqlite3 **db);
 
 /*
+ * Check that overlay_fs schema exists
+ *
+ * Verifies that required tables (file_versions, file_ids) are present.
+ * This should be called after database initialization to ensure the
+ * schema was applied at build time.
+ *
+ * @param db: Database handle
+ * @return 0 on success, -1 on error (missing schema)
+ */
+int overlay_fs_check_schema(sqlite3 *db);
+
+/*
  * Migrate SQLAR archive to file_versions table
  *
  * Reads all entries from sqlar table, decompresses them,

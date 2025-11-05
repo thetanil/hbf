@@ -29,7 +29,6 @@ int hbf_db_init(int inmem, sqlite3 **db)
 	const char *db_path;
 	unsigned char *fs_data_copy;
 	int db_exists;
-	int has_sqlar;
 
 	if (!db) {
 		hbf_log_error("NULL database handle pointer");
@@ -159,29 +158,19 @@ int hbf_db_init(int inmem, sqlite3 **db)
 
 	hbf_log_info("Opened main database: %s", db_path);
 
-	/* Check for sqlar table - fatal error if missing */
-	has_sqlar = hbf_db_check_sqlar_table(*db);
-	if (has_sqlar < 0) {
-		hbf_log_error("Failed to check for sqlar table");
-		sqlite3_close(*db);
-		*db = NULL;
-		return -1;
-	}
-
-	if (has_sqlar == 0) {
-		hbf_log_error("FATAL: Database exists but is missing sqlar table - database is corrupt or invalid");
-		sqlite3_close(*db);
-		*db = NULL;
-		return -1;
-	}
-
-	/* Overlay schema already applied at build time in fs.db */
-	hbf_log_debug("Overlay filesystem schema present (applied at build time)");
-
 	/* Migrate SQLAR data to versioned filesystem if sqlar table exists */
 	rc = overlay_fs_migrate_sqlar(*db);
 	if (rc != 0) {
 		hbf_log_error("Failed to migrate SQLAR data to versioned filesystem");
+		sqlite3_close(*db);
+		*db = NULL;
+		return -1;
+	}
+
+	/* Verify overlay_fs schema exists */
+	rc = overlay_fs_check_schema(*db);
+	if (rc != 0) {
+		hbf_log_error("FATAL: overlay_fs schema is missing from database");
 		sqlite3_close(*db);
 		*db = NULL;
 		return -1;

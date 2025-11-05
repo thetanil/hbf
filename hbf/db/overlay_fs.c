@@ -35,8 +35,7 @@ static int exec_sql_file(sqlite3 *db, const char *sql)
 	return 0;
 }
 
-/* Require that schema objects already exist; no runtime creation */
-static int require_schema(sqlite3 *db)
+int overlay_fs_check_schema(sqlite3 *db)
 {
 	const char *sql =
 		"SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('file_versions','file_ids')";
@@ -89,7 +88,7 @@ int overlay_fs_init(const char *db_path, sqlite3 **db)
 	}
 
 	/* Require schema to already exist; do not create fallback here */
-	if (require_schema(*db) < 0) {
+	if (overlay_fs_check_schema(*db) < 0) {
 		goto err;
 	}
 
@@ -137,13 +136,15 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 		return -1;
 	}
 
+	/* Ensure required schema is present */
+	if (overlay_fs_check_schema(db) < 0) {
+		hbf_log_error("overlay_fs_migrate_sqlar: required schema missing");
+		exec_sql_file(db, "ROLLBACK;");
+		return -1;
+	}
+
 	/* Read from sqlar and insert into file_versions */
 	/* Use sqlar_uncompress to decompress data before migration */
-			/* Ensure required schema is present */
-			if (require_schema(db) < 0) {
-				hbf_log_error("overlay_fs_migrate_sqlar: required schema missing");
-				return -1;
-			}
 	const char *select_sql =
 		"SELECT name, sqlar_uncompress(data, sz) FROM sqlar";
 

@@ -31,6 +31,7 @@ app.handle = function (req, res) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HBF</title>
     <link rel="stylesheet" href="/style.css">
+    <script type="importmap" src="/static/importmap.json"></script>
 </head>
 <body>
     <h1>HBF</h1>
@@ -49,7 +50,21 @@ app.handle = function (req, res) {
         <li><a href="/static/vendor/htmx.min.js">/static/vendor/htmx.min.js</a> - HTMX library</li>
         <li><a href="/static/monaco/vs/loader.js">/static/monaco/vs/loader.js</a> - Monaco editor loader</li>
         <li><a href="/static/monaco/vs/editor/editor.main.js">/static/monaco/vs/editor/editor.main.js</a> - Monaco editor main</li>
+        <li><a href="/static/vendor/esm/codemirror-view.js">/static/vendor/esm/codemirror-view.js</a> - CodeMirror view (vendored ESM)</li>
     </ul>
+    <h2>ES Module Test</h2>
+    <div id="module-status">Testing import map...</div>
+    <script type="module">
+        import { EditorView } from "@codemirror/view";
+        const statusEl = document.getElementById("module-status");
+        if (EditorView) {
+            statusEl.textContent = "✓ Import map working! CodeMirror EditorView imported successfully.";
+            statusEl.style.color = "green";
+        } else {
+            statusEl.textContent = "✗ Failed to import CodeMirror";
+            statusEl.style.color = "red";
+        }
+    </script>
 </body>
 </html>`);
         return;
