@@ -31,7 +31,13 @@ app.handle = function (req, res) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HBF</title>
     <link rel="stylesheet" href="/style.css">
-    <script type="importmap" src="/static/importmap.json"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "@codemirror/view": "/static/vendor/esm/codemirror-view.js"
+        }
+    }
+    </script>
 </head>
 <body>
     <h1>HBF</h1>
@@ -54,8 +60,14 @@ app.handle = function (req, res) {
     </ul>
     <h2>ES Module Test</h2>
     <div id="module-status">Testing import map...</div>
+
+    <h2>CodeMirror Editor Demo</h2>
+    <div id="editor" style="border: 1px solid #ccc; margin-top: 10px;"></div>
+
     <script type="module">
-        import { EditorView } from "@codemirror/view";
+        import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+
+        // Status check
         const statusEl = document.getElementById("module-status");
         if (EditorView) {
             statusEl.textContent = "✓ Import map working! CodeMirror EditorView imported successfully.";
@@ -64,6 +76,26 @@ app.handle = function (req, res) {
             statusEl.textContent = "✗ Failed to import CodeMirror";
             statusEl.style.color = "red";
         }
+
+        // Create CodeMirror editor
+        const editor = new EditorView({
+            doc: \`// Welcome to CodeMirror on HBF!
+// This is a minimal editor using just @codemirror/view
+
+function hello(name) {
+    console.log("Hello, " + name + "!");
+}
+
+hello("HBF");
+\`,
+            extensions: [
+                lineNumbers(),
+                keymap.of([
+                    { key: "Ctrl-Enter", run: () => { alert("Ctrl-Enter pressed!"); return true; } }
+                ])
+            ],
+            parent: document.getElementById("editor")
+        });
     </script>
 </body>
 </html>`);

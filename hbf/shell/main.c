@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
 	/* Start HTTP server */
 	ret = hbf_server_start(server);
 	if (ret != 0) {
-		hbf_log_error("Failed to start HTTP server");
+		/* Error already logged by hbf_server_start() */
 		hbf_server_destroy(server);
 		hbf_qjs_shutdown();
 		hbf_db_close(db);

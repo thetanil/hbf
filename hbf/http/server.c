@@ -254,7 +254,11 @@ int hbf_server_start(hbf_server_t *server)
 
 	server->ctx = mg_start(NULL, 0, options);
 	if (!server->ctx) {
-		hbf_log_error("Failed to start HTTP server");
+		hbf_log_error("Failed to start HTTP server on port %d", server->port);
+		hbf_log_error("Port %d may already be in use. Try:", server->port);
+		hbf_log_error("  - Kill existing process: pkill -f hbf");
+		hbf_log_error("  - Use different port: --port <number>");
+		hbf_log_error("  - Check what's using port: lsof -i :%d", server->port);
 		return -1;
 	}
 
