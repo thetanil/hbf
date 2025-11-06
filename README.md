@@ -198,6 +198,18 @@ these modules should be served from the static http server in a way that they ca
 - from the server js like import { name, draw, reportArea, reportPerimeter } from "./modules/square.js";
 - from the browser like import {EditorView, keymap} from "@codemirror/view"
 
+https://github.com/delvedor/find-my-way?tab=readme-ov-file#find-my-way (MIT)
+integrate find-my-way request router into hbf server.js
+- use node pack scripts to bring the ESM module into our repo
+- esm module should be packed into the pod similarly to the codemirror module
+- usage like https://github.com/delvedor/find-my-way?tab=readme-ov-file#usage but...
+    - http server is handled by civet, and we only need an instance of router exposed to the user code
+    - we use import and not require (ESM Module loaded per request from database, like server.js)
+
+https://codemirror.net/docs/guide/
+
+- further sqlite3 comfort features could be provided by https://github.com/knex/knex (MIT)
+    - for now the raw query and run functions are fine
 
 - need to 'include' or whatever for qjs to overlay_fs
 
