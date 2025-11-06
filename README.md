@@ -198,13 +198,23 @@ these modules should be served from the static http server in a way that they ca
 - from the server js like import { name, draw, reportArea, reportPerimeter } from "./modules/square.js";
 - from the browser like import {EditorView, keymap} from "@codemirror/view"
 
-https://github.com/delvedor/find-my-way?tab=readme-ov-file#find-my-way (MIT)
-integrate find-my-way request router into hbf server.js
-- use node pack scripts to bring the ESM module into our repo
-- esm module should be packed into the pod similarly to the codemirror module
+### router
+
+read about your pod skill to understand pod implementation
+read js_import_impl.md
+read https://github.com/delvedor/find-my-way?tab=readme-ov-file#find-my-way (MIT)
+we have created an esm serving service using a pods static which is working with
+import map. now we need to confirm that es modules can also be used within the
+pods/test/hbf/server.js (we focus only on tests with test pod in this session)
+we will replace most of the code in server.js with find-my-way request router
 - usage like https://github.com/delvedor/find-my-way?tab=readme-ov-file#usage but...
     - http server is handled by civet, and we only need an instance of router exposed to the user code
     - we use import and not require (ESM Module loaded per request from database, like server.js)
+integrate find-my-way request router into hbf server.js
+- use node pack scripts to bring the ESM module into our repo
+- esm module should be packed into the pod similarly to the codemirror module
+write an implementation plan into js_import_router.md
+
 
 https://codemirror.net/docs/guide/
 
