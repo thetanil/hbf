@@ -145,8 +145,9 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 
 	/* Read from sqlar and insert into file_versions */
 	/* Use sqlar_uncompress to decompress data before migration */
+	/* Include sz column to distinguish directories (sz=-1) from empty files (sz=0) */
 	const char *select_sql =
-		"SELECT name, sqlar_uncompress(data, sz) FROM sqlar";
+		"SELECT name, sz, sqlar_uncompress(data, sz) FROM sqlar";
 
 	rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
 	if (rc != SQLITE_OK) {
@@ -159,27 +160,30 @@ int overlay_fs_migrate_sqlar(sqlite3 *db)
 
 	while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
 		const char *name = (const char *)sqlite3_column_text(stmt, 0);
-		const void *data = sqlite3_column_blob(stmt, 1);
-		int data_size = sqlite3_column_bytes(stmt, 1);
+		int sz = sqlite3_column_int(stmt, 1);
+		const void *data = sqlite3_column_blob(stmt, 2);
+		int data_size = sqlite3_column_bytes(stmt, 2);
 
 		if (!name) {
 			hbf_log_debug("Skipping entry with NULL name");
 			continue;
 		}
 
-		/* Handle empty files or directories (data can be NULL for size 0) */
-		if (data_size == 0 || !data) {
-			/* Skip directories and empty entries */
-			hbf_log_debug("Skipping empty entry: %s", name);
+		/* Skip directories (sz < 0 in SQLAR format) */
+		if (sz < 0) {
+			hbf_log_debug("Skipping directory: %s", name);
 			continue;
 		}
 
+		/* Migrate all files, including empty files (sz = 0) */
+		/* For empty files, data may be NULL and data_size = 0 */
 		if (data_size < 0) {
 			hbf_log_error("Invalid data size for: %s", name);
 			continue;
 		}
 
 		/* Write decompressed data to file_versions using overlay_fs_write */
+		/* overlay_fs_write handles NULL data for empty files */
 		if (overlay_fs_write(db, name, data, (size_t)data_size) < 0) {
 			hbf_log_error("Failed to migrate file: %s", name);
 			sqlite3_finalize(stmt);
@@ -384,7 +388,13 @@ int overlay_fs_write(sqlite3 *db, const char *path,
 	sqlite3_bind_int(stmt, 3, next_version);
 	sqlite3_bind_int64(stmt, 4, (sqlite3_int64)now);
 	sqlite3_bind_int64(stmt, 5, (sqlite3_int64)size);
-	sqlite3_bind_blob(stmt, 6, data, (int)size, SQLITE_STATIC);
+	/* For empty files (size=0), use empty string to avoid binding NULL */
+	/* sqlite3_bind_blob with NULL pointer binds SQL NULL, not zero-length BLOB */
+	if (size == 0) {
+		sqlite3_bind_blob(stmt, 6, "", 0, SQLITE_STATIC);
+	} else {
+		sqlite3_bind_blob(stmt, 6, data, (int)size, SQLITE_STATIC);
+	}
 
 	rc = sqlite3_step(stmt);
 	sqlite3_finalize(stmt);
