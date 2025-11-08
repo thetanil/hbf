@@ -1,8 +1,15 @@
 
 // Minimal server.js for HBF integration test
 
+import { hello as staticHello, value as staticValue } from "./lib/esm_test.js";
 
-app = {};
+// In ES modules, variables are module-scoped, not global Use globalThis to
+// expose app to the C handler The line globalThis.app = {} is only needed if
+// native code (such as your C handler) expects to access a global app object
+// from the JavaScript environment. Our integration between C and JavaScript
+// passes req and res directly to the module's handler function does not rely on
+// a global app, then you do not need globalThis.app = {}.
+// globalThis.app = {};
 
 // Helper: Parse query string into object
 function parseQuery(queryString) {
@@ -24,12 +31,11 @@ app.handle = function (req, res) {
     const { method, path } = req;
     const query = parseQuery(req.query);
 
-    // ESM import test route
+    // ESM import test route (dynamic import)
     if (path === "/esm-test" && method === "GET") {
-        // Use dynamic import for QuickJS compatibility
         (async function () {
             try {
-                const mod = await import("hbf/lib/esm_test.js");
+                const mod = await import("./lib/esm_test.js");
                 res.set("Content-Type", "application/json");
                 res.send(JSON.stringify({
                     message: mod.hello("ESM"),
@@ -41,6 +47,16 @@ app.handle = function (req, res) {
                 res.send(JSON.stringify({ error: "Import failed", details: String(e) }));
             }
         })();
+        return;
+    }
+
+    // ESM import test route (static import)
+    if (path === "/esm-test-static" && method === "GET") {
+        res.set("Content-Type", "application/json");
+        res.send(JSON.stringify({
+            message: staticHello("Static ESM"),
+            value: staticValue
+        }));
         return;
     }
     if (path === "/" && method === "GET") {
@@ -64,6 +80,8 @@ app.handle = function (req, res) {
         <li><a href="/user/42">/user/42</a> - User endpoint</li>
         <li><a href="/echo">/echo</a> - Echo request</li>
         <li><a href="/__dev/">/__dev/</a> - Dev editor (dev mode only)</li>
+        <li><a href="/esm-test">/esm-test</a> - Dynamic ESM import test</li>
+        <li><a href="/esm-test-static">/esm-test-static</a> - Static ESM import test</li>
     </ul>
     <h2>Static Assets</h2>
     <ul>

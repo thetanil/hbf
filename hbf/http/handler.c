@@ -100,7 +100,8 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			mg_send_http_error(conn, 503, "Service Unavailable");
 			return 503;
 		}
-		ret = hbf_qjs_eval(qjs_ctx, (const char *)js_data, js_size, "hbf/server.js");
+		/* Load server.js as an ES module to support static imports */
+		ret = hbf_qjs_eval_module(qjs_ctx, (const char *)js_data, js_size, "hbf/server.js");
 		free(js_data);
 		if (ret != 0) {
 			hbf_log_error("Failed to load hbf/server.js: %s", hbf_qjs_get_error(qjs_ctx));

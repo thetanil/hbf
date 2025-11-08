@@ -68,12 +68,57 @@ static char *hbf_qjs_module_normalize(JSContext *ctx, const char *base_name,
 				      const char *module_name, void *opaque)
 {
 	char *normalized;
+	char buffer[512];
 
 	(void)opaque; /* Database handle, unused for normalization */
 
-	/* For now, return module_name as-is (absolute paths only) */
-	/* TODO: Implement relative path resolution if needed */
-	normalized = js_strdup(ctx, module_name);
+	/* If module_name starts with "./", resolve relative to base */
+	if (module_name[0] == '.' && module_name[1] == '/') {
+		/* Extract directory from base_name (e.g., "hbf/server.js" -> "hbf") */
+		const char *last_slash = NULL;
+		const char *p;
+
+		if (base_name) {
+			for (p = base_name; *p; p++) {
+				if (*p == '/') {
+					last_slash = p;
+				}
+			}
+		}
+
+		if (last_slash && base_name) {
+			/* Copy base directory */
+			size_t dir_len = (size_t)(last_slash - base_name);
+			if (dir_len >= sizeof(buffer) - 1) {
+				hbf_log_error("Module path too long: %s",
+					      module_name);
+				return NULL;
+			}
+
+			memcpy(buffer, base_name, dir_len);
+			buffer[dir_len] = '/';
+
+			/* Append relative path (skip "./" prefix) */
+			size_t rel_len = strlen(module_name + 2);
+			if (dir_len + 1 + rel_len >= sizeof(buffer)) {
+				hbf_log_error("Module path too long: %s",
+					      module_name);
+				return NULL;
+			}
+
+			memcpy(buffer + dir_len + 1, module_name + 2, rel_len);
+			buffer[dir_len + 1 + rel_len] = '\0';
+
+			normalized = js_strdup(ctx, buffer);
+		} else {
+			/* No base directory, just strip "./" */
+			normalized = js_strdup(ctx, module_name + 2);
+		}
+	} else {
+		/* Absolute path, return as-is */
+		normalized = js_strdup(ctx, module_name);
+	}
+
 	if (!normalized) {
 		hbf_log_error("Failed to normalize module: %s (base: %s)",
 			      module_name, base_name ? base_name : "none");

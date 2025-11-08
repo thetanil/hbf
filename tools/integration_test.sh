@@ -317,6 +317,20 @@ main() {
         failed=$((failed + 1))
     fi
 
+    # Test 21: ESM static import integration (/esm-test-static)
+    echo -n "Testing GET /esm-test-static (ESM static import)... "
+    response=$(curl -s -w "\n%{http_code}" "http://localhost:$PORT/esm-test-static")
+    body=$(echo "$response" | head -n -1)
+    status=$(echo "$response" | tail -n 1)
+    expected='{"message":"Hello, Static ESM!","value":42}'
+    if [ "$status" = "200" ] && [ "$body" = "$expected" ]; then
+        echo -e "${GREEN}PASS${NC}"
+        passed=$((passed + 1))
+    else
+        echo -e "${RED}FAIL${NC} (status: $status, body: $body)"
+        failed=$((failed + 1))
+    fi
+
     # Test 15: Dev API modify server.js
     echo -n "Testing PUT /__dev/api/file (modify server.js)... "
     modified_js='app = {}; app.handle = function(req, res) { res.set("Content-Type", "text/plain"); res.send("Modified!"); };'

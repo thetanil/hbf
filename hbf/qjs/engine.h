@@ -52,6 +52,16 @@ void hbf_qjs_ctx_destroy(hbf_qjs_ctx_t *ctx);
 int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
 		 const char *filename);
 
+/* Evaluate JavaScript code as an ES module
+ * Supports static import/export statements at the top level
+ * Executes the job queue to resolve module promises
+ * filename: Source name for error messages (e.g., "server.js")
+ * Returns 0 on success, -1 on error
+ * Error details available via hbf_qjs_get_error()
+ */
+int hbf_qjs_eval_module(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
+			const char *filename);
+
 /* Get last error message from context
  * Returns error string (valid until next call) or NULL if no error
  */

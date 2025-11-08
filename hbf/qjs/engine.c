@@ -270,6 +270,89 @@ int hbf_qjs_eval(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
 	return 0;
 }
 
+/* Evaluate JavaScript code as an ES module */
+int hbf_qjs_eval_module(hbf_qjs_ctx_t *ctx, const char *code, size_t len,
+			const char *filename)
+{
+	JSValue result;
+	JSContext *js_ctx;
+
+	if (!ctx || !ctx->ctx || !code) {
+		hbf_log_error("Invalid arguments to hbf_qjs_eval_module");
+		return -1;
+	}
+
+	js_ctx = ctx->ctx;
+
+	/* Use default filename if not provided */
+	if (!filename) {
+		filename = "<module>";
+	}
+
+	/* Reset start time for timeout tracking */
+	ctx->start_time_ms = hbf_qjs_get_time_ms();
+
+	/* Evaluate code as a module */
+	result = JS_Eval(js_ctx, code, len, filename, JS_EVAL_TYPE_MODULE);
+
+	/* Check for exception */
+	if (JS_IsException(result)) {
+		JSValue exception = JS_GetException(js_ctx);
+		const char *str = JS_ToCString(js_ctx, exception);
+
+		if (str) {
+			snprintf(ctx->error_buf, sizeof(ctx->error_buf),
+				 "%s", str);
+			JS_FreeCString(js_ctx, str);
+		} else {
+			snprintf(ctx->error_buf, sizeof(ctx->error_buf),
+				 "Unknown JavaScript module error");
+		}
+
+		JS_FreeValue(js_ctx, exception);
+		JS_FreeValue(ctx->ctx, result);
+
+		hbf_log_warn("JavaScript module evaluation error: %s",
+			     ctx->error_buf);
+		return -1;
+	}
+
+	/* Module evaluation returns a promise, execute pending jobs */
+	JSContext *pctx;
+	int ret;
+
+	while (1) {
+		ret = JS_ExecutePendingJob(JS_GetRuntime(js_ctx), &pctx);
+		if (ret < 0) {
+			/* Error during job execution */
+			JSValue exc = JS_GetException(js_ctx);
+			const char *str = JS_ToCString(js_ctx, exc);
+
+			if (str) {
+				snprintf(ctx->error_buf, sizeof(ctx->error_buf),
+					 "%s", str);
+				JS_FreeCString(js_ctx, str);
+			}
+
+			JS_FreeValue(js_ctx, exc);
+			JS_FreeValue(js_ctx, result);
+
+			hbf_log_warn("JavaScript module job error: %s",
+				     ctx->error_buf);
+			return -1;
+		}
+
+		if (ret == 0) {
+			/* No more jobs */
+			break;
+		}
+	}
+
+	JS_FreeValue(js_ctx, result);
+	ctx->error_buf[0] = '\0';
+	return 0;
+}
+
 /* Get last error message */
 const char *hbf_qjs_get_error(hbf_qjs_ctx_t *ctx)
 {

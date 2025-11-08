@@ -150,7 +150,30 @@ If import fails:
 - Module exports accessible as expected
 
 **Files Changed:**
-- `hbf/qjs/module_loader.c` (new)
-- `hbf/qjs/module_loader.h` (new)
-- `hbf/qjs/BUILD.bazel` (added module_loader to engine)
-- `hbf/qjs/engine.c` (initialize loader)
+- `hbf/qjs/module_loader.c` (new) - ES module loader with path normalization
+- `hbf/qjs/module_loader.h` (new) - Public API
+- `hbf/qjs/engine.c` - Added `hbf_qjs_eval_module()` function and loader initialization
+- `hbf/qjs/engine.h` - Added `hbf_qjs_eval_module()` declaration
+- `hbf/qjs/BUILD.bazel` - Added module_loader to engine
+- `hbf/http/handler.c` - Changed to use `hbf_qjs_eval_module()` instead of `hbf_qjs_eval()`
+- `pods/test/hbf/server.js` - Updated to use `globalThis.app` for ES module compatibility
+
+## Static vs Dynamic Imports
+
+**Static Imports** (Top-level `import` statements):
+```javascript
+import { hello, value } from "./lib/esm_test.js";
+```
+- Requires loading script as a module (`JS_EVAL_TYPE_MODULE`)
+- Module variables are scoped, must use `globalThis` for globals
+- Path resolution: `"./lib/file.js"` → `"hbf/lib/file.js"`
+
+**Dynamic Imports** (Runtime `import()` calls):
+```javascript
+const mod = await import("hbf/lib/esm_test.js");
+```
+- Works in both script and module contexts
+- Returns a promise, requires job queue execution
+- Absolute paths recommended
+
+**Key Insight**: When server.js is loaded as a module, `app = {}` creates a module-scoped variable. Use `globalThis.app = {}` to make it accessible to the C handler.
