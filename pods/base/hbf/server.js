@@ -1,6 +1,11 @@
 
 // Minimal server.js for HBF integration test
-app = {};
+
+import { hello as staticHello, value as staticValue } from "./lib/esm_test.js";
+
+// In ES modules, variables are module-scoped, not global Use globalThis to
+// expose app to the C handler The line globalThis.app = {}
+globalThis.app = {};
 
 // Helper: Parse query string into object
 function parseQuery(queryString) {
@@ -21,6 +26,35 @@ app.handle = function (req, res) {
 
     const { method, path } = req;
     const query = parseQuery(req.query);
+
+    // ESM import test route (dynamic import)
+    if (path === "/esm-test" && method === "GET") {
+        (async function () {
+            try {
+                const mod = await import("./lib/esm_test.js");
+                res.set("Content-Type", "application/json");
+                res.send(JSON.stringify({
+                    message: mod.hello("ESM"),
+                    value: mod.value
+                }));
+            } catch (e) {
+                res.status(500);
+                res.set("Content-Type", "application/json");
+                res.send(JSON.stringify({ error: "Import failed", details: String(e) }));
+            }
+        })();
+        return;
+    }
+
+    // ESM import test route (static import)
+    if (path === "/esm-test-static" && method === "GET") {
+        res.set("Content-Type", "application/json");
+        res.send(JSON.stringify({
+            message: staticHello("Static ESM"),
+            value: staticValue
+        }));
+        return;
+    }
     if (path === "/" && method === "GET") {
         // Serve index.html
         res.set("Content-Type", "text/html");
@@ -30,18 +64,14 @@ app.handle = function (req, res) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HBF</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script type="importmap">
-    {
-        "imports": {
-            "@codemirror/view": "/static/vendor/esm/codemirror-view.js"
-        }
-    }
-    </script>
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <h1>HBF</h1>
     <p>Single binary web compute environment</p>
+    <ul>
+        <li><a href="https://github.com/thetanil/hbf/actions">CI/CD Status</a></li>
+    </ul>
     <h2>Available Routes</h2>
     <ul>
         <li><a href="/health">/health</a> - Health check</li>
@@ -49,6 +79,8 @@ app.handle = function (req, res) {
         <li><a href="/user/42">/user/42</a> - User endpoint</li>
         <li><a href="/echo">/echo</a> - Echo request</li>
         <li><a href="/__dev/">/__dev/</a> - Dev editor (dev mode only)</li>
+        <li><a href="/esm-test">/esm-test</a> - Dynamic ESM import test</li>
+        <li><a href="/esm-test-static">/esm-test-static</a> - Static ESM import test</li>
     </ul>
     <h2>Static Assets</h2>
     <ul>
@@ -56,47 +88,7 @@ app.handle = function (req, res) {
         <li><a href="/static/vendor/htmx.min.js">/static/vendor/htmx.min.js</a> - HTMX library</li>
         <li><a href="/static/monaco/vs/loader.js">/static/monaco/vs/loader.js</a> - Monaco editor loader</li>
         <li><a href="/static/monaco/vs/editor/editor.main.js">/static/monaco/vs/editor/editor.main.js</a> - Monaco editor main</li>
-        <li><a href="/static/vendor/esm/codemirror-view.js">/static/vendor/esm/codemirror-view.js</a> - CodeMirror view (vendored ESM)</li>
     </ul>
-    <h2>ES Module Test</h2>
-    <div id="module-status">Testing import map...</div>
-
-    <h2>CodeMirror Editor Demo</h2>
-    <div id="editor" style="border: 1px solid #ccc; margin-top: 10px;"></div>
-
-    <script type="module">
-        import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-
-        // Status check
-        const statusEl = document.getElementById("module-status");
-        if (EditorView) {
-            statusEl.textContent = "✓ Import map working! CodeMirror EditorView imported successfully.";
-            statusEl.style.color = "green";
-        } else {
-            statusEl.textContent = "✗ Failed to import CodeMirror";
-            statusEl.style.color = "red";
-        }
-
-        // Create CodeMirror editor
-        const editor = new EditorView({
-            doc: \`// Welcome to CodeMirror on HBF!
-// This is a minimal editor using just @codemirror/view
-
-function hello(name) {
-    console.log("Hello, " + name + "!");
-}
-
-hello("HBF");
-\`,
-            extensions: [
-                lineNumbers(),
-                keymap.of([
-                    { key: "Ctrl-Enter", run: () => { alert("Ctrl-Enter pressed!"); return true; } }
-                ])
-            ],
-            parent: document.getElementById("editor")
-        });
-    </script>
 </body>
 </html>`);
         return;
@@ -241,7 +233,6 @@ hello("HBF");
 
         const nextVersion = versionResult[0].next_version;
 
-        // 3. Insert new version
         // 3. Insert new version (store size to avoid reading BLOBs during listings)
         const size = content ? content.length : 0;
         db.execute(
