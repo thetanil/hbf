@@ -86,8 +86,8 @@ echo "Git branch: ${GIT_BRANCH}"
 echo ""
 
 # Build binary
-echo "Building HBF binary (mode: ${BUILD_MODE})..."
-bazel build //:hbf --compilation_mode="${BUILD_MODE}"
+echo "Building HBF test pod binary (mode: ${BUILD_MODE})..."
+bazel build //:hbf_test --compilation_mode="${BUILD_MODE}"
 if [ $? -ne 0 ]; then
 	echo "ERROR: Build failed"
 	exit 1
@@ -118,8 +118,8 @@ echo "Temp directory: ${TEMP_DIR}"
 echo ""
 
 # Start normal server (port 5309)
-echo "Starting HBF server on port 5309..."
-BINARY_PATH="${WORKSPACE_ROOT}/bazel-bin/bin/hbf"
+echo "Starting HBF test pod server on port 5309..."
+BINARY_PATH="${WORKSPACE_ROOT}/bazel-bin/bin/hbf_test"
 start_server "false" "5309" "${SERVER_PID_FILE}"
 if [ $? -ne 0 ]; then
 	echo "ERROR: Failed to start server"
