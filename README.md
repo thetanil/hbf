@@ -198,6 +198,11 @@ these modules should be served from the static http server in a way that they ca
 - from the server js like import { name, draw, reportArea, reportPerimeter } from "./modules/square.js";
 - from the browser like import {EditorView, keymap} from "@codemirror/view"
 
+### esm module support
+
+mostly working, both static and dynamic imports
+still need to test if imports work recursively
+
 ### router
 
 read about your pod skill to understand pod implementation

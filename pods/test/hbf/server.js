@@ -4,12 +4,8 @@
 import { hello as staticHello, value as staticValue } from "./lib/esm_test.js";
 
 // In ES modules, variables are module-scoped, not global Use globalThis to
-// expose app to the C handler The line globalThis.app = {} is only needed if
-// native code (such as your C handler) expects to access a global app object
-// from the JavaScript environment. Our integration between C and JavaScript
-// passes req and res directly to the module's handler function does not rely on
-// a global app, then you do not need globalThis.app = {}.
-// globalThis.app = {};
+// expose app to the C handler The line globalThis.app = {}
+globalThis.app = {};
 
 // Helper: Parse query string into object
 function parseQuery(queryString) {
@@ -73,6 +69,9 @@ app.handle = function (req, res) {
 <body>
     <h1>HBF</h1>
     <p>Single binary web compute environment</p>
+    <ul>
+        <li><a href="https://github.com/thetanil/hbf/actions">CI/CD Status</a></li>
+    </ul>
     <h2>Available Routes</h2>
     <ul>
         <li><a href="/health">/health</a> - Health check</li>
