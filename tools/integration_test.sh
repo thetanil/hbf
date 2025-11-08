@@ -138,7 +138,7 @@ main() {
     echo ""
 
     echo -e "${YELLOW}Starting server on port $PORT...${NC}"
-    ./bazel-bin/bin/hbf --port "$PORT" --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
+    ./bazel-bin/bin/hbf_test --port "$PORT" --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
     SERVER_PID=$!
     echo -e "${GREEN}Server started (PID: $SERVER_PID)${NC}"
     echo ""
@@ -230,7 +230,7 @@ main() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
     rm -f ./hbf.db ./hbf.db-shm ./hbf.db-wal
-    ./bazel-bin/bin/hbf --port "$PORT" --dev --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
+    ./bazel-bin/bin/hbf_test --port "$PORT" --dev --log-level info > "$STDOUT_LOG" 2> "$STDERR_LOG" &
     SERVER_PID=$!
     if ! wait_for_server "$PORT"; then
         exit 1
@@ -292,6 +292,7 @@ main() {
         failed=$((failed + 1))
     fi
 
+
     # Test 14: X-HBF-Dev header present in dev mode
     echo -n "Testing X-HBF-Dev header in dev mode... "
     if curl -s -I "http://localhost:$PORT/static/test.html" | grep -q "X-HBF-Dev: 1"; then
@@ -299,6 +300,20 @@ main() {
         passed=$((passed + 1))
     else
         echo -e "${RED}FAIL${NC}"
+        failed=$((failed + 1))
+    fi
+
+    # Test 20: ESM module loader integration (/esm-test)
+    echo -n "Testing GET /esm-test (ESM loader)... "
+    response=$(curl -s -w "\n%{http_code}" "http://localhost:$PORT/esm-test")
+    body=$(echo "$response" | head -n -1)
+    status=$(echo "$response" | tail -n 1)
+    expected='{"message":"Hello, ESM!","value":42}'
+    if [ "$status" = "200" ] && [ "$body" = "$expected" ]; then
+        echo -e "${GREEN}PASS${NC}"
+        passed=$((passed + 1))
+    else
+        echo -e "${RED}FAIL${NC} (status: $status, body: $body)"
         failed=$((failed + 1))
     fi
 

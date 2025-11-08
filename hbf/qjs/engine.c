@@ -11,6 +11,7 @@
 #include "hbf/db/db.h"
 #include "hbf/qjs/db_module.h"
 #include "hbf/qjs/console_module.h"
+#include "hbf/qjs/module_loader.h"
 #include "hbf/qjs/bindings/response.h"
 
 /* Global engine configuration */
@@ -163,6 +164,9 @@ static hbf_qjs_ctx_t *hbf_qjs_ctx_create_internal(sqlite3 *db, int own_db)
 
 	/* Set context opaque to allow DB access from JS modules */
 	JS_SetContextOpaque(js_ctx, ctx);
+
+	/* Initialize ES module loader */
+	hbf_qjs_module_loader_init(rt, ctx->db);
 
 	/* Register custom modules */
 	hbf_qjs_init_db_module(js_ctx);

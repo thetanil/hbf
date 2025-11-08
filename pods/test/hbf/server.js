@@ -1,5 +1,7 @@
 
 // Minimal server.js for HBF integration test
+
+
 app = {};
 
 // Helper: Parse query string into object
@@ -21,6 +23,26 @@ app.handle = function (req, res) {
 
     const { method, path } = req;
     const query = parseQuery(req.query);
+
+    // ESM import test route
+    if (path === "/esm-test" && method === "GET") {
+        // Use dynamic import for QuickJS compatibility
+        (async function () {
+            try {
+                const mod = await import("hbf/lib/esm_test.js");
+                res.set("Content-Type", "application/json");
+                res.send(JSON.stringify({
+                    message: mod.hello("ESM"),
+                    value: mod.value
+                }));
+            } catch (e) {
+                res.status(500);
+                res.set("Content-Type", "application/json");
+                res.send(JSON.stringify({ error: "Import failed", details: String(e) }));
+            }
+        })();
+        return;
+    }
     if (path === "/" && method === "GET") {
         // Serve index.html
         res.set("Content-Type", "text/html");

@@ -4,8 +4,8 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "engine",
-    srcs = ["engine.c", "db_module.c", "console_module.c"],
-    hdrs = ["engine.h", "db_module.h", "console_module.h"],
+    srcs = ["engine.c", "db_module.c", "console_module.c", "module_loader.c"],
+    hdrs = ["engine.h", "db_module.h", "console_module.h", "module_loader.h"],
     deps = [
         "//hbf/shell:log",
         "@quickjs-ng//:quickjs",

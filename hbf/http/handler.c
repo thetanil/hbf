@@ -246,6 +246,20 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		hbf_log_debug("Calling JS_Call (handle_func=%p, app=%p, argc=2)...", (void*)handle_func.u.ptr, (void*)app.u.ptr);
 		result = JS_Call(ctx, handle_func, app, 2, args);
 		hbf_log_debug("JS_Call returned (result=%p)", (void*)result.u.ptr);
+
+		/* Run QuickJS job queue to resolve promises (dynamic import, etc.) */
+		JSRuntime *rt = JS_GetRuntime(ctx);
+		int jobs_executed = 0;
+		JSContext *last_ctx = NULL;
+		while (JS_IsJobPending(rt)) {
+			int job_status = JS_ExecutePendingJob(rt, &last_ctx);
+			if (job_status < 0) {
+				hbf_log_error("QuickJS job execution error");
+				break;
+			}
+			jobs_executed++;
+		}
+		hbf_log_debug("Executed %d pending jobs after JS_Call", jobs_executed);
 	}
 
 	/* Check for JavaScript error */
