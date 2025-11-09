@@ -1,0 +1,16 @@
+# CodeMirror 6 - Extensible code editor
+# MIT License
+# Pre-bundled to ESM for browser use
+
+# Expose the pre-bundled CodeMirror view
+exports_files(
+    ["codemirror-view.js", "codemirror-view.js.map", "LICENSE"],
+    visibility = ["//visibility:public"],
+)
+
+# Filegroup for easy reference
+filegroup(
+    name = "view",
+    srcs = ["codemirror-view.js", "codemirror-view.js.map"],
+    visibility = ["//visibility:public"],
+)

@@ -1,64 +1,23 @@
 
 // Minimal server.js for HBF integration test
 
+import Router from "./lib/find-my-way.js";
 import { hello as staticHello, value as staticValue } from "./lib/esm_test.js";
 
 // In ES modules, variables are module-scoped, not global Use globalThis to
 // expose app to the C handler The line globalThis.app = {}
 globalThis.app = {};
 
-// Helper: Parse query string into object
-function parseQuery(queryString) {
-    const params = {};
-    if (!queryString) return params;
-    queryString.split('&').forEach(function (pair) {
-        const parts = pair.split('=');
-        if (parts[0]) {
-            params[decodeURIComponent(parts[0])] = parts[1] ? decodeURIComponent(parts[1]) : '';
-        }
-    });
-    return params;
-}
+// Initialize the router
+const router = Router({
+    ignoreTrailingSlash: true,
+    caseSensitive: true
+});
 
-app.handle = function (req, res) {
-    // Middleware: add custom header
-    res.set("X-Powered-By", "HBF");
-
-    const { method, path } = req;
-    const query = parseQuery(req.query);
-
-    // ESM import test route (dynamic import)
-    if (path === "/esm-test" && method === "GET") {
-        (async function () {
-            try {
-                const mod = await import("./lib/esm_test.js");
-                res.set("Content-Type", "application/json");
-                res.send(JSON.stringify({
-                    message: mod.hello("ESM"),
-                    value: mod.value
-                }));
-            } catch (e) {
-                res.status(500);
-                res.set("Content-Type", "application/json");
-                res.send(JSON.stringify({ error: "Import failed", details: String(e) }));
-            }
-        })();
-        return;
-    }
-
-    // ESM import test route (static import)
-    if (path === "/esm-test-static" && method === "GET") {
-        res.set("Content-Type", "application/json");
-        res.send(JSON.stringify({
-            message: staticHello("Static ESM"),
-            value: staticValue
-        }));
-        return;
-    }
-    if (path === "/" && method === "GET") {
-        // Serve index.html
-        res.set("Content-Type", "text/html");
-        res.send(`<!DOCTYPE html>
+// Route: Home page
+router.on('GET', '/', (req, res) => {
+    res.set("Content-Type", "text/html");
+    res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -90,27 +49,88 @@ app.handle = function (req, res) {
     </ul>
 </body>
 </html>`);
-        return;
-    }
-    if (path === "/hello" && method === "GET") {
-        res.set("Content-Type", "application/json");
-        res.send(JSON.stringify({ message: "Hello, World!" }));
-        return;
-    }
-    if (path.startsWith("/user/") && method === "GET") {
-        const userId = path.split("/")[2];
-        res.set("Content-Type", "application/json");
-        res.send(JSON.stringify({ userId }));
-        return;
-    }
-    if (path === "/echo" && method === "GET") {
-        res.set("Content-Type", "application/json");
-        res.send(JSON.stringify({ method, url: path }));
+});
+
+// Route: Hello world
+router.on('GET', '/hello', (req, res) => {
+    res.set("Content-Type", "application/json");
+    res.send(JSON.stringify({ message: "Hello, World!" }));
+});
+
+// Route: User by ID (parameter route)
+router.on('GET', '/user/:id', (req, res, params) => {
+    res.set("Content-Type", "application/json");
+    res.send(JSON.stringify({ userId: params.id }));
+});
+
+// Route: Echo
+router.on('GET', '/echo', (req, res) => {
+    res.set("Content-Type", "application/json");
+    res.send(JSON.stringify({ method: req.method, url: req.url }));
+});
+
+// Route: ESM import test (dynamic import)
+router.on('GET', '/esm-test', (req, res) => {
+    (async function () {
+        try {
+            const mod = await import("./lib/esm_test.js");
+            res.set("Content-Type", "application/json");
+            res.send(JSON.stringify({
+                message: mod.hello("ESM"),
+                value: mod.value
+            }));
+        } catch (e) {
+            res.status(500);
+            res.set("Content-Type", "application/json");
+            res.send(JSON.stringify({ error: "Import failed", details: String(e) }));
+        }
+    })();
+});
+
+// Route: ESM import test (static import)
+router.on('GET', '/esm-test-static', (req, res) => {
+    res.set("Content-Type", "application/json");
+    res.send(JSON.stringify({
+        message: staticHello("Static ESM"),
+        value: staticValue
+    }));
+});
+
+// Request adapter: transform HBF req to router-compatible format
+function adaptReq(originalReq) {
+    return {
+        method: originalReq.method,
+        url: originalReq.path + (originalReq.query ? ('?' + originalReq.query) : '')
+    };
+}
+
+// Main request handler
+app.handle = function (req, res) {
+    // Middleware: add custom header
+    res.set("X-Powered-By", "HBF");
+
+    // Adapt request to router format
+    const adaptedReq = adaptReq(req);
+
+    // Extract path without query string for routing
+    const path = adaptedReq.url.split('?')[0];
+
+    // Find matching route
+    const match = router.find(adaptedReq.method, path);
+
+    if (!match) {
+        res.status(404);
+        res.set("Content-Type", "text/plain");
+        res.send("Not Found");
         return;
     }
 
-    // Default: 404
-    res.status(404);
-    res.set("Content-Type", "text/plain");
-    res.send("Not Found");
+    // Execute route handler
+    try {
+        match.handler(adaptedReq, res, match.params);
+    } catch (e) {
+        res.status(500);
+        res.set("Content-Type", "application/json");
+        res.send(JSON.stringify({ error: "Router handler error", details: String(e) }));
+    }
 };

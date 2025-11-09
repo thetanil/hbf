@@ -76,3 +76,11 @@ filegroup(
 )
     """,
 )
+
+# find-my-way router (MIT license) is located in third_party/find-my-way
+# Pre-bundled to ESM for QuickJS compatibility
+# Version: 9.3.0
+
+# CodeMirror 6 (MIT license) is located in third_party/codemirror
+# Pre-bundled @codemirror/view to ESM for browser use
+# Version: 6.25.0

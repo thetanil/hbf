@@ -1,0 +1,16 @@
+# find-my-way router library
+# MIT License
+# Pre-bundled to ESM for QuickJS compatibility
+
+# Expose the pre-bundled router file
+exports_files(
+    ["find-my-way.js"],
+    visibility = ["//visibility:public"],
+)
+
+# Filegroup for easy reference
+filegroup(
+    name = "router",
+    srcs = ["find-my-way.js"],
+    visibility = ["//visibility:public"],
+)

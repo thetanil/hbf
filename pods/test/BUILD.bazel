@@ -10,13 +10,13 @@ genrule(
         exclude_directories = 1,
     ) + [
         "@htmx//file",
-        "@monaco_editor//:min_vs",
         "//hbf/db:overlay_schema.sql",
+        "//third_party/find-my-way:router",
     ],
     outs = ["test.db"],
     cmd = """
         # Create staging directory structure
-        mkdir -p staging/hbf staging/static/vendor staging/static/monaco
+        mkdir -p staging/hbf staging/static/vendor
 
         # Copy local hbf/ files using glob patterns
         for src in $(SRCS); do
@@ -43,13 +43,9 @@ genrule(
         # Stage HTMX
         cp $(location @htmx//file) staging/static/vendor/htmx.min.js
 
-        # Stage Monaco Editor (preserving min/vs/** structure)
-        for monaco_file in $(locations @monaco_editor//:min_vs); do
-            # Extract path after 'min/' (e.g., .../min/vs/loader.js -> vs/loader.js)
-            rel_path=$${monaco_file##*/min/}
-            mkdir -p staging/static/monaco/$$(dirname $$rel_path)
-            cp $$monaco_file staging/static/monaco/$$rel_path
-        done
+        # Stage find-my-way router
+        mkdir -p staging/hbf/lib
+        cp $(location //third_party/find-my-way:router) staging/hbf/lib/find-my-way.js
 
         # Create SQLAR archive
         cd staging && sqlite3 -A -cf ../temp.db hbf static
