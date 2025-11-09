@@ -1,6 +1,60 @@
+/*
+ * Dark mode support: respects user's OS/browser preference via
+ *   @media (prefers-color-scheme: dark)
+ * Light remains the default; dark overrides only colors for good contrast.
+ */
+
+/* Advertise support so form controls pick correct theme where supported */
+:root {
+    color-scheme: light dark;
+}
+
 body {
     font-family: system-ui, -apple-system, sans-serif;
     max-width: 800px;
     margin: 2rem auto;
     padding: 0 1rem;
+}
+
+/* Optional link styling for light mode (keeps browser defaults otherwise) */
+a {
+    color: #0b57d0;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #0b0f14;
+        /* near-black, low-glare */
+        color: #e6e8eb;
+        /* high-contrast text */
+    }
+
+    a {
+        color: #8ab4f8;
+    }
+
+    /* Common elements if used later */
+    hr {
+        border-color: #2b323b;
+    }
+
+    code,
+    pre {
+        background: #121821;
+        color: #e6e8eb;
+    }
+
+    input,
+    textarea,
+    select {
+        background-color: #11161e;
+        color: #e6e8eb;
+        border: 1px solid #2b323b;
+    }
+
+    button {
+        background-color: #1b2530;
+        color: #e6e8eb;
+        border: 1px solid #2b323b;
+    }
 }

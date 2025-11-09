@@ -1,9 +1,20 @@
 # Endpoints expected to return 200 OK (method path)
+
+# civet endpoint C
 GET /health
+
+# civet static handler
+GET /style.css
+GET /favicon.ico
+
+# qjs endpoints
 GET /
 GET /hello
 GET /user/42
 GET /user/alice
 GET /echo
+
+# esm import mapped
 GET /esm-test
 GET /esm-test-static
+
