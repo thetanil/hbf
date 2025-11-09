@@ -7,7 +7,7 @@
 #include "hbf/shell/log.h"
 
 /* Create JavaScript request object from CivetWeb request */
-JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn, int dev)
+JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn)
 {
 	const struct mg_request_info *ri;
 	JSValue req;
@@ -60,9 +60,6 @@ JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn, int d
 	if (!JS_IsException(params)) {
 		JS_SetPropertyStr(ctx, req, "params", params);
 	}
-
-	/* Set dev mode flag */
-	JS_SetPropertyStr(ctx, req, "dev", JS_NewBool(ctx, dev));
 
 	/* Read request body for POST/PUT/DELETE requests */
 	if (ri->content_length > 0) {

@@ -11,7 +11,6 @@ static void print_usage(const char *program)
 	printf("Options:\n");
 	printf("  --port PORT          HTTP server port (default: 5309)\n");
 	printf("  --log-level LEVEL    Log level: debug, info, warn, error (default: info)\n");
-	printf("  --dev                Enable development mode\n");
 	printf("  --inmem              Use in-memory database (for testing)\n");
 	printf("  --help, -h           Show this help message\n");
 }
@@ -27,7 +26,6 @@ int hbf_config_parse(int argc, char *argv[], hbf_config_t *config)
 	/* Set defaults */
 	config->port = 5309;
 	strncpy(config->log_level, "info", sizeof(config->log_level) - 1);
-	config->dev = 0;
 	config->inmem = 0;
 
 	/* Parse arguments */
@@ -59,10 +57,6 @@ int hbf_config_parse(int argc, char *argv[], hbf_config_t *config)
 			}
 			strncpy(config->log_level, argv[++i],
 			        sizeof(config->log_level) - 1);
-			continue;
-		}
-		if (strcmp(argv[i], "--dev") == 0) {
-			config->dev = 1;
 			continue;
 		}
 		if (strcmp(argv[i], "--inmem") == 0) {

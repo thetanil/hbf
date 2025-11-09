@@ -117,21 +117,12 @@ TEMP_DIR=$(mktemp -d)
 echo "Temp directory: ${TEMP_DIR}"
 echo ""
 
-# Start normal server (port 5309)
+# Start server (port 5309)
 echo "Starting HBF test pod server on port 5309..."
 BINARY_PATH="${WORKSPACE_ROOT}/bazel-bin/bin/hbf_test"
-start_server "false" "5309" "${SERVER_PID_FILE}"
+start_server "5309" "${SERVER_PID_FILE}"
 if [ $? -ne 0 ]; then
 	echo "ERROR: Failed to start server"
-	exit 1
-fi
-echo ""
-
-# Start dev server (port 5310) for write tests
-echo "Starting HBF server on port 5310 (dev mode)..."
-start_server "true" "5310" "${SERVER_DEV_PID_FILE}"
-if [ $? -ne 0 ]; then
-	echo "ERROR: Failed to start dev server"
 	exit 1
 fi
 echo ""
@@ -198,49 +189,6 @@ for endpoint in "${endpoints_runtime[@]}"; do
 	echo ""
 done
 
-# Category 3: Versioned Filesystem Operations (dev mode, port 5310)
-echo "========================================"
-echo "Category 3: Versioned Filesystem Writes"
-echo "========================================"
-
-# Test file read from versioned filesystem
-endpoint="/__dev/api/files"
-echo "Benchmarking: GET ${endpoint}"
-output_file="${TEMP_DIR}/ab_fs_read.txt"
-metrics=$(run_ab_benchmark "http://localhost:5310${endpoint}" "${REQUESTS}" "${CONCURRENCY}" "${output_file}")
-
-if [ $? -eq 0 ]; then
-	read -r time_taken rps time_per_req transfer_rate failed <<< "${metrics}"
-	echo "  Requests/sec: $(format_rps ${rps})"
-	echo "  Time/request: ${time_per_req} ms"
-	echo "  Failed: ${failed}"
-
-	store_result "${RUN_ID}" "fs_read" "GET ${endpoint}" "${REQUESTS}" "${CONCURRENCY}" \
-		"${time_taken}" "${rps}" "${time_per_req}" "${transfer_rate}" "${failed}"
-else
-	echo "  ERROR: Benchmark failed"
-fi
-echo ""
-
-# Test file write to versioned filesystem
-endpoint="/__dev/api/file?name=static/bench.txt"
-echo "Benchmarking: PUT ${endpoint}"
-output_file="${TEMP_DIR}/ab_fs_write.txt"
-metrics=$(run_ab_put_benchmark "http://localhost:5310${endpoint}" "${REQUESTS}" "${CONCURRENCY}" "/tmp/bench_body.txt" "${output_file}")
-
-if [ $? -eq 0 ]; then
-	read -r time_taken rps time_per_req transfer_rate failed <<< "${metrics}"
-	echo "  Requests/sec: $(format_rps ${rps})"
-	echo "  Time/request: ${time_per_req} ms"
-	echo "  Failed: ${failed}"
-
-	store_result "${RUN_ID}" "fs_write" "PUT ${endpoint}" "${REQUESTS}" "${CONCURRENCY}" \
-		"${time_taken}" "${rps}" "${time_per_req}" "${transfer_rate}" "${failed}"
-else
-	echo "  ERROR: Benchmark failed"
-fi
-echo ""
-
 # Generate summary report
 echo "========================================"
 echo "Benchmark Summary"
@@ -264,7 +212,7 @@ if [ -n "${PREV_RUN_ID}" ]; then
 	echo "Comparison with previous run (ID: ${PREV_RUN_ID}):"
 	echo ""
 
-	for endpoint in "${endpoints_static[@]}" "${endpoints_runtime[@]}" "GET /__dev/api/files" "PUT /__dev/api/file?name=static/bench.txt"; do
+	for endpoint in "${endpoints_static[@]}" "${endpoints_runtime[@]}"; do
 		# compare_endpoint already executes the query and prints formatted output
 		compare_endpoint "${endpoint}" "${PREV_RUN_ID}" "${RUN_ID}"
 	done

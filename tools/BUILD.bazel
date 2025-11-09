@@ -53,7 +53,6 @@ sh_test(
         "//:hbf_test",
         "integration_endpoints_200.txt",
         "integration_endpoints_404.txt",
-        "integration_endpoints_403.txt",
     ],
     timeout = "moderate",
     tags = ["local", "integration"],

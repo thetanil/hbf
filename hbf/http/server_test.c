@@ -24,7 +24,7 @@ static void test_server_startup(void)
 	assert(ret == 0);
 
 	/* Create server instance */
-	server = hbf_server_create(15309, 0, db);
+	server = hbf_server_create(15309, db);
 	assert(server != NULL);
 
 	/* Start server */

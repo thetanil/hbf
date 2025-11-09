@@ -1,2 +1,0 @@
-# Endpoints expected to return 403 Forbidden when not in --dev mode (method path)
-GET /__dev/api/files

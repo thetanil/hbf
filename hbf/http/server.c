@@ -62,8 +62,8 @@ static const char *get_mime_type(const char *path)
 /* Static file handler - serves files from SQLAR archive */
 static int static_handler(struct mg_connection *conn, void *cbdata)
 {
-	hbf_server_t *server = (hbf_server_t *)cbdata;
 	const struct mg_request_info *ri = mg_get_request_info(conn);
+	(void)cbdata;
 	const char *uri;
 	char path[512];
 	unsigned char *data = NULL;
@@ -88,9 +88,9 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 
 	hbf_log_debug("Static request: %s -> %s", uri, path);
 
-	/* Read file from database (with overlay support in dev mode) */
+	/* Read file from database */
 	/* NO MUTEX - static file serving stays parallel */
-	ret = overlay_fs_read_file(path, server->dev, &data, &size);
+	ret = overlay_fs_read_file(path, 1, &data, &size);
 	if (ret != 0) {
 		hbf_log_debug("File not found: %s", path);
 		mg_send_http_error(conn, 404, "Not Found");
@@ -100,24 +100,15 @@ static int static_handler(struct mg_connection *conn, void *cbdata)
 	/* Determine MIME type */
 	mime_type = get_mime_type(path);
 
-	/* Set cache headers based on dev mode */
-	const char *cache_header = server->dev
-	    ? "Cache-Control: no-store\r\n"
-	    : "Cache-Control: public, max-age=3600\r\n";
-
-	/* Set dev header if in dev mode */
-	const char *dev_header = server->dev ? "X-HBF-Dev: 1\r\n" : "";
-
 	/* Send response */
 	mg_printf(conn,
 	          "HTTP/1.1 200 OK\r\n"
 	          "Content-Type: %s\r\n"
 	          "Content-Length: %zu\r\n"
-	          "%s"        /* Cache-Control */
-	          "%s"        /* X-HBF-Dev (if dev mode) */
+	          "Cache-Control: public, max-age=3600\r\n"
 	          "Connection: close\r\n"
 	          "\r\n",
-	          mime_type, size, cache_header, dev_header);
+	          mime_type, size);
 
 	mg_write(conn, data, size);
 	free(data);
@@ -144,77 +135,7 @@ static int health_handler(struct mg_connection *conn, void *cbdata)
 	return 200;
 }
 
-/* Dev API: List all files (fast C handler, bypasses QuickJS) */
-static int dev_files_list_handler(struct mg_connection *conn, void *cbdata)
-{
-	hbf_server_t *server = (hbf_server_t *)cbdata;
-	sqlite3_stmt *stmt = NULL;
-	int rc;
-	const unsigned char *json = NULL;
-	int json_len = 0;
-
-	if (!server || !server->db) {
-		mg_send_http_error(conn, 500, "Internal error");
-		return 500;
-	}
-
-	/* Only available in dev mode */
-	if (!server->dev) {
-		mg_send_http_error(conn, 403, "Dev mode not enabled");
-		return 403;
-	}
-
-	/* Build JSON in SQLite to avoid JS bridging/serialization overhead */
-	const char *sql =
-		"SELECT COALESCE(json_group_array(json_object('name', path, 'mtime', mtime, 'sz', size)), '[]') "
-		"FROM (SELECT path, mtime, size FROM latest_files_meta ORDER BY path)";
-
-	rc = sqlite3_prepare_v2(server->db, sql, -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("dev_files_list_handler: prepare failed: %s", sqlite3_errmsg(server->db));
-		mg_send_http_error(conn, 500, "Internal error");
-		return 500;
-	}
-
-	rc = sqlite3_step(stmt);
-	if (rc == SQLITE_ROW) {
-		json = sqlite3_column_text(stmt, 0);
-		json_len = sqlite3_column_bytes(stmt, 0);
-	}
-
-	if (rc != SQLITE_ROW || !json) {
-		/* Fallback to empty array */
-		const char *empty = "[]";
-		mg_printf(conn,
-				  "HTTP/1.1 200 OK\r\n"
-				  "Content-Type: application/json\r\n"
-				  "Content-Length: %zu\r\n"
-				  "Cache-Control: no-store\r\n"
-				  "X-HBF-Dev: 1\r\n"
-				  "Connection: close\r\n"
-				  "\r\n%s",
-				  strlen(empty), empty);
-		sqlite3_finalize(stmt);
-		return 200;
-	}
-
-	/* Send result */
-	mg_printf(conn,
-			  "HTTP/1.1 200 OK\r\n"
-			  "Content-Type: application/json\r\n"
-			  "Content-Length: %d\r\n"
-			  "Cache-Control: no-store\r\n"
-			  "X-HBF-Dev: 1\r\n"
-			  "Connection: close\r\n"
-			  "\r\n",
-			  json_len);
-	mg_write(conn, json, (size_t)json_len);
-
-	sqlite3_finalize(stmt);
-	return 200;
-}
-
-hbf_server_t *hbf_server_create(int port, int dev, sqlite3 *db)
+hbf_server_t *hbf_server_create(int port, sqlite3 *db)
 {
 	hbf_server_t *server;
 
@@ -230,7 +151,6 @@ hbf_server_t *hbf_server_create(int port, int dev, sqlite3 *db)
 	}
 
 	server->port = port;
-	server->dev = dev;  /* Store dev flag */
 	server->db = db;
 	server->ctx = NULL;
 
@@ -264,8 +184,6 @@ int hbf_server_start(hbf_server_t *server)
 
 	/* Register handlers */
 	mg_set_request_handler(server->ctx, "/health", health_handler, server);
-	/* Fast-path dev API endpoints to avoid QuickJS overhead */
-	mg_set_request_handler(server->ctx, "/__dev/api/files", dev_files_list_handler, server);
 	mg_set_request_handler(server->ctx, "/static/**", static_handler, server);
 	mg_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
 

@@ -24,13 +24,6 @@ Tests endpoints that require QuickJS execution and JSON serialization.
 - `/user/42` - Parameterized route with path parsing
 - `/echo` - Echo endpoint reflecting request details
 
-### 3. Versioned Filesystem Writes (dev mode)
-Tests write operations to the versioned filesystem (requires `--dev` flag).
-
-**Endpoints:**
-- `PUT /__dev/api/file?name=static/bench.txt` - Write new version to versioned filesystem
-- `GET /__dev/api/file?name=static/bench.txt` - Read from versioned filesystem
-
 ## Benchmark Parameters
 
 Default test parameters (configurable):
@@ -127,13 +120,11 @@ The main `benchmark.sh` script performs:
 
 3. **Start server**
    - Launch in background with `--port 5309`
-   - Launch dev mode server with `--dev` for write tests
    - Wait for health check
 
 4. **Run benchmarks**
    - Category 1: Static assets
    - Category 2: QuickJS routes
-   - Category 3: Versioned filesystem ops (with `--dev`)
 
 5. **Parse results**
    - Extract key metrics from ab output

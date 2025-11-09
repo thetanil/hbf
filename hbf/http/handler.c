@@ -85,11 +85,10 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		return 500;
 	}
 
-		/* Load hbf/server.js from database (with overlay support in dev mode) */
+		/* Load hbf/server.js from database */
 		unsigned char *js_data = NULL;
 		size_t js_size = 0;
-		int ret = overlay_fs_read_file("hbf/server.js",
-		                               server ? server->dev : 0, &js_data, &js_size);
+		int ret = overlay_fs_read_file("hbf/server.js", 1, &js_data, &js_size);
 		if (ret != 0 || !js_data || js_size == 0) {
 			hbf_log_error("hbf/server.js not found in database");
 			hbf_qjs_ctx_destroy(qjs_ctx);
@@ -115,7 +114,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 		}
 
 	/* Create request and response objects */
-	req = hbf_qjs_create_request(ctx, conn, server ? server->dev : 0);
+	req = hbf_qjs_create_request(ctx, conn);
 	if (JS_IsException(req) || JS_IsNull(req)) {
 		hbf_log_error("Failed to create request object");
 		hbf_qjs_ctx_destroy(qjs_ctx);

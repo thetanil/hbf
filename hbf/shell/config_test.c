@@ -15,7 +15,6 @@ static void test_config_parse_defaults(void)
 	assert(ret == 0);
 	assert(config.port == 5309);
 	assert(strcmp(config.log_level, "info") == 0);
-	assert(config.dev == 0);
 	assert(config.inmem == 0);
 
 	printf("  ✓ Config defaults\n");
@@ -62,20 +61,6 @@ static void test_config_parse_log_level(void)
 	printf("  ✓ Log level parsing\n");
 }
 
-static void test_config_parse_dev(void)
-{
-	hbf_config_t config;
-	char *argv[] = {(char *)"hbf", (char *)"--dev"};
-	int ret;
-
-	ret = hbf_config_parse(2, argv, &config);
-
-	assert(ret == 0);
-	assert(config.dev == 1);
-
-	printf("  ✓ Dev flag\n");
-}
-
 static void test_config_parse_inmem(void)
 {
 	hbf_config_t config;
@@ -97,17 +82,15 @@ static void test_config_parse_combined(void)
 		(char *)"hbf",
 		(char *)"--port", (char *)"3000",
 		(char *)"--log-level", (char *)"warn",
-		(char *)"--dev",
 		(char *)"--inmem"
 	};
 	int ret;
 
-	ret = hbf_config_parse(7, argv, &config);
+	ret = hbf_config_parse(6, argv, &config);
 
 	assert(ret == 0);
 	assert(config.port == 3000);
 	assert(strcmp(config.log_level, "warn") == 0);
-	assert(config.dev == 1);
 	assert(config.inmem == 1);
 
 	printf("  ✓ Combined flags\n");
@@ -121,7 +104,6 @@ int main(void)
 	test_config_parse_help();
 	test_config_parse_port();
 	test_config_parse_log_level();
-	test_config_parse_dev();
 	test_config_parse_inmem();
 	test_config_parse_combined();
 

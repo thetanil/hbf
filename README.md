@@ -79,7 +79,7 @@ curl http://localhost:5309/health
 ```text
 --port <num>         HTTP server port (default: 5309)
 --log_level <level>  debug | info | warn | error (default: info)
---dev                Enable development mode
+--inmem              Use in-memory database (for testing)
 --help, -h           Show help
 ```
 

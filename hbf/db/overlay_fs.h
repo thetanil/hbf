@@ -115,14 +115,14 @@ void overlay_fs_close(sqlite3 *db);
 void overlay_fs_init_global(sqlite3 *db);
 
 /*
- * Read file with optional overlay support (dev mode)
+ * Read file with overlay support
  *
  * Reads from the global database handle set by overlay_fs_init_global.
  * Uses latest_files view (overlay + base) for file access.
  * NO MUTEX - relies on SQLite's internal locking (SQLITE_THREADSAFE=1 + WAL).
  *
  * @param path: File path (e.g., "static/index.html" or "hbf/server.js")
- * @param dev: Development mode flag (currently unused, reserved for future)
+ * @param enable_overlay: If 1, read from overlay; if 0, read from base only
  * @param data: Output parameter for file data (caller must free)
  * @param size: Output parameter for file size
  * @return 0 on success, -1 on error (file not found or SQL error)

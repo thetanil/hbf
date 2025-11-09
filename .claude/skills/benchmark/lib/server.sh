@@ -4,14 +4,12 @@
 
 SERVER_PORT="${SERVER_PORT:-5309}"
 SERVER_PID_FILE="/tmp/hbf_bench_server.pid"
-SERVER_DEV_PID_FILE="/tmp/hbf_bench_server_dev.pid"
 BINARY_PATH="${BINARY_PATH:-bazel-bin/bin/hbf}"
 
 # Start HBF server in background
 start_server() {
-	local dev_mode="$1"
-	local port="$2"
-	local pid_file="$3"
+	local port="$1"
+	local pid_file="$2"
 
 	if [ -f "${pid_file}" ]; then
 		local old_pid
@@ -24,9 +22,6 @@ start_server() {
 	fi
 
 	local cmd="${BINARY_PATH} --port ${port} --log-level error --inmem"
-	if [ "${dev_mode}" = "true" ]; then
-		cmd="${cmd} --dev"
-	fi
 
 	echo "Starting server: ${cmd}"
 	${cmd} &
@@ -85,7 +80,6 @@ stop_server() {
 # Stop all benchmark servers
 stop_all_servers() {
 	stop_server "${SERVER_PID_FILE}"
-	stop_server "${SERVER_DEV_PID_FILE}"
 }
 
 # Health check

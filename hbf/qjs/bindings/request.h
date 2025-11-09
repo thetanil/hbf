@@ -13,10 +13,9 @@
  *   - query: Query string (raw)
  *   - headers: Object with header key-value pairs
  *   - params: Object for route parameters (populated by router)
- *   - dev: Boolean indicating if dev mode is enabled
  *
  * Returns: JSValue request object (must be freed with JS_FreeValue)
  */
-JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn, int dev);
+JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn);
 
 #endif /* HBF_QJS_BINDINGS_REQUEST_H */

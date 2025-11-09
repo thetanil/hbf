@@ -38,7 +38,7 @@ bazel build //:hbf
 # Build test pod
 bazel build //:hbf_test
 # Run binary with flags
-bazel run //:hbf -- --port 5309 --log_level debug --dev
+bazel run //:hbf -- --port 5309 --log_level debug
 # Run all tests (C99 unit + pod build tests)
 bazel test //...
 # Run a single test with full output
@@ -83,7 +83,7 @@ No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_
 - Memory/timeout limits: Runtime-configurable via `hbf_qjs_init(mem_limit_mb, timeout_ms)` in `hbf/qjs/engine.c:58`
   - Timeout enforced via `JS_SetInterruptHandler` with `CLOCK_MONOTONIC` timer (engine.c:35-55, 120)
 - Host bindings:
-  - **request/response**: `bindings/request.c`, `bindings/response.c` (provides `req.path`, `req.method`, `req.dev`, etc.)
+  - **request/response**: `bindings/request.c`, `bindings/response.c` (provides `req.path`, `req.method`, `req.headers`, etc.)
   - **console**: Basic logging via `console_module.c`
   - **db**: Direct SQLite access via `db_module.c`
     - `db.query(sql, [params])` → Returns array of row objects
@@ -106,9 +106,9 @@ No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_
 6. Link via `pod_binary()` macro (see `tools/pod_binary.bzl`)
 
 **Runtime overlay filesystem** (ACTIVE, fully integrated):
-- All reads via `overlay_fs_read_file(path, dev, **data, *size)` from `latest_files` view
-- Static handler (`hbf/http/server.c:93`) uses overlay for `/static/*` routes
-- Dev mode cache headers: `no-store` if `--dev`, else `max-age=3600` (server.c:104-109)
+- All reads via `overlay_fs_read_file(path, enable_overlay, **data, *size)` from `latest_files` view
+- Static handler (`hbf/http/server.c`) uses overlay for `/static/*` routes
+- Cache headers: `Cache-Control: public, max-age=3600` for static assets
 - Versioned writes create immutable history in `file_versions` table
 - Public API (see `hbf/db/overlay_fs.h`):
   - `overlay_fs_read(db, path, ...)` - Read latest version
@@ -165,15 +165,8 @@ Must ASK before:
 ---
 ## API & Behavior Guarantees (Current Code)
 **HTTP Endpoints (C handlers)**:
-- `GET /health` → `{"status":"ok"}` (health_handler in server.c:130)
-- `GET /__dev/api/files` → JSON array of file metadata (dev_files_list_handler in server.c:148, native C for performance)
-- `/static/**` → File content from versioned FS (static_handler in server.c:63)
-
-**Dev Mode Endpoints (JavaScript, in `pods/*/hbf/server.js`)**:
-- `GET /__dev/` → Monaco editor UI (requires `--dev` flag)
-- `GET /__dev/api/file?name=<path>` → Read single file content
-- `PUT /__dev/api/file?name=<path>` → Write new file version (body = content)
-- `DELETE /__dev/api/file?name=<path>` → Delete file (all versions)
+- `GET /health` → `{"status":"ok"}` (health_handler in server.c)
+- `/static/**` → File content from versioned FS (static_handler in server.c)
 
 **Request Routing**:
 - All non-static, non-health routes invoke QuickJS `app.handle(req, res)` from pod `server.js`
@@ -243,8 +236,8 @@ A: `bazel test //hbf/db:overlay_fs_test --test_output=all`
 Q: Can I use npm packages in server.js?
 A: Not yet. Only relative ESM imports work (e.g., `import './lib/foo.js'`). Bare specifiers like `import 'lodash'` are not supported. See `js_import_router.md` for vendor plan.
 
-Q: How do I edit files in dev mode?
-A: Use `PUT /__dev/api/file?name=<path>` with file content in request body, or use the Monaco editor at `/__dev/` when running with `--dev` flag.
+Q: How do I edit files at runtime?
+A: File editing endpoints have been removed. Future versions will provide JWT-gated editor APIs.
 
 Q: Are SSE (Server-Sent Events) endpoints available?
 A: No. CivetWeb supports SSE, but no application-level SSE handlers are implemented yet.
@@ -254,7 +247,7 @@ A: No. CivetWeb supports SSE, but no application-level SSE handlers are implemen
 ```
 bazel build //:hbf
 bazel build //:hbf_test
-bazel run //:hbf -- --port 5309 --log_level debug --dev
+bazel run //:hbf -- --port 5309 --log_level debug
 bazel test //...
 bazel test //hbf/qjs:engine_test --test_output=all
 bazel run //:lint

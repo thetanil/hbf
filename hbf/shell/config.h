@@ -5,7 +5,6 @@
 typedef struct {
 	int port;
 	char log_level[16];
-	int dev;
 	int inmem;
 } hbf_config_t;
 

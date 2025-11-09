@@ -37,8 +37,8 @@ int main(int argc, char *argv[])
 	/* Initialize logging */
 	hbf_log_init(hbf_log_parse_level(config.log_level));
 
-	hbf_log_info("HBF starting (port=%d, inmem=%d, dev=%d)",
-	             config.port, config.inmem, config.dev);
+	hbf_log_info("HBF starting (port=%d, inmem=%d)",
+	             config.port, config.inmem);
 
 	/* Initialize database */
 	ret = hbf_db_init(config.inmem, &db);
@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Create HTTP server */
-	server = hbf_server_create(config.port, config.dev, db);
+	server = hbf_server_create(config.port, db);
 	if (!server) {
 		hbf_log_error("Failed to create HTTP server");
 		hbf_qjs_shutdown();

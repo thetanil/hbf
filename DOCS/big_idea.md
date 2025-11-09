@@ -122,7 +122,7 @@ Common prerequisites bubble to the top: (a) SSR contract + htmx helpers, (b) dev
 - Overlay
   - Read path: overlay entry if present; tombstone entry masks base
   - Write path: upsert by logical path; record content hash and mtime
-  - Config: enabled only with `--dev` or `/__dev` active session
+  - Access: will be gated by JWT-based authentication in future
 - SSR helpers
   - `render(view, data)` finds `/views/{view}.html` in DB; partial iff htmx
   - `res.hx()` sets HX‑* headers and sensible cache/Vary

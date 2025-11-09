@@ -118,11 +118,6 @@ main() {
     total_failed=$((total_failed+$?))
   fi
 
-  echo "Checking endpoints (expected 403s)"
-  if ! run_checks_for 403 "${RUNFILES_DIR:-$PWD}/tools/integration_endpoints_403.txt"; then
-    total_failed=$((total_failed+$?))
-  fi
-
   if [[ $total_failed -gt 0 ]]; then
     echo -e "${RED}${total_failed} endpoint checks failed${NC}"
     echo -e "${YELLOW}--- server stderr (tail) ---${NC}"; tail -n 50 "$STDERR_LOG" || true

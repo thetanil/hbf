@@ -123,7 +123,7 @@ overlay_sqlar(
 
 **Why versioned filesystem?**
 - Immutable file history (every write creates a new version)
-- Dev mode live editing with full audit trail
+- Support for live editing with full audit trail (will be gated by JWT auth in future)
 - Fast indexed reads using `file_id` + `version_number`
 
 ### Stage 4: VACUUM Optimization
@@ -198,7 +198,7 @@ The embedded database is copied to memory (or disk) and opened with:
 /* Read file from versioned filesystem */
 unsigned char *data = NULL;
 size_t size;
-int ret = overlay_fs_read_file(path, server->dev, &data, &size);
+int ret = overlay_fs_read_file(path, 1, &data, &size);
 ```
 
 **What happens**:
@@ -215,38 +215,23 @@ int ret = overlay_fs_read_file(path, server->dev, &data, &size);
 - Handler strips `/`: `static/style.css`
 - Database path: `static/style.css` (matches embedded path)
 
-### Writing Files (Dev Mode API)
+### Writing Files (Versioned Filesystem)
 
-**JavaScript Code** (`pods/base/hbf/server.js:189-247`):
-```javascript
-// PUT /__dev/api/file?name=static/style.css
-const fileName = query.name;
-const content = req.body;
+The versioned filesystem supports programmatic file writes through the overlay API. File editing endpoints have been removed; JWT-based authentication will gate future editor APIs.
 
-// 1. Get or create file_id
-db.execute("INSERT OR IGNORE INTO file_ids (path) VALUES (?)", [fileName]);
-const fileIdResult = db.query("SELECT file_id FROM file_ids WHERE path = ?", [fileName]);
-const fileId = fileIdResult[0].file_id;
-
-// 2. Get next version number
-const versionResult = db.query(
-    "SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM file_versions WHERE file_id = ?",
-    [fileId]
-);
-const nextVersion = versionResult[0].next_version;
-
-// 3. Insert new version
-db.execute(
-    "INSERT INTO file_versions (file_id, path, version_number, mtime, size, data) VALUES (?, ?, ?, ?, ?, ?)",
-    [fileId, fileName, nextVersion, mtime, size, content]
-);
+**Overlay FS Write Example** (using C API):
+```c
+// Write new version of a file
+overlay_fs_write(db, "static/style.css", data, size);
 ```
 
-**What happens**:
-1. Dev mode PUT creates version 2 of file
-2. Next read returns version 2 (latest)
-3. Version 1 (build-time) preserved for history
-4. All operations use SQLite transactions (atomic)
+**What happens internally**:
+1. Creates or retrieves `file_id` for the path
+2. Calculates next version number
+3. Inserts new version with timestamp
+4. Next read returns the latest version
+5. All previous versions preserved for history
+6. All operations use SQLite transactions (atomic)
 
 **Version history example**:
 ```
@@ -441,10 +426,6 @@ db.execute("COMMIT");
    ```bash
    # Extract database from binary (if needed)
    strings bazel-bin/bin/hbf | grep -A 5 "SQLite format"
-
-   # Or check via runtime:
-   bazel run //:hbf -- --dev
-   curl http://localhost:5309/__dev/api/files | jq
    ```
 
 ### Module import fails
@@ -534,8 +515,8 @@ curl http://localhost:5309/static/style.css
 
 ### Check embedded files
 ```bash
-bazel run //:hbf -- --dev
-curl http://localhost:5309/__dev/api/files | jq '.[] | .name'
+bazel run //:hbf
+# File editing endpoints removed; will be gated by JWT auth in future
 ```
 
 ### View version history

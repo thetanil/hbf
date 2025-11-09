@@ -82,7 +82,6 @@ assets, startup fails (no automatic rehydration).
 Command line options (`--help`):
 - `--port PORT` (default 5309)
 - `--log-level LEVEL` (debug|info|warn|error; default info)
-- `--dev` (development mode flag)
 - `--inmem` (use in-memory main DB)
 
 References:
