@@ -1,0 +1,3 @@
+# Endpoints expected to return 404 Not Found (method path)
+GET /does-not-exist
+GET /static/nonexistent.html

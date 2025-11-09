@@ -6,6 +6,14 @@ sh_binary(
     visibility = ["//visibility:public"],
 )
 
+# Expose lint as a test so it runs under `bazel test //...`
+sh_test(
+    name = "lint_test",
+    srcs = ["lint.sh"],
+    tags = ["lint"],
+    visibility = ["//visibility:public"],
+)
+
 sh_binary(
     name = "db_to_c",
     srcs = ["db_to_c.sh"],
@@ -35,3 +43,19 @@ cc_binary(
 )
 
 exports_files(["js_to_c.sh"])
+
+# Integration test that boots the test pod binary and verifies endpoint status codes
+sh_test(
+    name = "integration_test",
+    srcs = ["integration_test_runner.sh"],
+    args = ["$(location //:hbf_test)"],
+    data = [
+        "//:hbf_test",
+        "integration_endpoints_200.txt",
+        "integration_endpoints_404.txt",
+        "integration_endpoints_403.txt",
+    ],
+    timeout = "moderate",
+    tags = ["local", "integration"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,13 @@
+# Endpoints expected to return 200 OK (method path)
+GET /health
+GET /
+GET /hello
+GET /user/42
+GET /user/alice
+GET /echo
+GET /esm-test
+GET /esm-test-static
+# Dev-mode endpoints (run after restart with --dev)
+DEV GET /__dev/api/files
+DEV GET /__dev/api/file?name=static/test.html # after PUT
+DEV GET /static/test.html # after overlay create
