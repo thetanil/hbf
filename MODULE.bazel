@@ -63,19 +63,20 @@ http_file(
 # Monaco Editor - VS Code's text editor (MIT license)
 # Version: 0.52.0 (latest stable)
 # Note: Fetching pre-built 'min' distribution from npm registry
-http_archive(
-    name = "monaco_editor",
-    url = "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.52.0.tgz",
-    sha256 = "5dbda58750b13452de39affcea703af096022d8e3546c67ed5d3bd072763f939",
-    strip_prefix = "package",
-    build_file_content = """
-filegroup(
-    name = "min_vs",
-    srcs = glob(["min/vs/**/*"]),
-    visibility = ["//visibility:public"],
-)
-    """,
-)
+# REMOVED DUE TO SIZE CONCERNS
+# http_archive(
+#     name = "monaco_editor",
+#     url = "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.52.0.tgz",
+#     sha256 = "5dbda58750b13452de39affcea703af096022d8e3546c67ed5d3bd072763f939",
+#     strip_prefix = "package",
+#     build_file_content = """
+# filegroup(
+#     name = "min_vs",
+#     srcs = glob(["min/vs/**/*"]),
+#     visibility = ["//visibility:public"],
+# )
+#     """,
+# )
 
 # find-my-way router (MIT license) is located in third_party/find-my-way
 # Pre-bundled to ESM for QuickJS compatibility
