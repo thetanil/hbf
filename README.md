@@ -198,6 +198,14 @@ these modules should be served from the static http server in a way that they ca
 - from the server js like import { name, draw, reportArea, reportPerimeter } from "./modules/square.js";
 - from the browser like import {EditorView, keymap} from "@codemirror/view"
 
+### tests for test pod and release tests for base pod
+
+- include server startup / integration tests in bazel test
+
+### srv
+
+drop civet and move to https://github.com/diatribes/srv
+
 ### esm module support
 
 mostly working, both static and dynamic imports
