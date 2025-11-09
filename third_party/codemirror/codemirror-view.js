@@ -1,4 +1,4 @@
-// third_party/npm/@codemirror__view@6.25.0/pkg/node_modules/@marijn/find-cluster-break/src/index.js
+// node_modules/@marijn/find-cluster-break/src/index.js
 var rangeFrom = [];
 var rangeTo = [];
 (() => {
@@ -72,7 +72,7 @@ function codePointSize(code) {
   return code < 65536 ? 1 : 2;
 }
 
-// third_party/npm/@codemirror__view@6.25.0/pkg/node_modules/@codemirror/state/dist/index.js
+// node_modules/@codemirror/state/dist/index.js
 var Text = class _Text {
   /**
   Get the line description around the given position.
@@ -3408,7 +3408,7 @@ function findColumn(string, col, tabSize, strict) {
   return strict === true ? -1 : string.length;
 }
 
-// third_party/npm/@codemirror__view@6.25.0/pkg/node_modules/style-mod/src/style-mod.js
+// node_modules/style-mod/src/style-mod.js
 var C = "\u037C";
 var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
 var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -3539,7 +3539,7 @@ var StyleSet = class {
   }
 };
 
-// third_party/npm/@codemirror__view@6.25.0/pkg/node_modules/w3c-keyname/index.js
+// node_modules/w3c-keyname/index.js
 var base = {
   8: "Backspace",
   9: "Tab",
@@ -3645,7 +3645,7 @@ function keyName(event) {
   return name;
 }
 
-// third_party/npm/@codemirror__view@6.25.0/pkg/dist/index.js
+// node_modules/@codemirror/view/dist/index.js
 function getSelection(root) {
   let target;
   if (root.nodeType == 11) {
