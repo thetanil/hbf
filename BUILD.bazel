@@ -1,28 +1,6 @@
 # HBF - Web Compute Environment
 # Root build file
 
-load("//tools:pod_binary.bzl", "pod_binary")
-
-# ============================================================================
-# Pod Binaries
-# ============================================================================
-
-# Base pod (default binary)
-pod_binary(
-    name = "hbf",
-    pod = "//pods/base",
-    visibility = ["//visibility:public"],
-    tags = ["hbf_pod"],
-)
-
-# Test pod
-pod_binary(
-    name = "hbf_test",
-    pod = "//pods/test",
-    visibility = ["//visibility:public"],
-    tags = ["hbf_pod"],
-)
-
 # ============================================================================
 # Utility Targets
 # ============================================================================

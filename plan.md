@@ -34,10 +34,10 @@ This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libht
    - Created `third_party/miniz/BUILD.bazel` with proper build configuration.
    - **TODO**: Write Bazel build rules to compress and embed assets.
 
-5. **Drop SQLAR and Pod Build Macros** 🔄 IN PROGRESS
-   - Remove SQLAR from `third_party/sqlar/`, `MODULE.bazel`, and all related scripts (`db_to_c.sh`, `sql_to_c.sh`).
-   - Delete pod registration macros from `tools/pod_binary.bzl` and root `BUILD.bazel`.
-   - Remove overlay schema and versioned FS logic from `hbf/db/overlay_fs.*`.
+5. **Drop SQLAR and Pod Build Macros** ✅ COMPLETE
+   - Removed SQLAR from `third_party/sqlar/`, `MODULE.bazel`, and all related scripts (`db_to_c.sh`, `sql_to_c.sh`).
+   - Deleted pod registration macros from `tools/pod_binary.bzl` and root `BUILD.bazel`.
+   - Removed overlay schema and versioned FS logic from `hbf/db/overlay_fs.*`.
 
 6. **Startup Asset Migration** ⏳ PENDING
    - On application start, use QuickJS to run a migration script:
@@ -111,6 +111,21 @@ This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libht
 - **BUILD WILL NOT COMPILE YET**: libhttp commit hash may need verification
 - **API COMPATIBILITY**: Need to verify libhttp API is compatible with all mg_* → lh_* replacements
 - **TESTING REQUIRED**: All tests need to be updated and run after completing SQLAR removal
+
+  The codebase currently will not compile because:
+
+  1. db.c and db.h still reference:
+    - overlay_fs.h includes
+    - overlay_fs_* function calls
+    - SQLAR extension initialization (sqlite3_sqlar_init)
+    - Embedded fs_db_data and fs_db_len symbols (no longer generated)
+  2. server.c and handler.c still reference:
+    - overlay_fs_read_file() calls
+    - overlay_fs.h includes
+  3. Missing implementation for:
+    - New asset compression pipeline with miniz
+    - Asset embedding via xxd -i
+    - Startup migration to load compressed assets into SQLite
 
 ---
 
