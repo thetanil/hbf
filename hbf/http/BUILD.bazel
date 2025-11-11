@@ -15,7 +15,7 @@ cc_library(
         "//hbf/db:db",
         "//hbf/qjs:engine",
         "//hbf/qjs:bindings",
-        "@civetweb//:civetweb",
+        "@libhttp//:libhttp",
         "@sqlite3",
         "@quickjs-ng//:quickjs",
     ],

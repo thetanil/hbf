@@ -27,9 +27,9 @@ static pthread_mutex_t handler_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* QuickJS request handler */
 /* NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex request handling logic */
-int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
+int hbf_qjs_request_handler(struct lh_con_t *conn, void *cbdata)
 {
-	const struct mg_request_info *ri;
+	const struct lh_rqi_t *ri;
 	hbf_qjs_ctx_t *qjs_ctx;
 	JSContext *ctx;
 	JSValue global, app, handle_func, req, res, result;
@@ -40,7 +40,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 	hbf_server_t *server = (hbf_server_t *)cbdata;
 
 
-	ri = mg_get_request_info(conn);
+	ri = lh_get_request_info(conn);
 	if (!ri) {
 		hbf_log_error("Failed to get request info");
 		return 500;
@@ -69,7 +69,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -81,7 +81,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -96,7 +96,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 				pthread_mutex_unlock(&handler_mutex);
 				hbf_log_debug("Handler mutex unlocked (early exit)");
 			}
-			mg_send_http_error(conn, 503, "Service Unavailable");
+			lh_send_http_error(conn, 503, "Service Unavailable");
 			return 503;
 		}
 		/* Load server.js as an ES module to support static imports */
@@ -109,7 +109,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 				pthread_mutex_unlock(&handler_mutex);
 				hbf_log_debug("Handler mutex unlocked (early exit)");
 			}
-			mg_send_http_error(conn, 500, "Internal Server Error");
+			lh_send_http_error(conn, 500, "Internal Server Error");
 			return 500;
 		}
 
@@ -122,7 +122,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -135,7 +135,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -152,7 +152,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -173,7 +173,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 503, "Service Unavailable");
+		lh_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
 
@@ -189,7 +189,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 503, "Service Unavailable");
+		lh_send_http_error(conn, 503, "Service Unavailable");
 		return 503;
 	}
 
@@ -209,7 +209,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -227,7 +227,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			pthread_mutex_unlock(&handler_mutex);
 			hbf_log_debug("Handler mutex unlocked (early exit)");
 		}
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 
@@ -321,7 +321,7 @@ int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata)
 			hbf_log_debug("Handler mutex unlocked (error exit)");
 		}
 
-		mg_send_http_error(conn, 500, "Internal Server Error");
+		lh_send_http_error(conn, 500, "Internal Server Error");
 		return 500;
 	}
 

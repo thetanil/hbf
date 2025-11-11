@@ -257,8 +257,8 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 	return res;
 }
 
-/* Send accumulated response to CivetWeb */
-void hbf_send_response(struct mg_connection *conn, hbf_response_t *response)
+/* Send accumulated response to libhttp */
+void hbf_send_response(struct lh_con_t *conn, hbf_response_t *response)
 {
 	int i;
 
@@ -267,20 +267,20 @@ void hbf_send_response(struct mg_connection *conn, hbf_response_t *response)
 	}
 
 	/* Send status line */
-	mg_printf(conn, "HTTP/1.1 %d OK\r\n", response->status_code);
+	lh_printf(conn, "HTTP/1.1 %d OK\r\n", response->status_code);
 
 	/* Send custom headers */
 	for (i = 0; i < response->header_count; i++) {
-		mg_printf(conn, "%s\r\n", response->headers[i]);
+		lh_printf(conn, "%s\r\n", response->headers[i]);
 	}
 
 	/* Send body */
 	if (response->body && response->body_len > 0) {
-		mg_printf(conn, "Content-Length: %zu\r\n\r\n",
+		lh_printf(conn, "Content-Length: %zu\r\n\r\n",
 			  response->body_len);
-		mg_write(conn, response->body, response->body_len);
+		lh_write(conn, response->body, response->body_len);
 	} else {
-		mg_printf(conn, "Content-Length: 0\r\n\r\n");
+		lh_printf(conn, "Content-Length: 0\r\n\r\n");
 	}
 }
 

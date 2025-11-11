@@ -1,0 +1,25 @@
+"""
+miniz - Single-file public domain deflate/inflate, zlib-subset implementation
+License: Public Domain (Unlicense)
+Source: https://github.com/richgel999/miniz
+"""
+
+cc_library(
+    name = "miniz",
+    srcs = ["miniz.c"],
+    hdrs = ["miniz.h"],
+    copts = [
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        # Disable warnings-as-errors for third-party code
+        "-Wno-error",
+        "-Wno-sign-conversion",
+        "-Wno-conversion",
+        "-Wno-shadow",
+        "-Wno-cast-qual",
+        "-Wno-implicit-fallthrough",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)

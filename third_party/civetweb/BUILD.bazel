@@ -1,4 +1,0 @@
-# This package provides the build file for the external CivetWeb repository
-# The actual BUILD rules are in civetweb.BUILD
-
-exports_files(["civetweb.BUILD"])

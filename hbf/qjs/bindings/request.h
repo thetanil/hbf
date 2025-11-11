@@ -2,11 +2,11 @@
 #ifndef HBF_QJS_BINDINGS_REQUEST_H
 #define HBF_QJS_BINDINGS_REQUEST_H
 
-#include <civetweb.h>
+#include <libhttp.h>
 
 #include "quickjs.h"
 
-/* Create a JavaScript request object from CivetWeb request
+/* Create a JavaScript request object from libhttp request
  * Properties created:
  *   - method: HTTP method (GET, POST, etc.)
  *   - path: Request path
@@ -16,6 +16,6 @@
  *
  * Returns: JSValue request object (must be freed with JS_FreeValue)
  */
-JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn);
+JSValue hbf_qjs_create_request(JSContext *ctx, struct lh_con_t *conn);
 
 #endif /* HBF_QJS_BINDINGS_REQUEST_H */

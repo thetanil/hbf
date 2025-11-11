@@ -2,7 +2,7 @@
 #ifndef HBF_QJS_BINDINGS_RESPONSE_H
 #define HBF_QJS_BINDINGS_RESPONSE_H
 
-#include <civetweb.h>
+#include <libhttp.h>
 
 #include "quickjs.h"
 
@@ -30,8 +30,8 @@ void hbf_qjs_init_response_class(JSContext *ctx);
  */
 JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data);
 
-/* Send accumulated response to CivetWeb connection */
-void hbf_send_response(struct mg_connection *conn, hbf_response_t *response);
+/* Send accumulated response to libhttp connection */
+void hbf_send_response(struct lh_con_t *conn, hbf_response_t *response);
 
 /* Free response data */
 void hbf_response_free(hbf_response_t *response);

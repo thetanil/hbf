@@ -6,10 +6,10 @@
 
 #include "hbf/shell/log.h"
 
-/* Create JavaScript request object from CivetWeb request */
-JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn)
+/* Create JavaScript request object from libhttp request */
+JSValue hbf_qjs_create_request(JSContext *ctx, struct lh_con_t *conn)
 {
-	const struct mg_request_info *ri;
+	const struct lh_rqi_t *ri;
 	JSValue req;
 	JSValue headers;
 	JSValue params;
@@ -20,7 +20,7 @@ JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn)
 		return JS_NULL;
 	}
 
-	ri = mg_get_request_info(conn);
+	ri = lh_get_request_info(conn);
 	if (!ri) {
 		hbf_log_error("Failed to get request info from connection");
 		return JS_NULL;
@@ -65,7 +65,7 @@ JSValue hbf_qjs_create_request(JSContext *ctx, struct mg_connection *conn)
 	if (ri->content_length > 0) {
 		char *body_buf = malloc((size_t)ri->content_length + 1);
 		if (body_buf) {
-			int bytes_read = mg_read(conn, body_buf, (size_t)ri->content_length);
+			int bytes_read = lh_read(conn, body_buf, (size_t)ri->content_length);
 			if (bytes_read > 0) {
 				body_buf[bytes_read] = '\0';
 				JS_SetPropertyStr(ctx, req, "body",
