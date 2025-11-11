@@ -2,18 +2,23 @@
 #ifndef HBF_HTTP_HANDLER_H
 #define HBF_HTTP_HANDLER_H
 
-#include <civetweb.h>
+/* Forward declarations */
+struct Request;
+struct Response;
+struct hbf_server;
 
-/* QuickJS request handler (delegates to JavaScript)
+/* EWS-compatible QuickJS request handler
  * This handler:
- * 1. Uses a global QuickJS context
- * 2. Creates request/response objects
- * 3. Calls app.handle(req, res) in JavaScript
- * 4. Sends the response back to CivetWeb
- * 5. No release needed for global context
+ * 1. Creates a fresh QuickJS context for isolation
+ * 2. Loads hbf/server.js from database
+ * 3. Creates request/response objects
+ * 4. Calls app.handle(req, res) in JavaScript
+ * 5. Returns EWS Response structure
+ * 6. Destroys context after request
  *
- * Returns: HTTP status code
+ * Returns: EWS Response pointer or NULL on error
  */
-int hbf_qjs_request_handler(struct mg_connection *conn, void *cbdata);
+struct Response *hbf_qjs_handle_ews_request(const struct Request *request,
+                                            struct hbf_server *server);
 
 #endif /* HBF_HTTP_HANDLER_H */

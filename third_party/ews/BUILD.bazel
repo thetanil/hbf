@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+"""
+EmbeddableWebServer (EWS) - Single header HTTP server library
+BSD 2-Clause License
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "ews",
+    hdrs = ["EmbeddableWebServer.h"],
+    defines = [
+        # EWS configuration flags
+        # Note: No special defines needed for basic usage
+    ],
+    linkopts = select({
+        "@platforms//os:windows": ["-lws2_32"],
+        "//conditions:default": ["-lpthread"],
+    }),
+)
