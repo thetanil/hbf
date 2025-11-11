@@ -1,34 +1,26 @@
 /* SPDX-License-Identifier: MIT */
 #include "db.h"
+#include "migrate.h"
 #include "overlay_fs.h"
 #include "hbf/shell/log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Forward declarations for embedded pod data symbols */
-/* These are provided by the pod-specific embedded library linked at binary level */
-extern const unsigned char fs_db_data[];
-extern const unsigned long fs_db_len;
+/* Forward declarations for embedded asset bundle symbols */
+/* These are provided by the asset packer at binary level */
+extern const unsigned char assets_blob[];
+extern const size_t assets_blob_len;
 
 #define HBF_DB_PATH "./hbf.db"
 #define HBF_DB_INMEM ":memory:"
-
-/* SQLAR extension initialization */
-/* NOLINTBEGIN(readability-identifier-naming) - SQLite extension API convention */
-extern int sqlite3_sqlar_init(sqlite3 *db, char **pzErrMsg, const void *pApi);
-/* NOLINTEND(readability-identifier-naming) */
-
-/* Private static handle for embedded filesystem database (used only for template hydration) */
-static sqlite3 *g_fs_db = NULL;
 
 /* NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization logic */
 int hbf_db_init(int inmem, sqlite3 **db)
 {
 	int rc;
 	const char *db_path;
-	unsigned char *fs_data_copy;
-	int db_exists;
+	migrate_status_t migrate_status;
 
 	if (!db) {
 		hbf_log_error("NULL database handle pointer");
@@ -37,43 +29,8 @@ int hbf_db_init(int inmem, sqlite3 **db)
 
 	*db = NULL;
 
-	/* Check if database file exists (only matters for non-inmem) */
+	/* Open database (on-disk or in-memory based on flag) */
 	db_path = inmem ? HBF_DB_INMEM : HBF_DB_PATH;
-	if (inmem) {
-		db_exists = 0;
-	} else {
-		FILE *f = fopen(HBF_DB_PATH, "r");
-		if (f) {
-			fclose(f);
-			db_exists = 1;
-		} else {
-			db_exists = 0;
-		}
-	}
-
-	/* If database doesn't exist, copy embedded fs.db to filesystem */
-	if (!db_exists && !inmem) {
-		hbf_log_info("Database not found, creating from embedded template");
-
-		/* Write embedded fs.db to hbf.db */
-		FILE *out = fopen(HBF_DB_PATH, "wb");
-		if (!out) {
-			hbf_log_error("Failed to create database file: %s", HBF_DB_PATH);
-			return -1;
-		}
-
-		size_t written = fwrite(fs_db_data, 1, fs_db_len, out);
-		fclose(out);
-
-		if (written != fs_db_len) {
-			hbf_log_error("Failed to write complete database file");
-			return -1;
-		}
-
-		hbf_log_info("Created database from embedded template (%lu bytes)", fs_db_len);
-	}
-
-	/* Open main database */
 	rc = sqlite3_open(db_path, db);
 	if (rc != SQLITE_OK) {
 		hbf_log_error("Failed to open database '%s': %s",
@@ -85,83 +42,20 @@ int hbf_db_init(int inmem, sqlite3 **db)
 		return -1;
 	}
 
-	/* If inmem and database doesn't exist, deserialize embedded fs.db into it */
-	if (inmem && !db_exists) {
-		sqlite3_close(*db);
-		*db = NULL;
+	hbf_log_info("Opened database: %s", db_path);
 
-		rc = sqlite3_open(HBF_DB_INMEM, db);
+	/* Configure database */
+	if (!inmem) {
+		rc = sqlite3_exec(*db, "PRAGMA journal_mode=WAL", NULL, NULL, NULL);
 		if (rc != SQLITE_OK) {
-			hbf_log_error("Failed to open in-memory database: %s",
-			              sqlite3_errmsg(*db));
-			if (*db) {
-				sqlite3_close(*db);
-				*db = NULL;
-			}
-			return -1;
+			hbf_log_warn("Failed to enable WAL mode: %s", sqlite3_errmsg(*db));
 		}
-
-		fs_data_copy = sqlite3_malloc64(fs_db_len);
-		if (!fs_data_copy) {
-			hbf_log_error("Failed to allocate memory for embedded database");
-			sqlite3_close(*db);
-			*db = NULL;
-			return -1;
-		}
-		memcpy(fs_data_copy, fs_db_data, fs_db_len);
-
-		rc = sqlite3_deserialize(
-			*db,
-			"main",
-			fs_data_copy,
-			(sqlite3_int64)fs_db_len,
-			(sqlite3_int64)fs_db_len,
-			SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE
-		);
-
-		if (rc != SQLITE_OK) {
-			hbf_log_error("Failed to deserialize embedded database: %s",
-			              sqlite3_errmsg(*db));
-			sqlite3_free(fs_data_copy);
-			sqlite3_close(*db);
-			*db = NULL;
-			return -1;
-		}
-
-		hbf_log_info("Loaded embedded database into memory (%lu bytes)", fs_db_len);
-	}
-
-	/* Configure main database */
-	rc = sqlite3_exec(*db, "PRAGMA journal_mode=WAL", NULL, NULL, NULL);
-	if (rc != SQLITE_OK) {
-		hbf_log_warn("Failed to enable WAL mode: %s", sqlite3_errmsg(*db));
 	}
 
 	rc = sqlite3_exec(*db, "PRAGMA foreign_keys=ON", NULL, NULL, NULL);
 	if (rc != SQLITE_OK) {
 		hbf_log_error("Failed to enable foreign keys: %s",
 		              sqlite3_errmsg(*db));
-		sqlite3_close(*db);
-		*db = NULL;
-		return -1;
-	}
-
-	/* Initialize SQLAR extension on main database */
-	rc = sqlite3_sqlar_init(*db, NULL, NULL);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to initialize SQLAR extension on main db: %s",
-		              sqlite3_errmsg(*db));
-		sqlite3_close(*db);
-		*db = NULL;
-		return -1;
-	}
-
-	hbf_log_info("Opened main database: %s", db_path);
-
-	/* Migrate SQLAR data to versioned filesystem if sqlar table exists */
-	rc = overlay_fs_migrate_sqlar(*db);
-	if (rc != 0) {
-		hbf_log_error("Failed to migrate SQLAR data to versioned filesystem");
 		sqlite3_close(*db);
 		*db = NULL;
 		return -1;
@@ -176,66 +70,18 @@ int hbf_db_init(int inmem, sqlite3 **db)
 		return -1;
 	}
 
-	/* Initialize filesystem database (embedded SQLAR) - kept private for template hydration */
-	rc = sqlite3_open(HBF_DB_INMEM, &g_fs_db);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to open in-memory filesystem database: %s",
-		              sqlite3_errmsg(g_fs_db));
-		if (g_fs_db) {
-			sqlite3_close(g_fs_db);
-			g_fs_db = NULL;
-		}
+	/* Migrate embedded assets (idempotent) */
+	migrate_status = overlay_fs_migrate_assets(*db, assets_blob, assets_blob_len);
+	if (migrate_status == MIGRATE_ERR_ALREADY_APPLIED) {
+		hbf_log_info("Asset bundle already migrated (skipped)");
+	} else if (migrate_status != MIGRATE_OK) {
+		hbf_log_error("Failed to migrate assets: status %d", migrate_status);
 		sqlite3_close(*db);
 		*db = NULL;
 		return -1;
+	} else {
+		hbf_log_info("Successfully migrated asset bundle");
 	}
-
-	/* Copy embedded data (use sqlite3_malloc for FREEONCLOSE compatibility) */
-	fs_data_copy = sqlite3_malloc64(fs_db_len);
-	if (!fs_data_copy) {
-		hbf_log_error("Failed to allocate memory for embedded database");
-		sqlite3_close(g_fs_db);
-		sqlite3_close(*db);
-		g_fs_db = NULL;
-		*db = NULL;
-		return -1;
-	}
-	memcpy(fs_data_copy, fs_db_data, fs_db_len);
-
-	/* Load embedded database using deserialize API */
-	rc = sqlite3_deserialize(
-		g_fs_db,
-		"main",
-		fs_data_copy,
-		(sqlite3_int64)fs_db_len,
-		(sqlite3_int64)fs_db_len,
-		SQLITE_DESERIALIZE_FREEONCLOSE
-	);
-
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to deserialize embedded database: %s",
-		              sqlite3_errmsg(g_fs_db));
-		sqlite3_free(fs_data_copy);
-		sqlite3_close(g_fs_db);
-		sqlite3_close(*db);
-		g_fs_db = NULL;
-		*db = NULL;
-		return -1;
-	}
-
-	/* Initialize SQLAR extension functions */
-	rc = sqlite3_sqlar_init(g_fs_db, NULL, NULL);
-	if (rc != SQLITE_OK) {
-		hbf_log_error("Failed to initialize SQLAR extension: %s",
-		              sqlite3_errmsg(g_fs_db));
-		sqlite3_close(g_fs_db);
-		sqlite3_close(*db);
-		g_fs_db = NULL;
-		*db = NULL;
-		return -1;
-	}
-
-	hbf_log_info("Loaded embedded filesystem database (%lu bytes)", fs_db_len);
 
 	/* Initialize overlay_fs global database handle */
 	overlay_fs_init_global(*db);
@@ -245,15 +91,9 @@ int hbf_db_init(int inmem, sqlite3 **db)
 
 void hbf_db_close(sqlite3 *db)
 {
-	if (g_fs_db) {
-		sqlite3_close(g_fs_db);
-		g_fs_db = NULL;
-		hbf_log_debug("Closed filesystem database");
-	}
-
 	if (db) {
 		sqlite3_close(db);
-		hbf_log_debug("Closed main database");
+		hbf_log_debug("Closed database");
 	}
 }
 

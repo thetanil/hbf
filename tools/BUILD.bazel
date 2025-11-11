@@ -44,6 +44,24 @@ cc_binary(
 
 exports_files(["js_to_c.sh"])
 
+cc_binary(
+    name = "asset_packer",
+    srcs = ["asset_packer.c"],
+    deps = ["@miniz//:miniz"],
+    copts = [
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-sign-conversion",
+        "-Wno-conversion",
+        "-Wno-shadow",
+        "-Wno-cast-qual",
+        "-Wno-undef",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # Integration test that boots the test pod binary and verifies endpoint status codes
 sh_test(
     name = "integration_test",

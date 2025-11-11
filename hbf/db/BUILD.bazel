@@ -13,17 +13,35 @@ genrule(
 )
 
 cc_library(
+    name = "migrate",
+    srcs = ["migrate.c"],
+    hdrs = ["migrate.h"],
+    deps = [
+        "//hbf/shell:log",
+        "@sqlite3//:sqlite3",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "assets_placeholder",
+    srcs = ["assets_placeholder.c"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "db",
     srcs = ["db.c"],
     hdrs = ["db.h"],
     deps = [
+        ":migrate",
         ":overlay_fs",
         "//hbf/shell:log",
-        "//third_party/sqlar",
         "@sqlite3//:sqlite3",
-        # Note: In production builds, the binary links a specific pod's embedded library.
-        # For this library to compile, we need access to fs_embedded.h.
-        # The actual symbols come from whichever pod binary links this library.
+        # Note: assets_blob and assets_blob_len symbols are provided by
+        # the asset packer at binary link time. For libraries that compile
+        # without the final binary, these symbols will be undefined until
+        # the final link step.
     ],
     visibility = ["//visibility:public"],
 )

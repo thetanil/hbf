@@ -4,10 +4,29 @@ License: Public Domain (Unlicense)
 Source: https://github.com/richgel999/miniz
 """
 
+# Generate miniz_export.h for export declarations (empty for static build)
+genrule(
+    name = "gen_export_header",
+    outs = ["miniz_export.h"],
+    cmd = "echo '#ifndef MINIZ_EXPORT\n#define MINIZ_EXPORT\n#endif' > $@",
+)
+
 cc_library(
     name = "miniz",
-    srcs = ["miniz.c"],
-    hdrs = ["miniz.h"],
+    srcs = [
+        "miniz.c",
+        "miniz_common.h",
+        "miniz_tdef.c",
+        "miniz_tdef.h",
+        "miniz_tinfl.c",
+        "miniz_tinfl.h",
+        "miniz_zip.c",
+        "miniz_zip.h",
+    ],
+    hdrs = [
+        "miniz.h",
+        ":gen_export_header",
+    ],
     copts = [
         "-std=c99",
         "-Wall",

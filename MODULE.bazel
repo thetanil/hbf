@@ -48,6 +48,14 @@ git_repository(
     build_file = "//third_party/quickjs-ng:quickjs.BUILD",
 )
 
+# miniz - Single-file public domain deflate/inflate, zlib-subset (Public Domain/Unlicense)
+git_repository(
+    name = "miniz",
+    remote = "https://github.com/richgel999/miniz.git",
+    tag = "3.0.2",
+    build_file = "//third_party/miniz:miniz.BUILD",
+)
+
 # HTTP archive support for fetching third-party web assets
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")

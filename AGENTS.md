@@ -17,16 +17,17 @@ Single binary outputs under `bazel-bin/bin/` (e.g. `hbf`, `hbf_test`). All HTTP 
 ## Directory Hints
 ```
 BUILD.bazel                # Registers pod binaries (hbf, hbf_test)
-MODULE.bazel               # Bazel 8 module deps (CivetWeb, QuickJS-NG, SQLite, zlib)
+MODULE.bazel               # Bazel 8 module deps (libhttp, QuickJS-NG, SQLite, miniz)
 hbf/shell/                 # main.c, CLI, logging, config
 hbf/http/                  # server.c (static handler), handler.c (QuickJS request), handler.h
-hbf/db/                    # db.c (SQLite init + SQLAR read), overlay_fs.* (versioned FS)
+hbf/db/                    # db.c (SQLite init), overlay_fs.* (versioned FS), migrate.* (asset migration)
 hbf/qjs/                   # engine.c, module_loader.*, bindings/{request,response}.c
 pods/base/, pods/test/     # Example pods: JavaScript + static assets
-tools/                     # Helper scripts (lint.sh, db_to_c.sh, sql_to_c.sh, npm_vendor.sh)
+tools/                     # asset_packer.c (hermetic asset bundler), lint.sh, test scripts
+third_party/miniz/         # miniz.BUILD (external build config for miniz compression)
 DOCS/                      # Specifications (hbf_spec.md, coding-standards.md, plans)
 CLAUDE.md                  # Detailed architecture & build pipeline
-js_import_router.md        # Router integration plan (find-my-way)
+plan.md                    # Current refactor status and implementation plan
 ```
 
 ---
@@ -45,6 +46,14 @@ bazel test //...
 bazel test //hbf/shell:config_test --test_output=all
 # Lint (alias to //tools:lint target)
 bazel run //:lint
+# Build asset_packer tool (for hermetic asset embedding)
+bazel build //tools:asset_packer
+# Run asset_packer
+bazel-bin/tools/asset_packer \
+  --output-source out.c \
+  --output-header out.h \
+  --symbol-name assets_blob \
+  file1.js file2.html ...
 ```
 File-scoped rebuild is implicit: modifying a file and re-running the related bazel target reuses cache.
 
@@ -64,6 +73,46 @@ Test targets (C99 + build integration) you can rely on:
 Run everything before committing: `bazel test //...`. Use `--test_output=all` for debugging a failing target.
 
 ---
+## Asset Packer Tool
+**Purpose**: Hermetic build tool that packs pod assets into deterministic compressed C arrays.
+
+**Location**: `tools/asset_packer.c` (depends on `@miniz//:miniz` from external git repo)
+
+**Binary Format**:
+```
+[num_entries:u32]
+[name_len:u32][name:bytes][data_len:u32][data:bytes]
+[name_len:u32][name:bytes][data_len:u32][data:bytes]
+...
+```
+Entire bundle compressed with miniz at level 9 (maximum compression).
+
+**Usage Example**:
+```bash
+bazel build //tools:asset_packer
+bazel-bin/tools/asset_packer \
+  --output-source assets_blob.c \
+  --output-header assets_blob.h \
+  --symbol-name assets_blob \
+  file1.js file2.html file3.css
+```
+
+**Output**: Generates C source/header with:
+- `const unsigned char assets_blob[]` - Compressed binary data
+- `const size_t assets_blob_len` - Size of compressed blob
+
+**Guarantees**:
+- Deterministic output (lexicographically sorted files)
+- Reproducible builds (no timestamps in output)
+- High compression ratio (typically 60-80% reduction)
+- C99 compliant output
+
+**Dependencies**:
+- miniz fetched from https://github.com/richgel999/miniz (tag 3.0.2)
+- Build config: `third_party/miniz/miniz.BUILD`
+- No local miniz source files (all fetched by Bazel)
+
+---
 ## Coding Standards (C99)
 Strict C99 only, zero warnings:
 Flags enforced (see DOCS/coding-standards.md):
@@ -74,7 +123,7 @@ Flags enforced (see DOCS/coding-standards.md):
 -Wswitch-enum -Wswitch-default -Wbad-function-cast
 ```
 Style: Linux kernel (tabs, 8 width). SPDX header every source file: `/* SPDX-License-Identifier: MIT */`.
-No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_party: CivetWeb (MIT), QuickJS-NG (MIT), SQLite (PD), zlib.
+No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_party: libhttp (MIT), QuickJS-NG (MIT), SQLite (PD), zlib (zlib license), miniz (Public Domain/Unlicense).
 
 ---
 ## JavaScript Runtime Facts

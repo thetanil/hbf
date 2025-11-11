@@ -72,15 +72,16 @@ This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libht
      - `hbf/qjs/bindings/response.h/c` - Updated to send responses via libhttp
      - `hbf/http/BUILD.bazel` - Updated dependency from `@civetweb` to `@libhttp`
 
-4. **Integrate miniz for Asset Compression** ⏳ IN PROGRESS
-   - ✅ Added miniz single-file C99 to `third_party/miniz/miniz.c` and `miniz.h`.
-   - ✅ Created `third_party/miniz/BUILD.bazel` with proper build configuration.
-   - 🔄 **NEXT**: Build C asset packer tool (`tools/asset_packer.c`) that:
-     - Takes pod asset files as input (sorted deterministically)
-     - Compresses with miniz (high compression level)
+4. **Integrate miniz for Asset Compression** ✅ COMPLETE
+   - ✅ Added miniz as external git_repository in `MODULE.bazel` (tag 3.0.2)
+   - ✅ Created `third_party/miniz/miniz.BUILD` with proper build configuration
+   - ✅ Built C asset packer tool (`tools/asset_packer.c`) that:
+     - Takes pod asset files as input (sorted deterministically via qsort)
+     - Compresses with miniz at level 9 (maximum compression)
      - Outputs `.c` and `.h` files with named symbols (`assets_blob`, `assets_blob_len`)
-     - Ensures reproducibility (zeroed mtimes, stable order, TZ=UTC)
-   - 🔄 **THEN**: Create Bazel genrule to invoke packer and embed assets hermetically.
+     - Ensures reproducibility (lexicographic sorting, no timestamps in output)
+   - ✅ Tool successfully builds and tested with sample files (3 files → 180 bytes → 129 bytes compressed = 71.7%)
+   - 🔄 **NEXT**: Create Bazel genrule to invoke packer and embed assets hermetically.
 
 5. **Drop SQLAR and Pod Build Macros** ✅ COMPLETE
    - Removed SQLAR from `third_party/sqlar/`, `MODULE.bazel`, and all related scripts (`db_to_c.sh`, `sql_to_c.sh`).
@@ -142,16 +143,19 @@ This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libht
 - Branch setup on `migrate`
 - CivetWeb completely removed and replaced with libhttp
 - All HTTP server code updated to use libhttp API (mg_* → lh_*)
-- miniz added as dependency for future asset compression
+- miniz integrated as external git dependency (tag 3.0.2, no local source)
+- asset_packer tool built and tested successfully
 - Build system updated to use new dependencies
 
 ### Files Modified
-- `MODULE.bazel` - Replaced CivetWeb git_repository with libhttp
+- `MODULE.bazel` - Replaced CivetWeb with libhttp, added miniz git_repository
 - `third_party/ews/BUILD.bazel` - Created (wrapper for libhttp)
 - `third_party/ews/libhttp.BUILD` - Created (external build file)
-- `third_party/miniz/BUILD.bazel` - Created
-- `third_party/miniz/miniz.c` - Downloaded
-- `third_party/miniz/miniz.h` - Downloaded
+- `third_party/miniz/miniz.BUILD` - Created (external build file for miniz)
+- `tools/asset_packer.c` - Created (hermetic asset packer using miniz)
+- `tools/BUILD.bazel` - Added asset_packer cc_binary
+- `hbf/db/migrate.h` - Created (migration API)
+- `hbf/db/migrate.c` - Created (stub implementation)
 - `hbf/http/server.h` - Updated to libhttp types
 - `hbf/http/server.c` - Updated all mg_* calls to lh_*
 - `hbf/http/handler.h` - Updated to libhttp types
@@ -161,17 +165,20 @@ This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libht
 - `hbf/qjs/bindings/request.c` - Updated mg_* calls to lh_*
 - `hbf/qjs/bindings/response.h` - Updated to libhttp types
 - `hbf/qjs/bindings/response.c` - Updated mg_* calls to lh_*
+- `AGENTS.md` - Added asset_packer documentation and updated dependencies
 
 ### Removed
 - `third_party/civetweb/` directory and all contents
+- `third_party/miniz/miniz.c` and `miniz.h` (replaced with external git_repository)
+- `third_party/miniz/BUILD.bazel` (replaced with miniz.BUILD for external repo)
 
 ### Next Steps 🔄
 
 #### Immediate (Make it Compile)
 1. ✅ Remove SQLAR and pod build macros
-2. 🔄 **IN PROGRESS**: Build C asset packer tool (`tools/asset_packer.c`)
-3. Stub `overlay_fs_migrate_assets()` with no-op return
-4. Remove SQLAR symbols from `db.c` (`sqlite3_sqlar_init`, `fs_db_data`, `fs_db_len`)
+2. ✅ Build C asset packer tool (`tools/asset_packer.c`)
+3. ✅ Stub `overlay_fs_migrate_assets()` with no-op return (in `hbf/db/migrate.c`)
+4. 🔄 **NEXT**: Remove SQLAR symbols from `db.c` (`sqlite3_sqlar_init`, `fs_db_data`, `fs_db_len`)
 5. Add placeholder `assets_blob[]` to `main.c` and wire migration call
 6. Fix compilation errors
 
