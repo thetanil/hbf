@@ -3,7 +3,7 @@
 ## HBF Major Refactor Implementation Plan
 
 ### Overview
-This refactor replaces CivetWeb with [srv](https://github.com/diatribes/srv), drops SQLAR and pod build macros, and switches asset embedding to [miniz](https://github.com/richgel999/miniz) (single-file C99, no C++). Assets from `pods/podname/*` will be compressed with zlib (high compression), embedded as C arrays via `xxd -i`, and loaded into SQLite at startup via QuickJS migration. No runtime filesystem access; only SQLite DB is used.
+This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libhttp), drops SQLAR and pod build macros, and switches asset embedding to [miniz](https://github.com/richgel999/miniz) (single-file C99, no C++). Assets from `pods/podname/*` will be compressed with zlib (high compression), embedded as C arrays via `xxd -i`, and loaded into SQLite at startup via QuickJS migration. No runtime filesystem access; only SQLite DB is used.
 
 ---
 
@@ -15,12 +15,13 @@ This refactor replaces CivetWeb with [srv](https://github.com/diatribes/srv), dr
 2. **Remove CivetWeb**
    - Delete CivetWeb from `third_party/civetweb/` and update `MODULE.bazel`.
    - Remove all CivetWeb-specific build flags and code from Bazel and C sources.
-   - Replace HTTP server logic in `hbf/http/` with srv equivalents.
+   - Replace HTTP server logic in `hbf/http/` with libhttp equivalents.
 
-3. **Integrate srv**
-   - Add `srv` as a third_party dependency (MIT license).
-   - Implement HTTP/WebSocket handlers using srv API in C.
-   - Update entrypoint and request routing to use srv.
+3. **Integrate libhttp**
+   - Add `libhttp` as a third_party dependency (MIT license).
+   - Implement HTTP handlers using libhttp API in C.
+   - Use the embedded server pattern as shown in [embedded_c.c](https://github.com/lammertb/libhttp/blob/master/examples/embedded_c/embedded_c.c) to run the HTTP server inside the HBF binary.
+   - Update entrypoint and request routing to use libhttp.
 
 4. **Drop SQLAR and Pod Build Macros**
    - Remove SQLAR from `third_party/sqlar/`, `MODULE.bazel`, and all related scripts (`db_to_c.sh`, `sql_to_c.sh`).
