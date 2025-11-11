@@ -4,8 +4,8 @@
 GET /health
 
 # civet static handler
-GET /style.css
-GET /favicon.ico
+GET /static/style.css
+GET /static/favicon.ico
 
 # qjs endpoints
 GET /
