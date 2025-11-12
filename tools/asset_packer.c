@@ -82,6 +82,18 @@ static void bundle_free(bundle_t *bundle)
 	bundle->capacity = 0;
 }
 
+static int should_skip_file(const char *path)
+{
+	size_t len = strlen(path);
+	const char *suffix = ".js.map";
+	size_t suffix_len = strlen(suffix);
+
+	if (len >= suffix_len) {
+		return strcmp(path + len - suffix_len, suffix) == 0;
+	}
+	return 0;
+}
+
 static int bundle_add_file(bundle_t *bundle, const char *path)
 {
 	FILE *f;
@@ -225,7 +237,7 @@ static int bundle_pack(bundle_t *bundle, uint8_t **out_data, size_t *out_len)
 }
 
 static int compress_bundle(const uint8_t *data, size_t data_len,
-						   uint8_t **out_data, size_t *out_len)
+					   uint8_t **out_data, size_t *out_len, int level)
 {
 	uLongf compressed_len;
 	uint8_t *compressed;
@@ -239,8 +251,8 @@ static int compress_bundle(const uint8_t *data, size_t data_len,
 		return -1;
 	}
 
-	/* Compress at maximum level (9) */
-	status = compress2((Bytef *)compressed, &compressed_len, (const Bytef *)data, (uLong)data_len, 9);
+	/* Compress at provided level (1-9) */
+	status = compress2((Bytef *)compressed, &compressed_len, (const Bytef *)data, (uLong)data_len, level);
 	if (status != Z_OK) {
 		fprintf(stderr, "Error: compression failed with status %d\n", status);
 		free(compressed);
@@ -308,16 +320,17 @@ int main(int argc, char **argv)
 {
 	const char *output_source = NULL;
 	const char *output_header = NULL;
-	const char *symbol_name = "assets_blob";
-	int first_file_arg = -1;
-	int num_files = 0;
-	bundle_t bundle;
-	uint8_t *packed_data = NULL;
-	size_t packed_len = 0;
-	uint8_t *compressed_data = NULL;
-	size_t compressed_len = 0;
-	int i;
-	int rc = 0;
+    const char *symbol_name = "assets_blob";
+    int first_file_arg = -1;
+    int num_files = 0;
+    bundle_t bundle;
+    uint8_t *packed_data = NULL;
+    size_t packed_len = 0;
+    uint8_t *compressed_data = NULL;
+    size_t compressed_len = 0;
+    int rc = 0;
+    int compression_level = 9; /* default to maximum compression */
+    int i; /* loop index */
 
 	/* Parse arguments */
 	for (i = 1; i < argc; i++) {
@@ -342,6 +355,17 @@ int main(int argc, char **argv)
 				return 1;
 			}
 			symbol_name = argv[++i];
+		} else if (strcmp(argv[i], "--compression-level") == 0) {
+			if (i + 1 >= argc) {
+				fprintf(stderr, "Error: --compression-level requires argument\n");
+				usage(argv[0]);
+				return 1;
+			}
+			compression_level = atoi(argv[++i]);
+			if (compression_level < 1 || compression_level > 9) {
+				fprintf(stderr, "Error: compression level must be 1-9\n");
+				return 1;
+			}
 		} else if (argv[i][0] == '-') {
 			fprintf(stderr, "Error: unknown option '%s'\n", argv[i]);
 			usage(argv[0]);
@@ -377,6 +401,11 @@ int main(int argc, char **argv)
 	/* Add all files */
 	for (i = first_file_arg; i < argc; i++) {
 		if (argv[i][0] != '-') {
+			/* Skip .js.map files */
+			if (should_skip_file(argv[i])) {
+				printf("Skipping %s\n", argv[i]);
+				continue;
+			}
 			if (bundle_add_file(&bundle, argv[i]) != 0) {
 				bundle_free(&bundle);
 				return 1;
@@ -393,7 +422,7 @@ int main(int argc, char **argv)
 	printf("Packed %u files into %zu bytes\n", bundle.count, packed_len);
 
 	/* Compress bundle */
-	if (compress_bundle(packed_data, packed_len, &compressed_data, &compressed_len) != 0) {
+	if (compress_bundle(packed_data, packed_len, &compressed_data, &compressed_len, compression_level) != 0) {
 		free(packed_data);
 		bundle_free(&bundle);
 		return 1;

@@ -1,4 +1,3 @@
-printf "\nTotal requests: %d\n" "$total_requests"
 #!/bin/bash
 # hbf_simple_benchmark.sh: Benchmark HBF Simple server throughput (requests/sec)
 
@@ -16,10 +15,10 @@ fi
 if [ -n "$1" ]; then NUM_CLIENTS="$1"; fi
 if [ -n "$2" ]; then NUM_REQUESTS="$2"; fi
 
-echo "Starting hbf_simple server on port $PORT..."
-bazel build //hbf_simple > /dev/null 2>&1
+echo "Building //:hbf (optimized, stripped) and starting server on port $PORT..."
+bazel build //:hbf > /dev/null 2>&1
 
-bazel-bin/hbf_simple/hbf_simple --port $PORT &
+bazel-bin/bin/hbf --port $PORT &
 SERVER_PID=$!
 
 # Wait for server to be ready
@@ -66,5 +65,5 @@ printf "\nTotal requests: %d\n" "$total_requests"
 printf "Total time: %.2f seconds\n" "$total_time"
 printf "Requests per second: %.2f\n" "$rps"
 
-echo "Stopping hbf_simple server (PID $SERVER_PID)..."
+echo "Stopping hbf server (PID $SERVER_PID)..."
 kill $SERVER_PID 2>/dev/null

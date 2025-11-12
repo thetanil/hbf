@@ -5,7 +5,7 @@ It handles building the final cc_binary with all dependencies including
 the asset bundle from asset_packer.
 """
 
-def pod_binary(name, pod, visibility = None, tags = None):
+def pod_binary(name, pod, visibility = None, tags = None, strip = False, optimize = True):
     """Build an HBF binary with an embedded pod.
 
     Args:
@@ -20,6 +20,20 @@ def pod_binary(name, pod, visibility = None, tags = None):
     binary = name + "_bin"
 
     # Create cc_binary that links everything together
+    copts = []
+    linkopts = []
+    if optimize:
+        copts += [
+            "-Os",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-fno-asynchronous-unwind-tables",
+            "-fno-unwind-tables",
+        ]
+        linkopts += [
+            "-Wl,--gc-sections",
+        ]
+
     native.cc_binary(
         name = binary,
         srcs = ["//hbf/shell:main.c"],
@@ -32,19 +46,24 @@ def pod_binary(name, pod, visibility = None, tags = None):
             "//hbf/qjs:engine",
             "@sqlite3",
         ],
-        copts = [],
-        linkopts = [],
+        copts = copts,
+        linkopts = linkopts,
         visibility = ["//visibility:private"],
         tags = tags,
     )
 
     # Create final binary target in bin/ directory
     # The binary is copied as-is; use --strip=always for stripped builds
+    strip_cmd = ""
+    if strip:
+        # Ensure writable before stripping (strip may rewrite file)
+        strip_cmd = " && chmod u+w $@ && strip -s $@ && chmod 755 $@"
+
     native.genrule(
         name = name,
         srcs = [":" + binary],
         outs = ["bin/" + name],
-        cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +x $@",
+        cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +x $@" + strip_cmd,
         executable = True,
         visibility = visibility,
         tags = tags,

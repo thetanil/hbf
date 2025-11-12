@@ -13,6 +13,8 @@ pod_binary(
     pod = "//pods/base",
     visibility = ["//visibility:public"],
     tags = ["hbf_pod"],
+    strip = True,
+    optimize = True,
 )
 
 # Test pod
@@ -21,6 +23,8 @@ pod_binary(
     pod = "//pods/test",
     visibility = ["//visibility:public"],
     tags = ["hbf_pod"],
+    strip = False,
+    optimize = True,
 )
 
 # ============================================================================

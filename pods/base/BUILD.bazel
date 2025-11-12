@@ -64,6 +64,7 @@ genrule(
             --output-source $$OUT_C \
             --output-header $$OUT_H \
             --symbol-name assets_blob \
+            --compression-level 9 \
             $$(cat files.txt)
 
         cd ..
