@@ -39,10 +39,12 @@ runs:
     - name: Set up Bazel
       uses: bazel-contrib/setup-bazel@0.15.0
       with:
-        bazelisk-cache: true
-        # Use a concrete path (not a key) for Bazel's disk cache
-        disk-cache: ${{ runner.temp }}/bazel-disk-cache
-        repository-cache: true
+        # Disable Bazelisk cache since repo has no .bazelversion; avoid post-step path errors
+        bazelisk-cache: false
+  # Use a per-workflow+pod cache key to avoid matrix jobs contending on the same cache key
+  disk-cache: ${{ github.workflow }}-${{ inputs.pod-name }}
+        # Disable repository cache to avoid save errors when path isn't created
+        repository-cache: false
 
     - name: Install lint dependencies
       if: inputs.run-lint == 'true'
