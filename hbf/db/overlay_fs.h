@@ -19,7 +19,6 @@
  * Initialize overlay_fs database
  *
  * Opens or creates the database and applies schema.
- * If embedded fs.db exists, migrates SQLAR data to file_versions.
  *
  * @param db_path: Path to database file (or ":memory:" for in-memory)
  * @param db: Output parameter for database handle
@@ -38,18 +37,6 @@ int overlay_fs_init(const char *db_path, sqlite3 **db);
  * @return 0 on success, -1 on error (missing schema)
  */
 int overlay_fs_check_schema(sqlite3 *db);
-
-/*
- * Migrate SQLAR archive to file_versions table
- *
- * Reads all entries from sqlar table, decompresses them,
- * and inserts as version 1 in file_versions.
- * Drops sqlar table afterward and vacuums database.
- *
- * @param db: Database handle
- * @return 0 on success, -1 on error
- */
-int overlay_fs_migrate_sqlar(sqlite3 *db);
 
 /*
  * Migration status codes for asset bundle migration
@@ -160,7 +147,7 @@ void overlay_fs_init_global(sqlite3 *db);
  * NO MUTEX - relies on SQLite's internal locking (SQLITE_THREADSAFE=1 + WAL).
  *
  * @param path: File path (e.g., "static/index.html" or "hbf/server.js")
- * @param enable_overlay: If 1, read from overlay; if 0, read from base only
+ * @param dev: Reserved for future use
  * @param data: Output parameter for file data (caller must free)
  * @param size: Output parameter for file size
  * @return 0 on success, -1 on error (file not found or SQL error)

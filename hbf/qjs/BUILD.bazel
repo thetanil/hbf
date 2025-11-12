@@ -37,7 +37,6 @@ cc_test(
     deps = [
         ":engine",
         "//hbf/shell:log",
-        "//:hbf_embedded",  # Provide embedded symbols for db module (from base pod)
         "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
     ],
     linkstatic = 1,

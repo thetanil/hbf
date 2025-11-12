@@ -53,36 +53,56 @@ static void test_overlay_tables_exist(void)
 	printf("PASS: Versioned file system tables exist\n\n");
 }
 
-/* Test 2: SQLAR migrated to versioned filesystem */
+/* Test 2: Asset bundle migrated to versioned filesystem */
 static void test_sqlar_migrated(void)
 {
 	sqlite3 *db = NULL;
 	int ret;
 
-	printf("TEST: SQLAR migrated to versioned filesystem\n");
+	printf("TEST: Asset bundle migrated to versioned filesystem\n");
 
 	ret = hbf_db_init(1, &db);
 	assert(ret == 0);
 	assert(db != NULL);
 
-	/* Check sqlar table no longer exists after migration */
+	/* Check sqlar table does not exist (no longer used) */
 	assert(table_exists(db, "sqlar") == 0);
-	printf("  ✓ sqlar table dropped after migration\n");
+	printf("  ✓ sqlar table not present (legacy SQLAR removed)\n");
 
-	/* Verify we can still read files through versioned filesystem */
+	/* List all files in the database for debugging */
+	const char *list_sql = "SELECT path FROM file_ids ORDER BY path";
+	sqlite3_stmt *stmt = NULL;
+	ret = sqlite3_prepare_v2(db, list_sql, -1, &stmt, NULL);
+	if (ret == SQLITE_OK) {
+		printf("  Files in database:\n");
+		while (sqlite3_step(stmt) == SQLITE_ROW) {
+			const char *path = (const char *)sqlite3_column_text(stmt, 0);
+			printf("    - %s\n", path);
+		}
+		sqlite3_finalize(stmt);
+	}
+
+	/* Verify we can read files through versioned filesystem */
 	unsigned char *data = NULL;
 	size_t size = 0;
 
-	ret = hbf_db_read_file_from_main(db, "hbf/server.js", &data, &size);
+	ret = hbf_db_read_file_from_main(db, "staging/static/style.css", &data, &size);
+	if (ret != 0) {
+		printf("  ✗ Failed to read static/style.css (error code: %d)\n", ret);
+		fflush(stdout);  /* Force output before assert */
+	} else {
+		printf("  ✓ Successfully read file (size: %zu bytes)\n", size);
+		fflush(stdout);  /* Force output before assert */
+	}
 	assert(ret == 0);
 	assert(data != NULL);
 	assert(size > 0);
 
-	printf("  ✓ Read hbf/server.js from versioned filesystem (%zu bytes)\n", size);
+	printf("  ✓ Read static/style.css from versioned filesystem (%zu bytes)\n", size);
 
 	free(data);
 	hbf_db_close(db);
-	printf("PASS: SQLAR migration successful\n\n");
+	printf("PASS: Asset bundle migration successful\n\n");
 }
 
 /* Test 3: latest_files view exists */

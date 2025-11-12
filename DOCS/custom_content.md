@@ -1,20 +1,20 @@
 # Pod Content Pipeline: Build Host to Runtime Database
 
-This document explains how pod content (JavaScript files and static assets) flows from the build host through SQLAR archiving, schema overlay, and into the runtime versioned filesystem.
+This document explains how pod content (JavaScript files and static assets) flows from the build host through asset packing, schema application, and into the runtime versioned filesystem.
 
 ---
 ## Overview
 
-HBF uses a multi-stage build pipeline to embed pod content into the binary:
+HBF uses a deterministic build pipeline to embed pod content into the binary:
 
 1. **Build Host**: Pod directory with `hbf/*.js` and `static/**` files
-2. **SQLAR Archive**: Files packed into SQLite archive format
-3. **Schema Overlay**: Versioned filesystem schema applied
-4. **VACUUM**: Database optimized to remove dead space
-5. **C Array**: Database converted to embedded C array
-6. **Runtime**: Content accessible via versioned filesystem API
+2. **Asset Packing**: Files packed into compressed binary format via `asset_packer`
+3. **C Array**: Asset bundle embedded as C array in binary
+4. **Runtime**: Database created and schema applied
+5. **Migration**: Asset bundle decompressed and migrated into versioned filesystem
+6. **Access**: Content accessible via versioned filesystem API
 
-At runtime, the embedded database is opened in memory or on disk, and all file operations go through the **overlay filesystem** (`hbf/db/overlay_fs.c`), which provides versioned file tracking.
+At runtime, a SQLite database is created (in-memory or on-disk), the schema is applied, and the embedded asset bundle is migrated into the **overlay filesystem** (`hbf/db/overlay_fs.c`), which provides versioned file tracking.
 
 ---
 ## Build-Time Pipeline
@@ -26,7 +26,7 @@ Each pod follows a standard layout:
 ```
 pods/
   base/                    # Example pod
-    BUILD.bazel            # Must contain pod_db target
+    BUILD.bazel            # Must contain packed_assets target
     hbf/
       server.js            # Entry point (required)
       lib/
@@ -44,152 +44,153 @@ pods/
 - Static files are served directly via `/static/*` routes
 - All files are embedded at build time
 
-### Stage 2: SQLAR Archive Creation
+### Stage 2: Asset Packing
 
-The `pod_db` rule in each pod's `BUILD.bazel` creates a SQLAR archive:
+The `packed_assets` rule in each pod's `BUILD.bazel` packs files into a compressed binary format:
 
 ```python
 # pods/base/BUILD.bazel
-sqlar(
-    name = "pod_db",
-    srcs = glob([
-        "hbf/**/*.js",
-        "static/**/*",
-    ]),
-    compress = True,
+genrule(
+    name = "packed_assets",
+    srcs = glob(["hbf/**/*", "static/**/*"]),
+    outs = ["assets_blob.c", "assets_blob.h"],
+    cmd = """
+        $(location //tools:asset_packer) \
+            --output-source $(location assets_blob.c) \
+            --output-header $(location assets_blob.h) \
+            --symbol-name assets_blob \
+            $(SRCS)
+    """,
+    tools = ["//tools:asset_packer"],
 )
 ```
 
 **What happens**:
 - Bazel collects all matching files from `hbf/` and `static/` directories
-- SQLite's SQLAR format packs files into a database with this schema:
-  ```sql
-  CREATE TABLE sqlar(
-    name TEXT PRIMARY KEY,  -- File path
-    mode INT,               -- File permissions
-    mtime INT,              -- Modification time
-    sz INT,                 -- Uncompressed size
-    data BLOB               -- File content (possibly compressed)
-  );
+- `asset_packer` sorts files lexicographically for determinism
+- Packs files into binary format:
   ```
-- Compression reduces binary size (e.g., 359 KB for base pod)
+  [num_entries:u32]
+  repeat num_entries times:
+    [name_len:u32]
+    [name:bytes]
+    [data_len:u32]
+    [data:bytes]
+  ```
+- Compresses with zlib
+- Generates C source/header with `assets_blob[]` and `assets_blob_len`
 
-**Output**: `pods/base/pod.db` (SQLAR archive)
+**Output**: `assets_blob.c` and `assets_blob.h` with embedded compressed bundle
 
-### Stage 3: Schema Overlay Application
+### Stage 3: C Array Embedding
 
-The `pod_binary()` macro applies the versioned filesystem schema:
+**Generated C code**:
+```c
+/* assets_blob.c */
+const unsigned char assets_blob[] = {
+    0x78, 0x9c, 0xed, 0x5d, /* zlib header */
+    /* ... compressed asset data ... */
+};
+const size_t assets_blob_len = 45678;
+```
 
+**Linked into binary**:
 ```python
-# From tools/pod_binary.bzl (simplified)
-overlay_sqlar(
-    name = name + "_overlay",
-    src = pod + ":pod_db",
-    schema = "//hbf/db:overlay_schema",
+cc_library(
+    name = "embedded_assets",
+    srcs = ["assets_blob.c"],
+    hdrs = ["assets_blob.h"],
+    alwayslink = True,  # Force linker to include symbols
 )
 ```
 
+**Output**: Final binary at `bazel-bin/bin/hbf` with embedded asset bundle
+
+---
+## Runtime: Database Initialization and Asset Migration
+
+### Database Initialization
+
+At startup (`hbf/db/db.c`):
+
+```c
+/* Open or create database */
+sqlite3 *db = NULL;
+hbf_db_init(inmem, &db);
+```
+
 **What happens**:
-- Reads the authoritative schema from `hbf/db/overlay_schema.sql`
-- Creates tables for versioned filesystem:
-  ```sql
-  CREATE TABLE file_ids (
-    file_id INTEGER PRIMARY KEY,
-    path TEXT UNIQUE NOT NULL
+1. Opens SQLite database (`:memory:` or `./hbf.db`)
+2. Applies overlay_fs schema (tables, indexes, views, triggers)
+3. Migrates asset bundle: `overlay_fs_migrate_assets(db, assets_blob, assets_blob_len)`
+4. Sets global handle: `overlay_fs_init_global(db)`
+
+The database is configured with:
+- `PRAGMA journal_mode=WAL` - Write-ahead logging for concurrency
+- `PRAGMA foreign_keys=ON` - Enforce referential integrity
+
+### Asset Bundle Migration
+
+**C Code** (`hbf/db/overlay_fs.c`):
+```c
+migrate_status_t overlay_fs_migrate_assets(
+    sqlite3 *db,
+    const uint8_t *bundle_blob,
+    size_t bundle_len
+);
+```
+
+**What happens**:
+1. Computes `bundle_id = SHA256(bundle_blob)` for idempotency
+2. Checks if already migrated: `SELECT 1 FROM migrations WHERE bundle_id = ?`
+3. If already migrated, returns `MIGRATE_ERR_ALREADY_APPLIED`
+4. Decompresses bundle with zlib `uncompress()`
+5. Parses binary format: reads `num_entries`, then for each entry reads `name_len`, `name`, `data_len`, `data`
+6. Begins transaction: `BEGIN IMMEDIATE`
+7. For each file: calls `overlay_fs_write(db, name, data, data_len)`
+8. Records migration: `INSERT INTO migrations (bundle_id, applied_at, entries) VALUES (...)`
+9. Commits transaction
+
+**Versioned filesystem schema** (from `hbf/db/overlay_schema.sql`):
+```sql
+CREATE TABLE file_ids (
+  file_id INTEGER PRIMARY KEY,
+  path TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE file_versions (
+  file_id INTEGER NOT NULL,
+  version_number INTEGER NOT NULL,
+  mtime INTEGER NOT NULL,
+  size INTEGER NOT NULL,
+  data BLOB NOT NULL,
+  PRIMARY KEY (file_id, version_number)
+) WITHOUT ROWID;
+
+CREATE VIEW latest_files AS
+  SELECT fv.data, fi.path, fv.mtime, fv.size
+  FROM file_versions fv
+  JOIN file_ids fi ON fv.file_id = fi.file_id
+  WHERE (fv.file_id, fv.version_number) IN (
+    SELECT file_id, MAX(version_number)
+    FROM file_versions
+    GROUP BY file_id
   );
 
-  CREATE TABLE file_versions (
-    file_id INTEGER NOT NULL,
-    version_number INTEGER NOT NULL,
-    mtime INTEGER NOT NULL,
-    size INTEGER NOT NULL,
-    data BLOB,
-    PRIMARY KEY (file_id, version_number)
-  ) WITHOUT ROWID;
-
-  CREATE VIEW latest_files AS
-    SELECT fv.data, fi.path
-    FROM file_versions fv
-    JOIN file_ids fi ON fv.file_id = fi.file_id
-    WHERE (fv.file_id, fv.version_number) IN (
-      SELECT file_id, MAX(version_number)
-      FROM file_versions
-      GROUP BY file_id
-    );
-  ```
-- Migrates SQLAR data to versioned filesystem (all files become version 1)
-- Creates materialized view `latest_files_meta` for fast file listings
-- Drops original `sqlar` table
+CREATE TABLE migrations (
+  bundle_id TEXT PRIMARY KEY,  -- SHA256 of compressed bundle
+  applied_at INTEGER NOT NULL,
+  entries INTEGER NOT NULL
+);
+```
 
 **Why versioned filesystem?**
 - Immutable file history (every write creates a new version)
 - Support for live editing with full audit trail (will be gated by JWT auth in future)
 - Fast indexed reads using `file_id` + `version_number`
 
-### Stage 4: VACUUM Optimization
-
-```bash
-sqlite3 temp.db "VACUUM INTO optimized.db"
-```
-
-**What happens**:
-- Copies database to new file, removing all dead space
-- Rewrites pages for optimal layout
-- Reduces binary size significantly
-- Result: production-ready database with no wasted bytes
-
-**Output**: Optimized database file
-
-### Stage 5: C Array Embedding
-
-The `db_to_c` tool converts the database to C source:
-
-```bash
-tools/db_to_c.sh optimized.db hbf_base_fs_embedded.c hbf_base_fs_embedded.h
-```
-
-**Generated C code**:
-```c
-/* hbf_base_fs_embedded.c */
-const unsigned char fs_db_data[] = {
-    0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, /* SQLite header */
-    /* ... ~359 KB of database bytes ... */
-};
-const unsigned long fs_db_len = 367616;
-```
-
-**Linked into binary**:
-```python
-cc_library(
-    name = "hbf_base_embedded",
-    srcs = ["hbf_base_fs_embedded.c"],
-    hdrs = ["hbf_base_fs_embedded.h"],
-    alwayslink = True,  # Force linker to include symbols
-)
-```
-
-**Output**: Final binary at `bazel-bin/bin/hbf` with embedded database
-
 ---
 ## Runtime: Reading and Writing Files
-
-### Database Initialization
-
-At startup (`hbf/shell/main.c`):
-
-```c
-/* Open embedded database */
-sqlite3 *db = NULL;
-hbf_db_open_from_embedded(fs_db_data, fs_db_len, &db);
-
-/* Register global handle for overlay_fs operations */
-overlay_fs_init_global(db);
-```
-
-The embedded database is copied to memory (or disk) and opened with:
-- `PRAGMA journal_mode=WAL` - Write-ahead logging for concurrency
-- `PRAGMA foreign_keys=ON` - Enforce referential integrity
-- `PRAGMA synchronous=NORMAL` - Balance durability and performance
 
 ### Reading Files (Static Handler)
 
@@ -282,13 +283,18 @@ export function checkAuth(token) {
 bazel build //:hbf
 ```
 
-- SQLAR: `pods/base/hbf/lib/auth.js` → row in `sqlar` table
-- Schema: Migrated to `file_versions` as version 1
-- VACUUM: Database optimized
-- C array: `fs_db_data` includes auth.js bytes
-- Binary: `bazel-bin/bin/hbf` contains embedded file
+- Asset packing: `pods/base/hbf/lib/auth.js` → packed into binary format
+- Compression: Bundle compressed with zlib
+- C array: `assets_blob` includes compressed auth.js bytes
+- Binary: `bazel-bin/bin/hbf` contains embedded asset bundle
 
-**3. Runtime import**:
+**3. Runtime migration**:
+- Database created and schema applied
+- Asset bundle decompressed
+- auth.js migrated to `file_versions` as version 1
+- Available for import
+
+**4. Runtime import**:
 ```javascript
 // In hbf/server.js
 import { checkAuth } from "./lib/auth.js";
@@ -300,7 +306,7 @@ app.handle = function(req, res) {
 };
 ```
 
-**4. Dev mode edit**:
+**5. Dev mode edit**:
 ```bash
 curl -X PUT 'http://localhost:5309/__dev/api/file?name=hbf/lib/auth.js' \
   --data 'export function checkAuth(token) { return token === "newsecret"; }'
@@ -310,7 +316,7 @@ curl -X PUT 'http://localhost:5309/__dev/api/file?name=hbf/lib/auth.js' \
 - Next request loads version 2
 - Original version 1 preserved for rollback
 
-**5. Version history query**:
+**6. Version history query**:
 ```sql
 SELECT version_number, mtime, size
 FROM file_versions
@@ -358,8 +364,12 @@ int overlay_fs_exists(sqlite3 *db, const char *path);
 /* Get version count */
 int overlay_fs_version_count(sqlite3 *db, const char *path);
 
-/* Migrate SQLAR to versioned FS */
-int overlay_fs_migrate_sqlar(sqlite3 *db);
+/* Migrate asset bundle to versioned FS */
+migrate_status_t overlay_fs_migrate_assets(
+    sqlite3 *db,
+    const uint8_t *bundle_blob,
+    size_t bundle_len
+);
 ```
 
 ### JavaScript API (via `db` module)
@@ -406,7 +416,7 @@ db.execute("COMMIT");
 - Dev mode writes serialized via SQLite transactions
 
 ### Storage Characteristics
-- Base pod: ~359 KB embedded (VACUUMed)
+- Base pod: ~45 KB compressed asset bundle
 - Each version stores full file content (no delta compression)
 - `WITHOUT ROWID` optimization for `file_versions` table
 - Materialized `latest_files_meta` view for fast listings
@@ -420,13 +430,9 @@ db.execute("COMMIT");
 
 **Check**:
 1. Verify file is in `hbf/` or `static/` directory
-2. Check `glob()` pattern in `pod_db` rule includes file
+2. Check `glob()` pattern in `packed_assets` rule includes file
 3. Rebuild: `bazel build //:hbf`
-4. Inspect embedded database:
-   ```bash
-   # Extract database from binary (if needed)
-   strings bazel-bin/bin/hbf | grep -A 5 "SQLite format"
-   ```
+4. Check logs for migration errors
 
 ### Module import fails
 
@@ -434,7 +440,7 @@ db.execute("COMMIT");
 
 **Check**:
 1. Use relative paths: `import foo from "./lib/bar.js"` (not `"lib/bar.js"`)
-2. Verify module file exists in database (see above)
+2. Verify module file exists in database (check migration logs)
 3. Check module path resolution:
    - Base: `hbf/server.js`
    - Import: `./lib/util.js`
@@ -461,7 +467,7 @@ db.execute("COMMIT");
 **Symptom**: Binary size unexpectedly large
 
 **Check**:
-1. Verify VACUUM was applied (check `pod_binary.bzl`)
+1. Check compressed asset bundle size in build output
 2. Remove unused files from `glob()` pattern
 3. Consider vendoring large libraries as separate static files
 4. Check for duplicate files in multiple pods
@@ -488,7 +494,7 @@ db.execute("COMMIT");
 ### Production
 - Minimize embedded file count
 - Bundle npm packages if needed (esbuild/rollup)
-- Use compression for large text files
+- Compressed assets keep binary size small
 - Profile binary size after adding content
 
 ---
@@ -513,12 +519,6 @@ curl -X PUT http://localhost:5309/__dev/api/file?name=static/style.css \
 curl http://localhost:5309/static/style.css
 ```
 
-### Check embedded files
-```bash
-bazel run //:hbf
-# File editing endpoints removed; will be gated by JWT auth in future
-```
-
 ### View version history
 ```javascript
 // In server.js or dev console
@@ -535,3 +535,4 @@ const versions = db.query(
 - `hbf/db/overlay_schema.sql` - Authoritative database schema
 - `tools/pod_binary.bzl` - Pod build macro implementation
 - `agent_help.md` - Verified implementation details
+- `DOCS/asset_mgmt_migration.md` - Asset packer migration guide

@@ -4,6 +4,7 @@
 # Export overlay schema for build-time application to fs.db
 exports_files(["overlay_schema.sql"])
 
+# Embed overlay schema SQL as C string for runtime schema application
 genrule(
     name = "overlay_schema_c",
     srcs = ["overlay_schema.sql"],
@@ -14,16 +15,15 @@ genrule(
 
 cc_library(
     name = "db",
-    srcs = ["db.c"],
+    srcs = [
+        "db.c",
+        ":overlay_schema_gen.c",
+    ],
     hdrs = ["db.h"],
     deps = [
         ":overlay_fs",
         "//hbf/shell:log",
-        "//third_party/sqlar",
         "@sqlite3//:sqlite3",
-        # Note: In production builds, the binary links a specific pod's embedded library.
-        # For this library to compile, we need access to fs_embedded.h.
-        # The actual symbols come from whichever pod binary links this library.
     ],
     visibility = ["//visibility:public"],
 )
@@ -35,7 +35,6 @@ cc_library(
     hdrs = ["overlay_fs.h"],
     deps = [
         "//hbf/shell:log",
-        "//third_party/sqlar",  # Needed for sqlar_uncompress during migration
         "@sqlite3//:sqlite3",
         "@zlib",  # Needed for asset bundle decompression
     ],
@@ -47,7 +46,6 @@ cc_test(
     srcs = ["db_test.c"],
     deps = [
         ":db",
-        "//:hbf_embedded",  # Use base pod's embedded library for testing
         "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
     ],
     linkstatic = 1,
@@ -58,7 +56,6 @@ cc_test(
     srcs = ["overlay_test.c"],
     deps = [
         ":db",
-        "//:hbf_embedded",  # Use base pod's embedded library for testing
         "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
     ],
     linkstatic = 1,
