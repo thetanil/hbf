@@ -27,23 +27,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Prepare cache directories
-      shell: bash
-      run: |
-        set -euo pipefail
-        # Ensure directories exist so cache save doesn't fail on missing paths
-        mkdir -p "$HOME/.cache/bazelisk"
-        mkdir -p "$HOME/.cache/bazel/_bazel_repository_cache"
-        mkdir -p "${RUNNER_TEMP}/bazel-disk-cache"
-
     - name: Set up Bazel
       uses: bazel-contrib/setup-bazel@0.15.0
       with:
-        # Disable bazelisk-cache since repo has no .bazelversion
+        # Disable all caching to avoid path validation errors on save
+        # The action tries to save cache paths that Bazel doesn't always create
         bazelisk-cache: false
-        # Use per-workflow+pod cache key to avoid matrix job contention
-        disk-cache: ${{ github.workflow }}-${{ inputs.pod-name }}
-        # Disable repository-cache to avoid path validation errors when dir doesn't exist
+        disk-cache: false
         repository-cache: false
 
     - name: Install lint dependencies
