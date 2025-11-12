@@ -20,7 +20,8 @@
                 "lextudio.restructuredtext",
                 "trond-snekvik.simple-rst",
                 "ms-vscode.live-server",
-                "bierner.markdown-mermaid"
+                "bierner.markdown-mermaid",
+                "BazelBuild.vscode-bazel"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/opt/venv/bin/python",

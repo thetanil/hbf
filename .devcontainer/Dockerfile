@@ -25,6 +25,19 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Buildifier (Bazel build file formatter/linter)
+# Uses the latest release binary from bazelbuild/buildtools
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64|amd64) suffix=amd64 ;; \
+        aarch64|arm64) suffix=arm64 ;; \
+        *) echo "Unsupported architecture: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/buildifier "https://github.com/bazelbuild/buildtools/releases/latest/download/buildifier-linux-${suffix}"; \
+    chmod +x /usr/local/bin/buildifier; \
+    /usr/local/bin/buildifier -version
+
 # Install Docker CLI (for docker-in-docker)
 # RUN curl -fsSL https://get.docker.com | sh
 
