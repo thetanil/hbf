@@ -1,0 +1,173 @@
+name: build-pod
+description: Build stripped and unstripped binaries for a single pod
+
+inputs:
+  pod-name:
+    description: Name of the pod (e.g., "base", "test")
+    required: true
+  tag:
+    description: Version tag for naming assets
+    required: true
+  artifact-name:
+    description: Name for uploaded artifacts
+    required: true
+  run-tests:
+    description: Whether to run tests after building (default false)
+    required: false
+    default: 'false'
+  run-smoke-test:
+    description: Whether to run smoke test on built binary (default false)
+    required: false
+    default: 'false'
+  run-lint:
+    description: Whether to run lint checks (default false)
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Bazelisk
+      uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Install lint dependencies
+      if: inputs.run-lint == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-tidy-18
+
+    - name: Cache Bazel directories (release build)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/bazel
+          ~/.cache/bazelisk
+        # Separate cache keys for release and debug builds to prevent cache thrashing
+        # Release and debug configs use different compiler flags (-O3 vs -g, etc.)
+        # which invalidate each other's analysis cache
+        key: ${{ runner.os }}-bazel-release-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
+        restore-keys: |
+          ${{ runner.os }}-bazel-release-${{ inputs.pod-name }}-
+          ${{ runner.os }}-bazel-release-
+
+    - name: Build release binary
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+
+        # Special case: "base" pod uses //:hbf target
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+        fi
+
+        # Release-stripped build using named config
+        bazel build --config=release //:${TARGET_NAME}
+
+    - name: Cache Bazel directories (debug build)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/bazel
+          ~/.cache/bazelisk
+        # Separate cache for debug builds with different compiler flags
+        key: ${{ runner.os }}-bazel-debug-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
+        restore-keys: |
+          ${{ runner.os }}-bazel-debug-${{ inputs.pod-name }}-
+          ${{ runner.os }}-bazel-debug-
+
+    - name: Build debug binary
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+
+        # Special case: "base" pod uses //:hbf target
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+        fi
+
+        # Debug-symbols build using named config
+        # Build both the main target and the unstripped variant so downstream steps can copy reliably
+        bazel build --config=debug //:${TARGET_NAME} //:${TARGET_NAME}_unstripped
+
+    - name: Run lint
+      if: inputs.run-lint == 'true'
+      shell: bash
+      run: |
+        echo "Running lint checks..."
+        bazel run //:lint
+
+    - name: Run tests
+      if: inputs.run-tests == 'true'
+      shell: bash
+      run: |
+        echo "Running all tests..."
+        bazel test //...
+
+    - name: Smoke test binary
+      if: inputs.run-smoke-test == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+
+        # Determine target name
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+        fi
+
+        # Get the debug binary path for smoke test
+        BINARY_PATH=$(bazel cquery --config=debug --output=files //:${TARGET_NAME})
+
+        echo "Running smoke test on $BINARY_PATH"
+        $BINARY_PATH --help
+        echo "Smoke test passed!"
+
+    - name: Prepare assets (reproducible names)
+      shell: bash
+      run: |
+        set -euo pipefail
+        POD="${{ inputs.pod-name }}"
+        TAG="${{ inputs.tag }}"
+        ARCH="$(uname -m)"
+
+        # Determine target name
+        if [[ "$POD" == "base" ]]; then
+          TARGET_NAME="hbf"
+          ASSET_BASE="hbf"
+        else
+          TARGET_NAME="hbf_${POD}"
+          ASSET_BASE="hbf-${POD}"
+        fi
+
+        # Asset names
+        NAME_STRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}"
+        NAME_UNSTRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}-unstripped"
+
+        # Copy binaries from the same build configuration to avoid codegen differences.
+        # Use -L to follow symlinks and get the actual binaries from their build configs.
+        # Stripped target: //:${TARGET_NAME}
+        # Unstripped target: //:${TARGET_NAME}_unstripped
+        cp -L "$(bazel cquery --config=release --output=files //:${TARGET_NAME})" "$NAME_STRIPPED"
+        # Use debug config for unstripped to retain symbols; underlying genrule does not strip
+        cp -L "$(bazel cquery --config=debug --output=files //:${TARGET_NAME}_unstripped)" "$NAME_UNSTRIPPED"
+
+        # Generate checksums
+        sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
+        sha256sum "$NAME_UNSTRIPPED" > "$NAME_UNSTRIPPED.sha256"
+
+    - name: Upload build assets
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          hbf*-${{ inputs.tag }}-linux-*
+        if-no-files-found: error
