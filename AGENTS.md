@@ -8,15 +8,15 @@ HBF is a single, statically linked C99 web compute environment built with Bazel 
 - SQLite (WAL, JSON1, FTS5) as unified store for data + static assets
 - CivetWeb for HTTP (WebSocket enabled; IPv4 only; no TLS/SSL/CGI/FILES; terminate TLS behind reverse proxy)
 - QuickJS-NG for per-request sandboxed JavaScript (fresh runtime/context each request; configurable mem/timeout limits)
-- Pod-based architecture: each pod supplies `hbf/server.js` and `static/**` assets, embedded into the final binary via **dual-pipeline** during SQLAR transition
-- Versioned filesystem: all file writes create immutable versions with full audit trail
+- Pod-based architecture: each pod supplies `hbf/server.js` and `static/**` assets, embedded into the final binary via asset_packer pipeline
+- Overlay versioned filesystem: all file writes create immutable versions with full audit trail
 
-**Asset Embedding Status** (in transition):
-- **NEW**: asset_packer → zlib-compressed bundle → C array (assets_blob, assets_blob_len) - ACTIVE
-- **LEGACY**: SQLAR → C array (fs_db_data, fs_db_len) - BEING PHASED OUT
-- Both migrations run at boot; next step is to remove SQLAR completely
+**Asset Embedding Status (2025-11)**:
+- **ACTIVE**: asset_packer pipeline (zlib-compressed bundle → C array: assets_blob/assets_blob_len) is default and fully integrated
+- **LEGACY**: SQLAR embedding is deprecated and scheduled for removal; migration runs at boot for backward compatibility only
+- All static assets and pod JS are packed and embedded via asset_packer; overlay filesystem is default for all reads/writes
 
-Single binary outputs under `bazel-bin/bin/` (e.g. `hbf`, `hbf_test`). All HTTP requests enter CivetWeb; `/static/**` served directly from embedded DB via versioned filesystem; all other routes handled by evaluating `hbf/server.js` for the active pod.
+Single binary outputs under `bazel-bin/bin/` (e.g. `hbf`, `hbf_test`). All HTTP requests enter CivetWeb; `/static/**` served directly from embedded DB via overlay filesystem; all other routes handled by evaluating `hbf/server.js` for the active pod.
 
 ---
 ## Directory Hints
@@ -83,62 +83,36 @@ No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_
 
 ---
 ## JavaScript Runtime Facts
-- Entry: `hbf/server.js` in each pod, loaded from versioned filesystem (`latest_files` view) for every non-static request
-- Fresh QuickJS runtime + context per request (no pooling, guaranteed via mutex serialization in `hbf/http/handler.c:56-351`)
-- Memory/timeout limits: Runtime-configurable via `hbf_qjs_init(mem_limit_mb, timeout_ms)` in `hbf/qjs/engine.c:58`
-  - Timeout enforced via `JS_SetInterruptHandler` with `CLOCK_MONOTONIC` timer (engine.c:35-55, 120)
+- Entry: `hbf/server.js` in each pod, loaded from overlay versioned filesystem for every non-static request
+- Fresh QuickJS runtime + context per request (no pooling; mutex serialization enforced in `hbf/http/handler.c`)
+- Memory/timeout limits: Runtime-configurable via `hbf_qjs_init(mem_limit_mb, timeout_ms)` in `hbf/qjs/engine.c`
+  - Timeout enforced via monotonic timer and interrupt handler
 - Host bindings:
   - **request/response**: `bindings/request.c`, `bindings/response.c` (provides `req.path`, `req.method`, `req.headers`, etc.)
   - **console**: Basic logging via `console_module.c`
-  - **db**: Direct SQLite access via `db_module.c`
-    - `db.query(sql, [params])` → Returns array of row objects
-    - `db.execute(sql, [params])` → For INSERT/UPDATE/DELETE
-- ESM imports: ACTIVE for relative paths only (e.g., `import foo from "./lib/bar.js"`)
-  - Module loader: `hbf/qjs/module_loader.c` loads from `latest_files` view
-  - NO bare specifier support yet (e.g., `import 'lodash'` will not work)
-  - Both static and dynamic imports working (see `pods/test/hbf/server.js:4,34`)
-- Static assets resolved under `/static/*` directly in C via `overlay_fs_read_file()` (no JS involvement)
-- Router: Manual path conditionals currently (find-my-way integration planned, see `js_import_router.md`)
+  - **db**: Direct SQLite access via `db_module.c` (`db.query`, `db.execute`)
+- ESM imports: Only relative paths supported (e.g., `import foo from "./lib/bar.js"`); bare specifiers and npm packages are not supported
+  - Module loader: `hbf/qjs/module_loader.c` loads from overlay filesystem
+  - Both static and dynamic imports work for relative paths
+- Static assets resolved under `/static/*` directly in C via overlay_fs_read_file()
+- Router: Manual path conditionals; find-my-way integration planned
 
 ---
 ## Versioned / Embedded Filesystem
 
-**Build-time embedding** (TRANSITION IN PROGRESS):
+**Build-time embedding (2025-11)**:
+- asset_packer pipeline is default: collects pod JS and static assets, packs, compresses, and embeds as C array
+- SQLAR pipeline is deprecated: runs only for legacy migration, scheduled for removal
 
-**NEW Pipeline (asset_packer - ACTIVE)**:
-1. Collect pod `hbf/*.js` + `static/**`
-2. Pack into deterministic binary format (sorted, little-endian u32 fields)
-3. Compress with zlib at max level
-4. Convert to C array (`asset_packer` → `assets_blob.c/.h` with `assets_blob`, `assets_blob_len`)
-5. Link via `pod_binary()` macro (see `tools/pod_binary.bzl`)
-
-**LEGACY Pipeline (SQLAR - BEING REMOVED)**:
-1. Collect pod `hbf/*.js` + `static/**`
-2. Create SQLAR (sqlite3 -A)
-3. Apply overlay schema (`hbf/db/overlay_schema.sql`)
-4. VACUUM optimize (removes dead space)
-5. Convert DB to C (`db_to_c.sh` → `*_fs_embedded.c` with `fs_db_data`, `fs_db_len`)
-6. Link via `pod_binary()` macro
-
-**Runtime overlay filesystem** (ACTIVE, fully integrated):
-- All reads via `overlay_fs_read_file(path, enable_overlay, **data, *size)` from `latest_files` view
-- Static handler (`hbf/http/server.c`) uses overlay for `/static/*` routes
+**Runtime overlay filesystem (fully integrated):**
+- All reads/writes go through overlay_fs API, using latest versioned files
+- Static handler (`hbf/http/server.c`) serves `/static/*` from overlay
 - Cache headers: `Cache-Control: public, max-age=3600` for static assets
 - Versioned writes create immutable history in `file_versions` table
 - Public API (see `hbf/db/overlay_fs.h`):
-  - `overlay_fs_read(db, path, ...)` - Read latest version
-  - `overlay_fs_write(db, path, ...)` - Write new version
-  - `overlay_fs_exists(db, path)` - Check existence
-  - `overlay_fs_version_count(db, path)` - Get version history count
-  - `overlay_fs_migrate_sqlar(db)` - Convert SQLAR to versioned FS (LEGACY - being removed)
-  - `overlay_fs_migrate_assets(db, bundle, len)` - Convert asset bundle to versioned FS (NEW - ACTIVE)
+  - `overlay_fs_read`, `overlay_fs_write`, `overlay_fs_exists`, `overlay_fs_version_count`, `overlay_fs_migrate_assets` (active), `overlay_fs_migrate_sqlar` (legacy)
 
-**Complete pipeline documentation**: See `DOCS/custom_content.md` for detailed explanation of how files flow from build host → SQLAR → overlay_fs → runtime, including:
-- Step-by-step build pipeline with code examples
-- Runtime read/write operations with file references
-- File lifecycle examples (adding, importing, editing)
-- Overlay filesystem API reference (C and JavaScript)
-- Performance characteristics and troubleshooting
+See `DOCS/custom_content.md` for full pipeline and API documentation.
 
 ---
 ## Safety & Permissions
@@ -215,17 +189,18 @@ If a required symbol or behavior isn’t obvious:
 
 ---
 ## Extensibility Notes & Known Limitations
-**Implemented**:
-- ✅ Overlay filesystem with live editing
-- ✅ Dev mode API endpoints
-- ✅ ESM module imports (relative paths only)
-- ✅ Versioned file history tracking
 
-**Not Yet Implemented** (see `agent_help.md` for tracking):
-- ❌ find-my-way router (currently manual path conditionals in `server.js`)
-- ❌ SSE endpoints (CivetWeb has capability, no app-level handlers yet)
-- ❌ Bare module specifiers (e.g., `import 'lodash'`)
-- ❌ Import maps or vendor resolution
+**Implemented:**
+- Overlay filesystem with live editing
+- Dev mode API endpoints
+- ESM module imports (relative paths only)
+- Versioned file history tracking
+
+**Not Yet Implemented (2025-11):**
+- find-my-way router (manual path conditionals in `server.js`)
+- SSE endpoints (CivetWeb supports, no app-level handlers)
+- Bare module specifiers and npm package imports
+- Import maps or vendor resolution
 
 **Verified Compile-Time Flags** (see `third_party/civetweb/civetweb.BUILD`):
 - ✅ `-DNO_SSL` (line 16) - SSL/TLS disabled
