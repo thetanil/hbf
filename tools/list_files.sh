@@ -4,7 +4,7 @@
 # Usage:
 #   tools/list_files.sh <path-to-db.sqlite> [--long]
 #
-# By default, prints one file path per line (sorted).
+# By default, prints tab-separated: path\tsize_bytes
 # With --long, prints tab-separated: path\tsize\tversion\tmtime_iso8601
 
 set -euo pipefail
@@ -52,32 +52,32 @@ if exists_in_db table latest_files_meta; then
     if [ "$LONG_FLAG" = "1" ]; then
         SQL_QUERY="SELECT path || char(9) || size || char(9) || version_number || char(9) || strftime('%Y-%m-%dT%H:%M:%SZ', mtime, 'unixepoch') FROM latest_files_meta ORDER BY path;"
     else
-        SQL_QUERY="SELECT path FROM latest_files_meta ORDER BY path;"
+        SQL_QUERY="SELECT path || char(9) || size FROM latest_files_meta ORDER BY path;"
     fi
 elif exists_in_db view latest_files_metadata; then
     if [ "$LONG_FLAG" = "1" ]; then
         SQL_QUERY="SELECT path || char(9) || size || char(9) || version_number || char(9) || strftime('%Y-%m-%dT%H:%M:%SZ', mtime, 'unixepoch') FROM latest_files_metadata ORDER BY path;"
     else
-        SQL_QUERY="SELECT path FROM latest_files_metadata ORDER BY path;"
+        SQL_QUERY="SELECT path || char(9) || size FROM latest_files_metadata ORDER BY path;"
     fi
 elif exists_in_db view latest_files; then
     if [ "$LONG_FLAG" = "1" ]; then
         SQL_QUERY="SELECT path || char(9) || size || char(9) || version_number || char(9) || strftime('%Y-%m-%dT%H:%M:%SZ', mtime, 'unixepoch') FROM latest_files ORDER BY path;"
     else
-        SQL_QUERY="SELECT path FROM latest_files ORDER BY path;"
+        SQL_QUERY="SELECT path || char(9) || size FROM latest_files ORDER BY path;"
     fi
 elif exists_in_db table file_versions; then
     if [ "$LONG_FLAG" = "1" ]; then
         SQL_QUERY="WITH lv AS (SELECT file_id, MAX(version_number) AS maxv FROM file_versions GROUP BY file_id) SELECT fv.path || char(9) || fv.size || char(9) || fv.version_number || char(9) || strftime('%Y-%m-%dT%H:%M:%SZ', fv.mtime, 'unixepoch') FROM file_versions fv JOIN lv ON fv.file_id = lv.file_id AND fv.version_number = lv.maxv ORDER BY fv.path;"
     else
-        SQL_QUERY="WITH lv AS (SELECT file_id, MAX(version_number) AS maxv FROM file_versions GROUP BY file_id) SELECT fv.path FROM file_versions fv JOIN lv ON fv.file_id = lv.file_id AND fv.version_number = lv.maxv ORDER BY fv.path;"
+        SQL_QUERY="WITH lv AS (SELECT file_id, MAX(version_number) AS maxv FROM file_versions GROUP BY file_id) SELECT fv.path || char(9) || fv.size FROM file_versions fv JOIN lv ON fv.file_id = lv.file_id AND fv.version_number = lv.maxv ORDER BY fv.path;"
     fi
 elif exists_in_db table sqlar; then
     # Fallback for raw SQLAR archives (no overlay schema); mtime in SQLAR is seconds since epoch
     if [ "$LONG_FLAG" = "1" ]; then
         SQL_QUERY="SELECT name || char(9) || sz || char(9) || 1 || char(9) || strftime('%Y-%m-%dT%H:%M:%SZ', mtime, 'unixepoch') FROM sqlar ORDER BY name;"
     else
-        SQL_QUERY="SELECT name FROM sqlar ORDER BY name;"
+        SQL_QUERY="SELECT name || char(9) || sz FROM sqlar ORDER BY name;"
     fi
 else
     echo "Error: Could not find any known overlay or SQLAR tables/views in: $DB_PATH" >&2
