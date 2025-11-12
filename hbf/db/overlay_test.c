@@ -86,7 +86,7 @@ static void test_sqlar_migrated(void)
 	unsigned char *data = NULL;
 	size_t size = 0;
 
-	ret = hbf_db_read_file_from_main(db, "staging/static/style.css", &data, &size);
+	ret = hbf_db_read_file_from_main(db, "static/style.css", &data, &size);
 	if (ret != 0) {
 		printf("  ✗ Failed to read static/style.css (error code: %d)\n", ret);
 		fflush(stdout);  /* Force output before assert */

@@ -50,18 +50,22 @@ genrule(
         cp $(location //third_party/find-my-way:router) staging/hbf/lib/find-my-way.js
 
         # Collect all files for packing (sorted for determinism)
+        TOOL_PATH=$$(realpath $(location //tools:asset_packer))
+        OUT_C=$$(realpath $(location assets_blob.c))
+        OUT_H=$$(realpath $(location assets_blob.h))
+
         cd staging
-        find hbf static -type f | sort > ../files.txt
-        cd ..
+        find hbf static -type f | sort > files.txt
 
-        # Run asset_packer with full paths from staging directory
-        $(location //tools:asset_packer) \
-            --output-source $(location assets_blob.c) \
-            --output-header $(location assets_blob.h) \
+        # Run asset_packer from staging directory so paths are relative
+        $$TOOL_PATH \
+            --output-source $$OUT_C \
+            --output-header $$OUT_H \
             --symbol-name assets_blob \
-            $$(sed 's|^|staging/|' files.txt)
+            $$(cat files.txt)
 
-        rm -rf staging files.txt
+        cd ..
+        rm -rf staging
     """,
     tools = ["//tools:asset_packer"],
     visibility = ["//visibility:public"],
