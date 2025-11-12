@@ -44,6 +44,44 @@ cc_binary(
 
 exports_files(["js_to_c.sh"])
 
+cc_binary(
+    name = "asset_packer",
+    srcs = ["asset_packer.c"],
+    deps = ["@miniz//:miniz"],
+    copts = [
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wpedantic",
+        "-Wconversion",
+        "-Wdouble-promotion",
+        "-Wshadow",
+        "-Wformat=2",
+        "-Wstrict-prototypes",
+        "-Wold-style-definition",
+        "-Wmissing-prototypes",
+        "-Wmissing-declarations",
+        "-Wcast-qual",
+        "-Wwrite-strings",
+        "-Wcast-align",
+        "-Wundef",
+        "-Wswitch-enum",
+        "-Wswitch-default",
+        "-Wbad-function-cast",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "asset_packer_deterministic_test",
+    srcs = ["asset_packer_deterministic_test.sh"],
+    data = [":asset_packer"],
+    args = ["$(location :asset_packer)"],
+    tags = ["local"],
+    visibility = ["//visibility:public"],
+)
+
 # Integration test that boots the test pod binary and verifies endpoint status codes
 sh_test(
     name = "integration_test",
