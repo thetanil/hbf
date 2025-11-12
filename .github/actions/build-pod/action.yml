@@ -93,7 +93,8 @@ runs:
         fi
 
         # Debug-symbols build using named config
-        bazel build --config=debug //:${TARGET_NAME}
+        # Build both the main target and the unstripped variant so downstream steps can copy reliably
+        bazel build --config=debug //:${TARGET_NAME} //:${TARGET_NAME}_unstripped
 
     - name: Run lint
       if: inputs.run-lint == 'true'
