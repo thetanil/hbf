@@ -1,5 +1,82 @@
 # SPDX-License-Identifier: MIT
-# Base pod - SQLite database with SQLAR archive
+# Base pod - SQLite database with SQLAR archive + asset packing
+
+# Pack assets using asset_packer
+genrule(
+    name = "packed_assets",
+    srcs = glob(
+        ["hbf/**/*", "static/**/*"],
+        exclude = ["BUILD.bazel"],
+        exclude_directories = 1,
+    ) + [
+        "@htmx//file",
+        "//third_party/codemirror:view",
+    ],
+    outs = [
+        "assets_blob.c",
+        "assets_blob.h",
+    ],
+    cmd = """
+        # Create staging directory structure
+        mkdir -p staging/hbf staging/static/vendor
+
+        # Copy local hbf/ files using glob patterns
+        for src in $(SRCS); do
+            # Match files starting with 'pods/base/hbf/' (local files)
+            if [[ $$src == pods/base/hbf/* ]]; then
+                # Extract everything after 'pods/base/hbf/'
+                rel_path=$${src#pods/base/hbf/}
+                mkdir -p staging/hbf/$$(dirname $$rel_path)
+                cp $$src staging/hbf/$$rel_path
+            fi
+        done
+
+        # Copy all globbed static files
+        for src in $(SRCS); do
+            # Match files starting with 'pods/base/static/' (local files)
+            if [[ $$src == pods/base/static/* ]]; then
+                # Extract everything after 'pods/base/static/'
+                rel_path=$${src#pods/base/static/}
+                mkdir -p staging/static/$$(dirname $$rel_path)
+                cp $$src staging/static/$$rel_path
+            fi
+        done
+
+        # Stage HTMX
+        cp $(location @htmx//file) staging/static/vendor/htmx.min.js
+
+        # Stage CodeMirror
+        mkdir -p staging/static/vendor/esm
+        for cm_file in $(locations //third_party/codemirror:view); do
+            cp $$cm_file staging/static/vendor/esm/
+        done
+
+        # Collect all files for packing (sorted for determinism)
+        cd staging
+        find hbf static -type f | sort > ../files.txt
+        cd ..
+
+        # Run asset_packer with full paths from staging directory
+        $(location //tools:asset_packer) \
+            --output-source $(location assets_blob.c) \
+            --output-header $(location assets_blob.h) \
+            --symbol-name assets_blob \
+            $$(sed 's|^|staging/|' files.txt)
+
+        rm -rf staging files.txt
+    """,
+    tools = ["//tools:asset_packer"],
+    visibility = ["//visibility:public"],
+)
+
+# Embedded assets library
+cc_library(
+    name = "embedded_assets",
+    srcs = ["assets_blob.c"],
+    hdrs = ["assets_blob.h"],
+    visibility = ["//visibility:public"],
+    alwayslink = True,  # Ensure symbols are included even if not directly referenced
+)
 
 # Build SQLite database with SQLAR archive of pod content
 genrule(

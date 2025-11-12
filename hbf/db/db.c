@@ -11,6 +11,10 @@
 extern const unsigned char fs_db_data[];
 extern const unsigned long fs_db_len;
 
+/* Asset bundle from asset_packer (replaces SQLAR-based embedding) */
+extern const unsigned char assets_blob[];
+extern const size_t assets_blob_len;
+
 #define HBF_DB_PATH "./hbf.db"
 #define HBF_DB_INMEM ":memory:"
 
@@ -162,6 +166,15 @@ int hbf_db_init(int inmem, sqlite3 **db)
 	rc = overlay_fs_migrate_sqlar(*db);
 	if (rc != 0) {
 		hbf_log_error("Failed to migrate SQLAR data to versioned filesystem");
+		sqlite3_close(*db);
+		*db = NULL;
+		return -1;
+	}
+
+	/* Migrate asset bundle if available */
+	migrate_status_t migrate_rc = overlay_fs_migrate_assets(*db, assets_blob, assets_blob_len);
+	if (migrate_rc != MIGRATE_OK && migrate_rc != MIGRATE_ERR_ALREADY_APPLIED) {
+		hbf_log_error("Failed to migrate asset bundle: %d", migrate_rc);
 		sqlite3_close(*db);
 		*db = NULL;
 		return -1;

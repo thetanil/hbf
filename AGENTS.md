@@ -5,11 +5,16 @@ A concise, agent-focused guide to working inside the HBF repository. Think of th
 ---
 ## Project Overview
 HBF is a single, statically linked C99 web compute environment built with Bazel 8 (bzlmod) that embeds:
-- SQLite (WAL, JSON1, FTS5, SQLAR) as unified store for data + static assets
+- SQLite (WAL, JSON1, FTS5) as unified store for data + static assets
 - CivetWeb for HTTP (WebSocket enabled; IPv4 only; no TLS/SSL/CGI/FILES; terminate TLS behind reverse proxy)
 - QuickJS-NG for per-request sandboxed JavaScript (fresh runtime/context each request; configurable mem/timeout limits)
-- Pod-based architecture: each pod supplies `hbf/server.js` and `static/**` assets, embedded into the final binary via SQLAR → C array pipeline.
+- Pod-based architecture: each pod supplies `hbf/server.js` and `static/**` assets, embedded into the final binary via **dual-pipeline** during SQLAR transition
 - Versioned filesystem: all file writes create immutable versions with full audit trail
+
+**Asset Embedding Status** (in transition):
+- **NEW**: asset_packer → zlib-compressed bundle → C array (assets_blob, assets_blob_len) - ACTIVE
+- **LEGACY**: SQLAR → C array (fs_db_data, fs_db_len) - BEING PHASED OUT
+- Both migrations run at boot; next step is to remove SQLAR completely
 
 Single binary outputs under `bazel-bin/bin/` (e.g. `hbf`, `hbf_test`). All HTTP requests enter CivetWeb; `/static/**` served directly from embedded DB via versioned filesystem; all other routes handled by evaluating `hbf/server.js` for the active pod.
 
@@ -97,13 +102,23 @@ No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_
 
 ---
 ## Versioned / Embedded Filesystem
-**Build-time embedding** (SQLAR → C array pipeline):
+
+**Build-time embedding** (TRANSITION IN PROGRESS):
+
+**NEW Pipeline (asset_packer - ACTIVE)**:
+1. Collect pod `hbf/*.js` + `static/**`
+2. Pack into deterministic binary format (sorted, little-endian u32 fields)
+3. Compress with zlib at max level
+4. Convert to C array (`asset_packer` → `assets_blob.c/.h` with `assets_blob`, `assets_blob_len`)
+5. Link via `pod_binary()` macro (see `tools/pod_binary.bzl`)
+
+**LEGACY Pipeline (SQLAR - BEING REMOVED)**:
 1. Collect pod `hbf/*.js` + `static/**`
 2. Create SQLAR (sqlite3 -A)
 3. Apply overlay schema (`hbf/db/overlay_schema.sql`)
 4. VACUUM optimize (removes dead space)
 5. Convert DB to C (`db_to_c.sh` → `*_fs_embedded.c` with `fs_db_data`, `fs_db_len`)
-6. Link via `pod_binary()` macro (see `tools/pod_binary.bzl`)
+6. Link via `pod_binary()` macro
 
 **Runtime overlay filesystem** (ACTIVE, fully integrated):
 - All reads via `overlay_fs_read_file(path, enable_overlay, **data, *size)` from `latest_files` view
@@ -115,7 +130,8 @@ No GPL dependencies; only MIT / BSD / Apache-2.0 / Public Domain. Current third_
   - `overlay_fs_write(db, path, ...)` - Write new version
   - `overlay_fs_exists(db, path)` - Check existence
   - `overlay_fs_version_count(db, path)` - Get version history count
-  - `overlay_fs_migrate_sqlar(db)` - Convert SQLAR to versioned FS
+  - `overlay_fs_migrate_sqlar(db)` - Convert SQLAR to versioned FS (LEGACY - being removed)
+  - `overlay_fs_migrate_assets(db, bundle, len)` - Convert asset bundle to versioned FS (NEW - ACTIVE)
 
 **Complete pipeline documentation**: See `DOCS/custom_content.md` for detailed explanation of how files flow from build host → SQLAR → overlay_fs → runtime, including:
 - Step-by-step build pipeline with code examples

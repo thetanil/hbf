@@ -31,6 +31,7 @@ cc_test(
         "//hbf/db:db",
         "//hbf/qjs:engine",
         "//:hbf_embedded",
+        "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
     ],
     linkstatic = 1,
 )

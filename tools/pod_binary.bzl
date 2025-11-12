@@ -19,6 +19,7 @@ def pod_binary(name, pod, visibility = None, tags = None):
 
     # Internal target names
     pod_db = pod + ":pod_db"
+    pod_assets = pod + ":embedded_assets"
     embedded_gen = name + "_embedded_gen"
     embedded_lib = name + "_embedded"
     binary = name + "_bin"
@@ -60,6 +61,7 @@ def pod_binary(name, pod, visibility = None, tags = None):
         srcs = ["//hbf/shell:main.c"],
         deps = [
             ":" + embedded_lib,
+            pod_assets,  # Link the new asset bundle
             "//hbf/shell:config",
             "//hbf/shell:log",
             "//hbf/db:db",

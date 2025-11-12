@@ -133,3 +133,10 @@ BEGIN
     WHERE file_id = OLD.file_id
       AND NOT EXISTS (SELECT 1 FROM file_versions WHERE file_id = OLD.file_id);
 END;
+
+-- Migration tracking table for asset bundles
+CREATE TABLE IF NOT EXISTS migrations (
+    bundle_id   TEXT PRIMARY KEY,  -- SHA256 hash of compressed bundle
+    applied_at  INTEGER NOT NULL,  -- Unix timestamp when migration was applied
+    entries     INTEGER NOT NULL   -- Number of files migrated from this bundle
+);

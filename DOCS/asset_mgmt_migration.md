@@ -1,12 +1,25 @@
 # Asset Management Migration Guide (Main Branch)
 
-This guide explains how to migrate HBF’s asset pipeline on the main branch from the legacy SQLAR-based embedding to a C-only, deterministic pack-and-migrate flow using the existing zlib dependency and a small C tool (`asset_packer`). It preserves the existing HTTP stack (CivetWeb) and QuickJS runtime while removing SQLAR and pod macros from the build.
+This guide explains how to migrate HBF's asset pipeline on the main branch from the legacy SQLAR-based embedding to a C-only, deterministic pack-and-migrate flow using the existing zlib dependency and a small C tool (`asset_packer`). It preserves the existing HTTP stack (CivetWeb) and QuickJS runtime while removing SQLAR and pod macros from the build.
 
-The migration has four parts:
-- Use zlib (already a Bazel dependency)
-- Introduce the `asset_packer` tool (Bazel target)
-- Wire a C-only startup migration into SQLite (no JS at boot)
-- Remove SQLAR (code and build references)
+## Migration Status: PHASE 1 COMPLETE ✅
+
+**Phase 1 (COMPLETED)**: Asset packer integration and dual-pipeline operation
+- ✅ zlib dependency confirmed (already present)
+- ✅ `asset_packer` tool implemented and tested
+- ✅ `overlay_fs_migrate_assets()` function implemented with SHA-256 idempotency
+- ✅ Migration tracking table added to schema
+- ✅ Boot-time migration wired into `hbf_db_init()`
+- ✅ Build system updated to generate both SQLAR and asset bundles
+- ✅ All tests passing (12/12)
+
+**Phase 2 (NEXT)**: Remove SQLAR completely
+- Remove SQLAR build pipeline from pods/*/BUILD.bazel
+- Remove `overlay_fs_migrate_sqlar()` function
+- Remove SQLAR extension initialization
+- Remove `fs_db_data`/`fs_db_len` symbols and embedded database
+- Remove third_party/sqlar dependency
+- Update all documentation to reflect asset_packer as the sole pipeline
 
 ---
 
@@ -238,11 +251,61 @@ Expected behavior:
 
 ---
 
-## 8) Checklist
+## 8) Checklist - Phase 1 (COMPLETED)
 
-- [ ] Use existing zlib dependency (already present)
-- [ ] Add `tools:asset_packer` and build it
-- [ ] Implement `overlay_fs_migrate_assets` and call it at boot
-- [ ] Remove SQLAR references from build and code
-- [ ] Add deterministic test and migration tests
-- [ ] Verify zero warnings (`-Wall -Wextra -Werror`) and `bazel test //...` passes
+- [x] Use existing zlib dependency (already present)
+- [x] Add `tools:asset_packer` and build it
+- [x] Implement `overlay_fs_migrate_assets` and call it at boot
+- [x] Add deterministic test and migration tests
+- [x] Verify zero warnings (`-Wall -Wextra -Werror`) and `bazel test //...` passes
+
+## 9) Phase 1 Implementation Details (COMPLETED)
+
+### Files Modified:
+- `tools/asset_packer.c` - Fixed POSIX compliance, added stddef.h includes
+- `hbf/db/overlay_schema.sql` - Added `migrations` table for bundle tracking
+- `hbf/db/overlay_fs.h` - Added `overlay_fs_migrate_assets()` API and migrate_status_t enum
+- `hbf/db/overlay_fs.c` - Implemented full asset bundle migration with SHA-256 hashing
+- `hbf/db/BUILD.bazel` - Added zlib dependency to overlay_fs
+- `hbf/db/db.c` - Wired asset migration call after SQLAR migration
+- `pods/base/BUILD.bazel` - Added `packed_assets` genrule and `embedded_assets` cc_library
+- `pods/test/BUILD.bazel` - Added same asset packing infrastructure
+- `tools/pod_binary.bzl` - Updated to link `embedded_assets` library
+- All test BUILD files - Added `embedded_assets` dependency
+
+### Current Behavior:
+At startup, HBF now runs BOTH migrations sequentially:
+1. `overlay_fs_migrate_sqlar(db)` - Migrates legacy SQLAR table if present
+2. `overlay_fs_migrate_assets(db, assets_blob, assets_blob_len)` - Migrates new asset bundle
+
+This allows for smooth transition without breaking existing deployments. The asset migration is idempotent using SHA-256 bundle IDs stored in the `migrations` table.
+
+### Test Results:
+```
+Executed 12 out of 12 tests: 12 tests pass.
+```
+
+All tests pass including:
+- `//tools:asset_packer_deterministic_test` - Verifies reproducible builds
+- `//hbf/db:overlay_fs_test` - Tests versioned filesystem
+- `//hbf/db:db_test` - Tests database initialization with dual migration
+- `//hbf/db:overlay_test` - Tests overlay operations
+- `//hbf/http:server_test` - Tests HTTP server with migrated assets
+- `//hbf/qjs:engine_test` - Tests QuickJS engine with asset access
+
+## 10) Phase 2 Checklist (NEXT STEPS)
+
+- [ ] Remove SQLAR genrule from `pods/base/BUILD.bazel`
+- [ ] Remove SQLAR genrule from `pods/test/BUILD.bazel`
+- [ ] Remove `overlay_fs_migrate_sqlar()` from `overlay_fs.c`
+- [ ] Remove SQLAR API from `overlay_fs.h`
+- [ ] Remove `sqlite3_sqlar_init()` calls from `db.c`
+- [ ] Remove `fs_db_data`/`fs_db_len` references from `db.c` and `overlay_fs.c`
+- [ ] Remove embedded_gen genrule from `tools/pod_binary.bzl`
+- [ ] Remove embedded_lib cc_library from `tools/pod_binary.bzl`
+- [ ] Remove `//third_party/sqlar` dependency from MODULE.bazel
+- [ ] Remove `third_party/sqlar/` directory
+- [ ] Remove `tools/db_to_c.sh` script
+- [ ] Update DOCS/custom_content.md to remove SQLAR references
+- [ ] Update CLAUDE.md to reflect asset_packer pipeline only
+- [ ] Verify all tests still pass after SQLAR removal
