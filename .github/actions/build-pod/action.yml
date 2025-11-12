@@ -27,8 +27,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Set up Bazelisk
-      uses: bazelbuild/setup-bazelisk@v3
+    - name: Set up Bazel
+      uses: bazel-contrib/setup-bazel@0.15.0
+      with:
+        bazelisk-cache: true
+        disk-cache: ${{ github.workflow }}
+        repository-cache: true
 
     - name: Install lint dependencies
       if: inputs.run-lint == 'true'
@@ -37,19 +41,6 @@ runs:
         sudo apt-get update
         sudo apt-get install -y clang-tidy-18
 
-    - name: Cache Bazel directories (release build)
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/bazel
-          ~/.cache/bazelisk
-        # Separate cache keys for release and debug builds to prevent cache thrashing
-        # Release and debug configs use different compiler flags (-O3 vs -g, etc.)
-        # which invalidate each other's analysis cache
-        key: ${{ runner.os }}-bazel-release-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
-        restore-keys: |
-          ${{ runner.os }}-bazel-release-${{ inputs.pod-name }}-
-          ${{ runner.os }}-bazel-release-
 
     - name: Build release binary
       shell: bash
@@ -67,17 +58,6 @@ runs:
         # Release-stripped build using named config
         bazel build --config=release //:${TARGET_NAME}
 
-    - name: Cache Bazel directories (debug build)
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/bazel
-          ~/.cache/bazelisk
-        # Separate cache for debug builds with different compiler flags
-        key: ${{ runner.os }}-bazel-debug-${{ inputs.pod-name }}-${{ hashFiles('.bazelrc', 'MODULE.bazel', '**/*.bzl', '**/*.bazel', 'pods/**', 'tools/**') }}
-        restore-keys: |
-          ${{ runner.os }}-bazel-debug-${{ inputs.pod-name }}-
-          ${{ runner.os }}-bazel-debug-
 
     - name: Build debug binary
       shell: bash
@@ -163,6 +143,19 @@ runs:
         # Generate checksums
         sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
         sha256sum "$NAME_UNSTRIPPED" > "$NAME_UNSTRIPPED.sha256"
+
+    - name: Report binary sizes (diagnostics)
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Release (stripped) binary:"
+        ls -lh hbf*-linux-* | sed -n '1p'
+        echo "Unstripped binary:"
+        ls -lh *-unstripped | sed -n '1p'
+        echo "\nSection sizes (release stripped):"
+        FILE=$(ls hbf*-linux-* | head -n1)
+        if command -v size >/dev/null 2>&1; then size "$FILE"; fi
+        if command -v objdump >/dev/null 2>&1; then objdump -h "$FILE" | egrep -i 'text|rodata|data|bss|eh_frame' || true; fi
 
     - name: Upload build assets
       uses: actions/upload-artifact@v4
