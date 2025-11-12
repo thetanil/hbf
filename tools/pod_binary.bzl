@@ -5,7 +5,7 @@ It handles building the final cc_binary with all dependencies including
 the asset bundle from asset_packer.
 """
 
-def pod_binary(name, pod, visibility = None, tags = None, strip = False, optimize = True):
+def pod_binary(name, pod, visibility = None, tags = None, strip = False, optimize = True, lto = False):
     """Build an HBF binary with an embedded pod.
 
     Args:
@@ -33,6 +33,9 @@ def pod_binary(name, pod, visibility = None, tags = None, strip = False, optimiz
         linkopts += [
             "-Wl,--gc-sections",
         ]
+    if lto:
+        copts += ["-flto"]
+        linkopts += ["-flto"]
 
     native.cc_binary(
         name = binary,

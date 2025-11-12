@@ -15,6 +15,7 @@ pod_binary(
     tags = ["hbf_pod"],
     strip = True,
     optimize = True,
+    lto = True,
 )
 
 # Test pod
@@ -25,6 +26,7 @@ pod_binary(
     tags = ["hbf_pod"],
     strip = False,
     optimize = True,
+    lto = False,
 )
 
 # ============================================================================
