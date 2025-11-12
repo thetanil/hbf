@@ -1,49 +1,27 @@
 # Asset Management Migration Guide (Main Branch)
 
-This guide explains how to migrate HBF’s asset pipeline on the main branch from the legacy SQLAR-based embedding to a C-only, deterministic pack-and-migrate flow using miniz and a small C tool (`asset_packer`). It preserves the existing HTTP stack (CivetWeb) and QuickJS runtime while removing SQLAR and pod macros from the build.
+This guide explains how to migrate HBF’s asset pipeline on the main branch from the legacy SQLAR-based embedding to a C-only, deterministic pack-and-migrate flow using the existing zlib dependency and a small C tool (`asset_packer`). It preserves the existing HTTP stack (CivetWeb) and QuickJS runtime while removing SQLAR and pod macros from the build.
 
 The migration has four parts:
-- Add miniz as a dependency (Bazel)
+- Use zlib (already a Bazel dependency)
 - Introduce the `asset_packer` tool (Bazel target)
 - Wire a C-only startup migration into SQLite (no JS at boot)
 - Remove SQLAR (code and build references)
 
 ---
 
-## 1) Add miniz to Bazel
+## 1) Use zlib (already present)
 
-Preferred: external git dependency (hermetic, no local sources).
+zlib is already declared via Bazel Central Registry in `MODULE.bazel` and linked into existing targets.
 
-- Edit `MODULE.bazel` to add miniz:
-
-```starlark
-# miniz - Single-file deflate/inflate (Public Domain/Unlicense)
-git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-
-git_repository(
-    name = "miniz",
-    remote = "https://github.com/richgel999/miniz.git",
-    tag = "3.0.2",
-    build_file = "//third_party/miniz:miniz.BUILD",
-)
-```
-
-- Provide `third_party/miniz/miniz.BUILD` with a tiny library export:
+- Confirmation in `MODULE.bazel`:
 
 ```starlark
-cc_library(
-    name = "miniz",
-    srcs = ["miniz.c"],
-    hdrs = ["miniz.h"],
-    includes = ["."],
-    visibility = ["//visibility:public"],
-    copts = [
-        "-std=c99", "-Wall", "-Wextra", "-Werror", "-Wpedantic",
-    ],
-)
+# zlib compression library (from Bazel Central Registry)
+bazel_dep(name = "zlib", version = "1.3.1.bcr.7")
 ```
 
-Alternative (vendored): keep `third_party/miniz/{miniz.c,miniz.h}` in-repo and reference via a local `cc_library` target. The rest of this guide is unchanged.
+No additional setup is required.
 
 ---
 
@@ -52,7 +30,7 @@ Alternative (vendored): keep `third_party/miniz/{miniz.c,miniz.h}` in-repo and r
 Create a small C tool that:
 - Reads input files, sorts lexicographically
 - Packs into a deterministic binary format
-- Compresses with miniz
+- Compresses with zlib
 - Emits a C source/header pair with `assets_blob[]` and `assets_blob_len`
 
 Binary format (uncompressed buffer):
@@ -69,9 +47,9 @@ Add a Bazel target in `tools/BUILD.bazel`:
 
 ```starlark
 cc_binary(
-    name = "asset_packer",
-    srcs = ["asset_packer.c"],
-    deps = ["@miniz//:miniz"],
+  name = "asset_packer",
+  srcs = ["asset_packer.c"],
+  deps = ["@zlib"],
     copts = [
         "-std=c99",
         "-Wall", "-Wextra", "-Werror", "-Wpedantic", "-Wconversion",
@@ -146,7 +124,7 @@ migrate_status_t overlay_fs_migrate_assets(
 Implementation outline:
 - Compute `bundle_id = SHA256(bundle_blob)` (hash compressed bytes)
 - Idempotency: `SELECT 1 FROM migrations WHERE bundle_id = ? LIMIT 1` ⇒ return `MIGRATE_ERR_ALREADY_APPLIED`
-- Decompress with `mz_uncompress()`
+- Decompress with `uncompress()` (zlib)
 - Parse buffer strictly:
   - read `num_entries:u32`
   - for each entry: bounds-check `name_len`/`data_len`, then insert
@@ -256,13 +234,13 @@ Expected behavior:
 - Asset paths are stored as provided; normalize consistently during packing to avoid duplicates
 - For very large bundles, consider a streaming packer; current approach packs into RAM once
 - Ensure `assets_placeholder.c` (if used) decompresses to `num_entries=0` (4 zero bytes)
-- Licenses: miniz is Public Domain/Unlicense; maintain SPDX headers in all sources
+- Licenses: zlib is permissive; maintain SPDX headers in all sources
 
 ---
 
 ## 8) Checklist
 
-- [ ] Add miniz dependency (external or vendored)
+- [ ] Use existing zlib dependency (already present)
 - [ ] Add `tools:asset_packer` and build it
 - [ ] Implement `overlay_fs_migrate_assets` and call it at boot
 - [ ] Remove SQLAR references from build and code

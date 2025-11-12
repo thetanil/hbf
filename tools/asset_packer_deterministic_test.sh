@@ -42,7 +42,7 @@ if ! grep -q 'assets_blob_len' "$WORKDIR/first.c"; then
   echo "Missing assets_blob_len symbol in output" >&2
   exit 1
 fi
-if ! grep -q 'const unsigned char assets_blob[]' "$WORKDIR/first.c"; then
+if ! grep -Fq 'const unsigned char assets_blob[]' "$WORKDIR/first.c"; then
   echo "Missing assets_blob array in output" >&2
   exit 1
 fi

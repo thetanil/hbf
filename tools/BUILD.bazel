@@ -47,7 +47,7 @@ exports_files(["js_to_c.sh"])
 cc_binary(
     name = "asset_packer",
     srcs = ["asset_packer.c"],
-    deps = ["@miniz//:miniz"],
+    deps = ["@zlib"],
     copts = [
         "-std=c99",
         "-Wall",
