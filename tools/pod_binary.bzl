@@ -55,27 +55,50 @@ def pod_binary(name, pod, visibility = None, tags = None, strip = False, optimiz
         tags = tags,
     )
 
-    # Create final binary target in bin/ directory
-    # The binary is copied as-is; use --strip=always for stripped builds
-    strip_cmd = ""
+    # Create final binary targets:
+    # If strip requested: produce BOTH an unstripped and a stripped variant.
+    # If not: only produce the unstripped variant (named <name>_unstripped).
+    # Rationale: Previously the unstripped alias pointed at the stripped file,
+    # causing release workflows to publish two stripped binaries with size inversions.
+
     if strip:
-        # Ensure writable before stripping (strip may rewrite file)
-        strip_cmd = " && chmod u+w $@ && strip -s $@ && chmod 755 $@"
+        # Unstripped (baseline copy)
+        native.genrule(
+            name = name + "_unstripped",
+            srcs = [":" + binary],
+            outs = ["bin/" + name + "_unstripped"],
+            cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +x $@",
+            executable = True,
+            visibility = visibility,
+            tags = tags,
+        )
 
-    native.genrule(
-        name = name,
-        srcs = [":" + binary],
-        outs = ["bin/" + name],
-        cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +x $@" + strip_cmd,
-        executable = True,
-        visibility = visibility,
-        tags = tags,
-    )
+        # Stripped variant
+        native.genrule(
+            name = name,
+            srcs = [":" + binary],
+            outs = ["bin/" + name],
+            cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +x $@ && chmod u+w $@ && strip -s $@ && chmod 755 $@",
+            executable = True,
+            visibility = visibility,
+            tags = tags,
+        )
+    else:
+        # Only unstripped variant requested; produce :name as unstripped
+        native.genrule(
+            name = name,
+            srcs = [":" + binary],
+            outs = ["bin/" + name],
+            cmd = "mkdir -p `dirname $@` && cp $< $@ && chmod +x $@",
+            executable = True,
+            visibility = visibility,
+            tags = tags,
+        )
 
-    # Optional convenience alias for unstripped binary (points to same target)
-    native.alias(
-        name = name + "_unstripped",
-        actual = ":" + name,
-        visibility = visibility,
-        tags = tags,
-    )
+        # Convenience alias pointing to the same unstripped binary
+        native.alias(
+            name = name + "_unstripped",
+            actual = ":" + name,
+            visibility = visibility,
+            tags = tags,
+        )
