@@ -60,9 +60,9 @@ static const char *get_mime_type(const char *path)
 }
 
 /* Static file handler - serves files from database */
-static int static_handler(struct lh_con_t *conn, void *cbdata)
+static int static_handler(struct lh_ctx_t *ctx, struct lh_con_t *conn, void *cbdata)
 {
-	const struct lh_rqi_t *ri = lh_get_request_info(conn);
+	const struct lh_rqi_t *ri = httplib_get_request_info(conn);
 	(void)cbdata;
 	const char *uri;
 	char path[512];
@@ -72,7 +72,11 @@ static int static_handler(struct lh_con_t *conn, void *cbdata)
 	int ret;
 
 	if (!ri) {
-		lh_send_http_error(conn, 500, "Internal error");
+		httplib_printf(ctx, conn,
+		               "HTTP/1.1 500 Internal Server Error\r\n"
+		               "Content-Type: text/plain\r\n"
+		               "Connection: close\r\n"
+		               "\r\nInternal error");
 		return 500;
 	}
 
@@ -93,7 +97,11 @@ static int static_handler(struct lh_con_t *conn, void *cbdata)
 	ret = overlay_fs_read_file(path, 1, &data, &size);
 	if (ret != 0) {
 		hbf_log_debug("File not found: %s", path);
-		lh_send_http_error(conn, 404, "Not Found");
+		httplib_printf(ctx, conn,
+		               "HTTP/1.1 404 Not Found\r\n"
+		               "Content-Type: text/plain\r\n"
+		               "Connection: close\r\n"
+		               "\r\nNot Found");
 		return 404;
 	}
 
@@ -101,16 +109,16 @@ static int static_handler(struct lh_con_t *conn, void *cbdata)
 	mime_type = get_mime_type(path);
 
 	/* Send response */
-	lh_printf(conn,
-	          "HTTP/1.1 200 OK\r\n"
-	          "Content-Type: %s\r\n"
-	          "Content-Length: %zu\r\n"
-	          "Cache-Control: public, max-age=3600\r\n"
-	          "Connection: close\r\n"
-	          "\r\n",
-	          mime_type, size);
+	httplib_printf(ctx, conn,
+	               "HTTP/1.1 200 OK\r\n"
+	               "Content-Type: %s\r\n"
+	               "Content-Length: %zu\r\n"
+	               "Cache-Control: public, max-age=3600\r\n"
+	               "Connection: close\r\n"
+	               "\r\n",
+	               mime_type, size);
 
-	lh_write(conn, data, size);
+	httplib_write(ctx, conn, data, size);
 	free(data);
 
 	hbf_log_debug("Served: %s (%zu bytes, %s)", path, size, mime_type);
@@ -118,19 +126,19 @@ static int static_handler(struct lh_con_t *conn, void *cbdata)
 }
 
 /* Health check handler */
-static int health_handler(struct lh_con_t *conn, void *cbdata)
+static int health_handler(struct lh_ctx_t *ctx, struct lh_con_t *conn, void *cbdata)
 {
 	const char *response = "{\"status\":\"ok\"}";
 
 	(void)cbdata;
 
-	lh_printf(conn,
-	          "HTTP/1.1 200 OK\r\n"
-	          "Content-Type: application/json\r\n"
-	          "Content-Length: %zu\r\n"
-	          "Connection: close\r\n"
-	          "\r\n%s",
-	          strlen(response), response);
+	httplib_printf(ctx, conn,
+	               "HTTP/1.1 200 OK\r\n"
+	               "Content-Type: application/json\r\n"
+	               "Content-Length: %zu\r\n"
+	               "Connection: close\r\n"
+	               "\r\n%s",
+	               strlen(response), response);
 
 	return 200;
 }
@@ -160,11 +168,7 @@ hbf_server_t *hbf_server_create(int port, sqlite3 *db)
 int hbf_server_start(hbf_server_t *server)
 {
 	char port_str[16];
-	const char *options[] = {
-		"listening_ports", port_str,
-		"num_threads", "4",
-		NULL
-	};
+	struct lh_opt_t options[3];
 
 	if (!server) {
 		return -1;
@@ -172,7 +176,15 @@ int hbf_server_start(hbf_server_t *server)
 
 	snprintf(port_str, sizeof(port_str), "%d", server->port);
 
-	server->ctx = lh_start(NULL, 0, options);
+	/* Configure libhttp options */
+	options[0].name = "listening_ports";
+	options[0].value = port_str;
+	options[1].name = "num_threads";
+	options[1].value = "4";
+	options[2].name = NULL;  /* Terminator */
+	options[2].value = NULL;
+
+	server->ctx = httplib_start(NULL, server, options);
 	if (!server->ctx) {
 		hbf_log_error("Failed to start HTTP server on port %d", server->port);
 		hbf_log_error("Port %d may already be in use. Try:", server->port);
@@ -183,9 +195,9 @@ int hbf_server_start(hbf_server_t *server)
 	}
 
 	/* Register handlers */
-	lh_set_request_handler(server->ctx, "/health", health_handler, server);
-	lh_set_request_handler(server->ctx, "/static/**", static_handler, server);
-	lh_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
+	httplib_set_request_handler(server->ctx, "/health", health_handler, server);
+	httplib_set_request_handler(server->ctx, "/static/**", static_handler, server);
+	httplib_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
 
 	hbf_log_info("HTTP server listening at http://localhost:%d/", server->port);
 	return 0;
@@ -194,7 +206,7 @@ int hbf_server_start(hbf_server_t *server)
 void hbf_server_stop(hbf_server_t *server)
 {
 	if (server && server->ctx) {
-		lh_stop(server->ctx);
+		httplib_stop(server->ctx);
 		server->ctx = NULL;
 		hbf_log_info("HTTP server stopped");
 	}

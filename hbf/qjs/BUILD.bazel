@@ -6,6 +6,9 @@ cc_library(
     name = "engine",
     srcs = ["engine.c", "db_module.c", "console_module.c", "module_loader.c"],
     hdrs = ["engine.h", "db_module.h", "console_module.h", "module_loader.h"],
+    copts = [
+        "-Wno-cpp",  # Suppress libhttp sys/poll.h redirect warning from musl (indirect via bindings)
+    ],
     deps = [
         "//hbf/shell:log",
         "@quickjs-ng//:quickjs",
@@ -24,9 +27,12 @@ cc_library(
         "bindings/request.h",
         "bindings/response.h",
     ],
+    copts = [
+        "-Wno-cpp",  # Suppress libhttp sys/poll.h redirect warning from musl
+    ],
     deps = [
         "//hbf/shell:log",
-        "@civetweb//:civetweb",
+        "@libhttp//:libhttp",
         "@quickjs-ng//:quickjs",
     ],
 )

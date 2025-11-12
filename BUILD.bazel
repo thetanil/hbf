@@ -2,6 +2,45 @@
 # Root build file
 
 # ============================================================================
+# Main Binary
+# ============================================================================
+
+cc_binary(
+    name = "hbf_server",
+    srcs = ["//hbf/shell:main.c"],
+    deps = [
+        "//hbf/db:assets_placeholder",
+        "//hbf/db:db",
+        "//hbf/http:server",
+        "//hbf/qjs:engine",
+        "//hbf/shell:config",
+        "//hbf/shell:log",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Main binary alias (for convenience)
+alias(
+    name = "hbf",
+    actual = ":hbf_server",
+    visibility = ["//visibility:public"],
+)
+
+# Test binary (same as hbf but for testing purposes)
+alias(
+    name = "hbf_test",
+    actual = ":hbf_server",
+    visibility = ["//visibility:public"],
+)
+
+# Embedded library for tests that need asset symbols
+alias(
+    name = "hbf_embedded",
+    actual = "//hbf/db:assets_placeholder",
+    visibility = ["//visibility:public"],
+)
+
+# ============================================================================
 # Utility Targets
 # ============================================================================
 

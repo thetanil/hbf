@@ -12,13 +12,14 @@
  * - All file writes create new versions (immutable history)
  * - Fast reads using indexed queries
  * - Single SQLite database, no external dependencies
+ * - Assets migrated from embedded bundles at startup
  */
 
 /*
  * Initialize overlay_fs database
  *
  * Opens or creates the database and applies schema.
- * If embedded fs.db exists, migrates SQLAR data to file_versions.
+ * Note: Asset migration is handled separately via overlay_fs_migrate_assets().
  *
  * @param db_path: Path to database file (or ":memory:" for in-memory)
  * @param db: Output parameter for database handle
@@ -39,11 +40,10 @@ int overlay_fs_init(const char *db_path, sqlite3 **db);
 int overlay_fs_check_schema(sqlite3 *db);
 
 /*
- * Migrate SQLAR archive to file_versions table
+ * Migrate SQLAR archive to file_versions table (DEPRECATED)
  *
- * Reads all entries from sqlar table, decompresses them,
- * and inserts as version 1 in file_versions.
- * Drops sqlar table afterward and vacuums database.
+ * This function is deprecated and will be removed in a future version.
+ * It's kept for backward compatibility with existing databases.
  *
  * @param db: Database handle
  * @return 0 on success, -1 on error

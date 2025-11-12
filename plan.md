@@ -10,11 +10,11 @@ This refactor replaces CivetWeb with [libhttp](https://github.com/lammertb/libht
 ### Architecture & Design Decisions
 
 #### Asset Embedding Pipeline
-- **Hermetic build**: C packer tool (`tools/asset_packer`) built with miniz under Bazel
-- **Deterministic output**: Stable file ordering, zeroed mtimes, `TZ=UTC`
-- **Format**: Custom binary format: `[name_len:u32][name:bytes][data_len:u32][data:bytes]...`
-- **Compression**: High-level zlib compression via miniz
-- **Output**: `assets_blob.c` and `assets_blob.h` with symbols `assets_blob[]` and `assets_blob_len`
+- **Hermetic build**: C packer tool (`tools/asset_packer`) built with miniz under Bazel (external git dependency only; local miniz sources removed)
+- **Deterministic output**: Lexicographic sort of paths, no timestamps, `TZ=UTC` optional (nothing time-based stored)
+- **Format**: Unified binary format: `[num_entries:u32][name_len:u32][name:bytes][data_len:u32][data:bytes]...` (leading `num_entries` always present)
+- **Compression**: `mz_compress2` level 9 (max)
+- **Output**: `assets_blob.c` / `assets_blob.h` with `assets_blob[]`, `assets_blob_len`
 
 #### Migration & Idempotency
 - **C-only**: No JS involved in asset loading; reduces boot dependencies
@@ -257,21 +257,20 @@ migrate_status_t overlay_fs_migrate_assets(
 );
 ```
 
-**Implementation steps:**
-1. Compute `bundle_id = SHA256(bundle_blob)`
-2. Check: `SELECT COUNT(*) FROM migrations WHERE bundle_id = ?`
-   - If found → return `MIGRATE_ERR_ALREADY_APPLIED`
-3. Decompress using `miniz`: `mz_uncompress()`
-4. Parse binary format: `[name_len:u32][name:bytes][data_len:u32][data:bytes]...`
-5. `BEGIN TRANSACTION`
-6. For each entry: `INSERT OR REPLACE INTO overlay (path, content, mtime) VALUES (?, ?, unixepoch())`
-7. `INSERT INTO migrations (bundle_id, applied_at) VALUES (?, unixepoch())`
-8. `COMMIT`
-9. On error: `ROLLBACK` and return error code
+**Implementation steps (Unified Format):**
+1. Compute `bundle_id = SHA256(bundle_blob)` (hash of compressed blob for identity)
+2. Idempotency check: `SELECT 1 FROM migrations WHERE bundle_id = ? LIMIT 1`; if present → `MIGRATE_ERR_ALREADY_APPLIED`.
+3. Decompress via `mz_uncompress()`.
+4. Parse `[num_entries:u32]` then loop entries: each `[name_len:u32][name][data_len:u32][data]`; bounds & overflow validated.
+5. `BEGIN IMMEDIATE TRANSACTION`.
+6. Insert each asset: `INSERT OR REPLACE INTO overlay (path, content, mtime) VALUES (?, ?, strftime('%s','now'))`.
+7. Record migration: `INSERT INTO migrations (bundle_id, applied_at, entries) VALUES (?, strftime('%s','now'), num_entries)`.
+8. `COMMIT`.
+9. On any failure: `ROLLBACK` → appropriate error code.
 
 ---
 
-### Asset Packer Tool Specification
+### Asset Packer Tool Specification (Unified)
 
 **Binary**: `tools/asset_packer`
 
@@ -289,12 +288,14 @@ asset_packer \
 2. For each file:
    - Store relative path (deterministic, sorted lexicographically)
    - Read content into memory
-3. Pack into binary format:
+3. Pack into binary format (uncompressed buffer):
    ```
    [num_entries:u32]
-   [name_len:u32][name:bytes][data_len:u32][data:bytes]
-   [name_len:u32][name:bytes][data_len:u32][data:bytes]
-   ...
+   repeat num_entries times:
+     [name_len:u32]
+     [name:bytes]
+     [data_len:u32]
+     [data:bytes]
    ```
 4. Compress entire blob with miniz: `mz_compress2()` at level 9 (best compression)
 5. Write `.c` file:
@@ -314,13 +315,14 @@ asset_packer \
    ```
 
 **Reproducibility requirements**:
-- Stable input ordering (caller's responsibility via sorted args)
-- Zeroed/deterministic timestamps (not stored in format)
-- `TZ=UTC` environment variable set during build
+- Internal lexicographic ordering independent of arg order.
+- No timestamps or host metadata.
+- Deterministic compression given identical input (miniz).
+- `TZ=UTC` suggested but not required.
 
 ---
 
-### Bazel Integration Example
+### Bazel Integration Example (Planned)
 
 ```python
 # tools/BUILD.bazel
@@ -357,4 +359,23 @@ cc_library(
 
 ---
 
-## End of Plan
+### Deterministic Test Strategy (Planned)
+Add `tools/asset_packer_deterministic_test.sh`:
+1. Create temp dir with `a.js`, `b.css` fixed contents.
+2. Run packer twice to produce `out1.c`/`out2.c`.
+3. Compare SHA256 of `out1.c` and `out2.c` (must match).
+4. Grep for `assets_blob_len` and symbol presence.
+5. Fail on mismatch.
+
+### Warning Policy Tightening (Upcoming)
+Remove `-Wno-*` suppressions from `tools/BUILD.bazel` for `asset_packer`; adjust code for full strict flags.
+Planned code fixes:
+- Add prototypes for internal static functions.
+- Path length validation (`strlen(path) < MAX_PATH_LEN`).
+- Reject file > UINT32_MAX; guard casts.
+- Eliminate implicit narrowing conversions.
+
+### Placeholder Bundle Consistency
+`assets_placeholder.c` will represent a valid compressed buffer whose decompressed form is exactly 4 bytes of zero (`num_entries=0`). If current blob differs, regenerate via packing an empty asset set.
+
+## End of Plan (Unified)

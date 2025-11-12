@@ -36,8 +36,11 @@ git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "g
 git_repository(
     name = "libhttp",
     remote = "https://github.com/lammertb/libhttp.git",
-    commit = "f320d5e9e82ffb1a8a8b71b0bc4cb7e9b4d8e8f8",  # Latest stable commit
+    commit = "652e2531b23e8f8f5d54e8be5ddb8ca21e68c1d6",  # HEAD as of 2025-11-11
     build_file = "//third_party/ews:libhttp.BUILD",
+    patch_cmds = [
+        "cat > httplib_set_thread_name_stub.c << 'EOF'\n/* Stub for buggy httplib_set_thread_name function in upstream libhttp */\nvoid XX_httplib_set_thread_name(const char *name) {\n\t/* No-op stub - thread naming not critical */\n\t(void)name;\n}\nEOF",
+    ],
 )
 
 # QuickJS-NG JavaScript engine (MIT license)

@@ -17,7 +17,9 @@ cc_library(
     srcs = ["migrate.c"],
     hdrs = ["migrate.h"],
     deps = [
+        ":overlay_fs",
         "//hbf/shell:log",
+        "@miniz//:miniz",
         "@sqlite3//:sqlite3",
     ],
     visibility = ["//visibility:public"],
@@ -34,14 +36,11 @@ cc_library(
     srcs = ["db.c"],
     hdrs = ["db.h"],
     deps = [
+        ":assets_placeholder",  # Provides assets_blob and assets_blob_len symbols
         ":migrate",
         ":overlay_fs",
         "//hbf/shell:log",
         "@sqlite3//:sqlite3",
-        # Note: assets_blob and assets_blob_len symbols are provided by
-        # the asset packer at binary link time. For libraries that compile
-        # without the final binary, these symbols will be undefined until
-        # the final link step.
     ],
     visibility = ["//visibility:public"],
 )
@@ -53,7 +52,6 @@ cc_library(
     hdrs = ["overlay_fs.h"],
     deps = [
         "//hbf/shell:log",
-        "//third_party/sqlar",  # Needed for sqlar_uncompress during migration
         "@sqlite3//:sqlite3",
     ],
     visibility = ["//visibility:public"],

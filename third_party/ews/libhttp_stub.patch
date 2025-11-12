@@ -1,0 +1,11 @@
+diff --git a/httplib_set_thread_name_stub.c b/httplib_set_thread_name_stub.c
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/httplib_set_thread_name_stub.c
+@@ -0,0 +1,5 @@
++/* Stub for buggy httplib_set_thread_name function in upstream libhttp */
++void XX_httplib_set_thread_name(const char *name) {
++	/* No-op stub - thread naming not critical */
++	(void)name;
++}

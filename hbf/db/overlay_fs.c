@@ -7,16 +7,10 @@
 #include <time.h>
 
 /*
- * Embedded fallback schema
- *
  * NOTE: The authoritative schema is defined in hbf/db/overlay_schema.sql and is
- * applied at pod build time (see pods/.../BUILD.bazel). The definitions below are
- * a conservative fallback used only when a database is created programmatically
- * at runtime outside the pod build pipeline. Normal binaries do not rely on
- * this path because the embedded pod DB already contains the full schema.
+ * applied at build time. The schema must be present in the database before
+ * calling overlay_fs functions.
  */
-extern const unsigned char fs_db_data[];
-extern const unsigned long fs_db_len;
 
 /* Global database handle for filesystem operations */
 /* Set by overlay_fs_init_global(), used by overlay_fs_read_file/overlay_fs_write_file */

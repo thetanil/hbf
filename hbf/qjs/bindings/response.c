@@ -258,7 +258,7 @@ JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data)
 }
 
 /* Send accumulated response to libhttp */
-void hbf_send_response(struct lh_con_t *conn, hbf_response_t *response)
+void hbf_send_response(struct lh_ctx_t *http_ctx, struct lh_con_t *conn, hbf_response_t *response)
 {
 	int i;
 
@@ -267,20 +267,20 @@ void hbf_send_response(struct lh_con_t *conn, hbf_response_t *response)
 	}
 
 	/* Send status line */
-	lh_printf(conn, "HTTP/1.1 %d OK\r\n", response->status_code);
+	httplib_printf(http_ctx, conn, "HTTP/1.1 %d OK\r\n", response->status_code);
 
 	/* Send custom headers */
 	for (i = 0; i < response->header_count; i++) {
-		lh_printf(conn, "%s\r\n", response->headers[i]);
+		httplib_printf(http_ctx, conn, "%s\r\n", response->headers[i]);
 	}
 
 	/* Send body */
 	if (response->body && response->body_len > 0) {
-		lh_printf(conn, "Content-Length: %zu\r\n\r\n",
-			  response->body_len);
-		lh_write(conn, response->body, response->body_len);
+		httplib_printf(http_ctx, conn, "Content-Length: %zu\r\n\r\n",
+			       response->body_len);
+		httplib_write(http_ctx, conn, response->body, response->body_len);
 	} else {
-		lh_printf(conn, "Content-Length: 0\r\n\r\n");
+		httplib_printf(http_ctx, conn, "Content-Length: 0\r\n\r\n");
 	}
 }
 

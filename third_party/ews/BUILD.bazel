@@ -3,22 +3,13 @@ libhttp (Embedded Web Server) build configuration
 MIT licensed HTTP server library
 """
 
+# Stubs for buggy libhttp functions
 cc_library(
-    name = "libhttp",
-    srcs = ["@libhttp//:libhttp.c"],
-    hdrs = ["@libhttp//:libhttp.h"],
+    name = "libhttp_stubs",
+    srcs = ["libhttp_stubs.c"],
     copts = [
-        "-std=c99",
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-        "-Wpedantic",
-        # libhttp-specific flags
-        "-DNO_SSL",  # No SSL support (use reverse proxy)
-        "-DNO_CGI",  # No CGI support
-        "-DNO_FILES",  # No built-in file serving
-        "-DUSE_IPV6=0",  # IPv4 only
+        "-Wno-missing-prototypes",
+        "-Wno-missing-declarations",
     ],
     visibility = ["//visibility:public"],
-    deps = ["@zlib"],
 )

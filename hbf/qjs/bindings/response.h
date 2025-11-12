@@ -31,7 +31,7 @@ void hbf_qjs_init_response_class(JSContext *ctx);
 JSValue hbf_qjs_create_response(JSContext *ctx, hbf_response_t *res_data);
 
 /* Send accumulated response to libhttp connection */
-void hbf_send_response(struct lh_con_t *conn, hbf_response_t *response);
+void hbf_send_response(struct lh_ctx_t *http_ctx, struct lh_con_t *conn, hbf_response_t *response);
 
 /* Free response data */
 void hbf_response_free(hbf_response_t *response);

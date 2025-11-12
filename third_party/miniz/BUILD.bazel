@@ -1,0 +1,2 @@
+# Export miniz.BUILD for external repository
+exports_files(["miniz.BUILD"])

@@ -10,11 +10,15 @@ cc_library(
         "server.h",
         "handler.h",
     ],
+    copts = [
+        "-Wno-cpp",  # Suppress libhttp sys/poll.h redirect warning from musl
+    ],
     deps = [
         "//hbf/shell:log",
         "//hbf/db:db",
         "//hbf/qjs:engine",
         "//hbf/qjs:bindings",
+        "//third_party/ews:libhttp_stubs",
         "@libhttp//:libhttp",
         "@sqlite3",
         "@quickjs-ng//:quickjs",

@@ -14,6 +14,6 @@
  *
  * Returns: HTTP status code
  */
-int hbf_qjs_request_handler(struct lh_con_t *conn, void *cbdata);
+int hbf_qjs_request_handler(struct lh_ctx_t *ctx, struct lh_con_t *conn, void *cbdata);
 
 #endif /* HBF_HTTP_HANDLER_H */
