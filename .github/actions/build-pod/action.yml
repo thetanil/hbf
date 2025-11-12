@@ -147,17 +147,17 @@ runs:
           ASSET_BASE="hbf-${POD}"
         fi
 
-  # Asset names
+        # Asset names
         NAME_STRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}"
         NAME_UNSTRIPPED="${ASSET_BASE}-${TAG}-linux-${ARCH}-unstripped"
 
-  # Copy binaries from the same build configuration to avoid codegen differences.
-  # Use -L to follow symlinks and get the actual binaries from their build configs.
-  # Stripped target: //:${TARGET_NAME}
-  # Unstripped target: //:${TARGET_NAME}_unstripped
-  cp -L "$(bazel cquery --config=release --output=files //:${TARGET_NAME})" "$NAME_STRIPPED"
-  # Use debug config for unstripped to retain symbols; underlying genrule does not strip
-  cp -L "$(bazel cquery --config=debug --output=files //:${TARGET_NAME}_unstripped)" "$NAME_UNSTRIPPED"
+        # Copy binaries from the same build configuration to avoid codegen differences.
+        # Use -L to follow symlinks and get the actual binaries from their build configs.
+        # Stripped target: //:${TARGET_NAME}
+        # Unstripped target: //:${TARGET_NAME}_unstripped
+        cp -L "$(bazel cquery --config=release --output=files //:${TARGET_NAME})" "$NAME_STRIPPED"
+        # Use debug config for unstripped to retain symbols; underlying genrule does not strip
+        cp -L "$(bazel cquery --config=debug --output=files //:${TARGET_NAME}_unstripped)" "$NAME_UNSTRIPPED"
 
         # Generate checksums
         sha256sum "$NAME_STRIPPED" > "$NAME_STRIPPED.sha256"
