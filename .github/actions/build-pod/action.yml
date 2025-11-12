@@ -27,11 +27,21 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Prepare cache directories
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Ensure directories exist so cache save doesn't fail on missing paths
+        mkdir -p "$HOME/.cache/bazelisk"
+        mkdir -p "$HOME/.cache/bazel/_bazel_repository_cache"
+        mkdir -p "${RUNNER_TEMP}/bazel-disk-cache"
+
     - name: Set up Bazel
       uses: bazel-contrib/setup-bazel@0.15.0
       with:
         bazelisk-cache: true
-        disk-cache: ${{ github.workflow }}
+        # Use a concrete path (not a key) for Bazel's disk cache
+        disk-cache: ${{ runner.temp }}/bazel-disk-cache
         repository-cache: true
 
     - name: Install lint dependencies
