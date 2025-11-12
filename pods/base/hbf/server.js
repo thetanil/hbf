@@ -70,6 +70,7 @@ app.handle = function (req, res) {
 <body>
     <h1>HBF</h1>
     <p>Single binary web compute environment</p>
+    <p>Keyed</p>
     <ul>
         <li><a href="https://github.com/thetanil/hbf/actions">CI/CD Status</a></li>
     </ul>
