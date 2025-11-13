@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Base pod - asset packing only
 
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
 # Pack assets using asset_packer
 genrule(
     name = "packed_assets",
