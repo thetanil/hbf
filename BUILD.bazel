@@ -10,23 +10,23 @@ load("//tools:pod_binary.bzl", "pod_binary")
 # Base pod (default binary)
 pod_binary(
     name = "hbf",
-    pod = "//pods/base",
-    visibility = ["//visibility:public"],
-    tags = ["hbf_pod"],
-    strip = True,
-    optimize = True,
     lto = True,
+    optimize = True,
+    pod = "//pods/base",
+    strip = True,
+    tags = ["hbf_pod"],
+    visibility = ["//visibility:public"],
 )
 
 # Test pod
 pod_binary(
     name = "hbf_test",
-    pod = "//pods/test",
-    visibility = ["//visibility:public"],
-    tags = ["hbf_pod"],
-    strip = False,
-    optimize = True,
     lto = False,
+    optimize = True,
+    pod = "//pods/test",
+    strip = False,
+    tags = ["hbf_pod"],
+    visibility = ["//visibility:public"],
 )
 
 # ============================================================================

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bazel query:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

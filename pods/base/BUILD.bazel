@@ -5,7 +5,10 @@
 genrule(
     name = "packed_assets",
     srcs = glob(
-        ["hbf/**/*", "static/**/*"],
+        [
+            "hbf/**/*",
+            "static/**/*",
+        ],
         exclude = ["BUILD.bazel"],
         exclude_directories = 1,
     ) + [
