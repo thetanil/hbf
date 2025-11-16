@@ -1,8 +1,5 @@
 # Core utilities and foundational code
 
-# Export main.c for pod_binary macro
-exports_files(["main.c"])
-
 cc_library(
     name = "hash",
     srcs = ["hash.c"],
@@ -40,5 +37,16 @@ cc_test(
     linkstatic = 1,
 )
 
-# Note: The hbf binary is now built via the pod_binary() macro in the root BUILD.bazel
-# This allows for multiple pod variants to be built (e.g., //:hbf, //:hbf_test)
+# Main library for building the HBF binary
+cc_library(
+    name = "main_lib",
+    srcs = ["main.c"],
+    deps = [
+        ":config",
+        ":log",
+        "//hbf/db:db",
+        "//hbf/http:server",
+    ],
+    visibility = ["//visibility:public"],
+    alwayslink = 1,
+)

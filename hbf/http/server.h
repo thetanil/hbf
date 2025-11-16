@@ -10,8 +10,10 @@ struct mg_context;
 /* HTTP server structure */
 typedef struct hbf_server {
 	int port;
-	sqlite3 *db;       /* Main database (contains SQLAR) */
+	sqlite3 *db;       /* Main database */
 	struct mg_context *ctx;
+	unsigned long request_count;  /* Total requests served */
+	double total_request_time;    /* Total time serving requests (seconds) */
 } hbf_server_t;
 
 /*

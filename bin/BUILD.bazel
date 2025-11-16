@@ -1,0 +1,13 @@
+# Binary outputs
+
+cc_binary(
+    name = "hbf",
+    srcs = [],
+    deps = [
+        "//hbf/shell:main_lib",
+        "//hbf/http:server",
+        "//hbf/db:db",
+    ],
+    linkstatic = 1,
+    visibility = ["//visibility:public"],
+)

@@ -1,4 +1,0 @@
-# This package provides the build file for the external QuickJS-NG repository
-# The actual BUILD rules are in quickjs.BUILD
-
-exports_files(["quickjs.BUILD"])

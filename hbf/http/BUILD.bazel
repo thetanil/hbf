@@ -4,20 +4,15 @@ cc_library(
     name = "server",
     srcs = [
         "server.c",
-        "handler.c",
     ],
     hdrs = [
         "server.h",
-        "handler.h",
     ],
     deps = [
         "//hbf/shell:log",
         "//hbf/db:db",
-        "//hbf/qjs:engine",
-        "//hbf/qjs:bindings",
         "@civetweb//:civetweb",
         "@sqlite3",
-        "@quickjs-ng//:quickjs",
     ],
     visibility = ["//visibility:public"],
 )
@@ -29,8 +24,6 @@ cc_test(
         ":server",
         "//hbf/shell:log",
         "//hbf/db:db",
-        "//hbf/qjs:engine",
-        "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
     ],
     linkstatic = 1,
 )
