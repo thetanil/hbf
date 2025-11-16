@@ -1,5 +1,0 @@
-{
-  "imports": {
-    "@codemirror/view": "/static/vendor/esm/codemirror-view.js"
-  }
-}

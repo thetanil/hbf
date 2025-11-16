@@ -1,42 +1,15 @@
 # SPDX-License-Identifier: MIT
 # Database management
 
-# Export overlay schema for build-time application to fs.db
-exports_files(["overlay_schema.sql"])
-
-# Embed overlay schema SQL as C string for runtime schema application
-genrule(
-    name = "overlay_schema_c",
-    srcs = ["overlay_schema.sql"],
-    outs = ["overlay_schema_gen.c"],
-    cmd = "$(location //tools:sql_to_c) $(location overlay_schema.sql) $@",
-    tools = ["//tools:sql_to_c"],
-)
-
 cc_library(
     name = "db",
     srcs = [
         "db.c",
-        ":overlay_schema_gen.c",
     ],
     hdrs = ["db.h"],
     deps = [
-        ":overlay_fs",
         "//hbf/shell:log",
         "@sqlite3//:sqlite3",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# Versioned file system library (overlay_fs integration)
-cc_library(
-    name = "overlay_fs",
-    srcs = ["overlay_fs.c"],
-    hdrs = ["overlay_fs.h"],
-    deps = [
-        "//hbf/shell:log",
-        "@sqlite3//:sqlite3",
-        "@zlib",  # Needed for asset bundle decompression
     ],
     visibility = ["//visibility:public"],
 )
@@ -46,31 +19,6 @@ cc_test(
     srcs = ["db_test.c"],
     deps = [
         ":db",
-        "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
-    ],
-    linkstatic = 1,
-)
-
-cc_test(
-    name = "overlay_test",
-    srcs = ["overlay_test.c"],
-    deps = [
-        ":db",
-        "//pods/base:embedded_assets",  # Use base pod's asset bundle for testing
-    ],
-    linkstatic = 1,
-)
-
-cc_test(
-    name = "overlay_fs_test",
-    srcs = [
-        "overlay_fs_test.c",
-        ":overlay_schema_gen.c",
-    ],
-    deps = [
-        ":overlay_fs",
-        "//hbf/shell:log",
-        "@sqlite3//:sqlite3",
     ],
     linkstatic = 1,
 )

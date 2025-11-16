@@ -1,121 +1,15 @@
 /* SPDX-License-Identifier: MIT */
 #include "server.h"
-#include "hbf/http/handler.h"
 #include "hbf/shell/log.h"
-#include "hbf/db/overlay_fs.h"
 #include "hbf/db/db.h"
 #include "civetweb.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <sys/time.h>
 
 
-
-/* MIME type helper */
-static const char *get_mime_type(const char *path)
-{
-	const char *ext = strrchr(path, '.');
-	if (!ext) {
-		return "application/octet-stream";
-	}
-
-	if (strcmp(ext, ".html") == 0) {
-		return "text/html";
-	}
-	if (strcmp(ext, ".css") == 0) {
-		return "text/css";
-	}
-	if (strcmp(ext, ".js") == 0) {
-		return "application/javascript";
-	}
-	if (strcmp(ext, ".json") == 0) {
-		return "application/json";
-	}
-	if (strcmp(ext, ".png") == 0) {
-		return "image/png";
-	}
-	if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0) {
-		return "image/jpeg";
-	}
-	if (strcmp(ext, ".svg") == 0) {
-		return "image/svg+xml";
-	}
-	if (strcmp(ext, ".ico") == 0) {
-		return "image/x-icon";
-	}
-	if (strcmp(ext, ".woff") == 0) {
-		return "font/woff";
-	}
-	if (strcmp(ext, ".woff2") == 0) {
-		return "font/woff2";
-	}
-	if (strcmp(ext, ".wasm") == 0) {
-		return "application/wasm";
-	}
-	if (strcmp(ext, ".md") == 0) {
-		return "text/markdown";
-	}
-
-	return "application/octet-stream";
-}
-
-/* Static file handler - serves files from SQLAR archive */
-static int static_handler(struct mg_connection *conn, void *cbdata)
-{
-	const struct mg_request_info *ri = mg_get_request_info(conn);
-	(void)cbdata;
-	const char *uri;
-	char path[512];
-	unsigned char *data = NULL;
-	size_t size;
-	const char *mime_type;
-	int ret;
-
-	if (!ri) {
-		mg_send_http_error(conn, 500, "Internal error");
-		return 500;
-	}
-
-	uri = ri->local_uri;
-
-	/* Map URL to archive path */
-	if (strcmp(uri, "/") == 0) {
-		snprintf(path, sizeof(path), "static/index.html");
-	} else {
-		/* Remove leading slash */
-		snprintf(path, sizeof(path), "%s", uri + 1);
-	}
-
-	hbf_log_debug("Static request: %s -> %s", uri, path);
-
-	/* Read file from database */
-	/* NO MUTEX - static file serving stays parallel */
-	ret = overlay_fs_read_file(path, 1, &data, &size);
-	if (ret != 0) {
-		hbf_log_debug("File not found: %s", path);
-		mg_send_http_error(conn, 404, "Not Found");
-		return 404;
-	}
-
-	/* Determine MIME type */
-	mime_type = get_mime_type(path);
-
-	/* Send response */
-	mg_printf(conn,
-	          "HTTP/1.1 200 OK\r\n"
-	          "Content-Type: %s\r\n"
-	          "Content-Length: %zu\r\n"
-	          "Cache-Control: public, max-age=3600\r\n"
-	          "Connection: close\r\n"
-	          "\r\n",
-	          mime_type, size);
-
-	mg_write(conn, data, size);
-	free(data);
-
-	hbf_log_debug("Served: %s (%zu bytes, %s)", path, size, mime_type);
-	return 200;
-}
 
 /* Health check handler */
 static int health_handler(struct mg_connection *conn, void *cbdata)
@@ -132,6 +26,176 @@ static int health_handler(struct mg_connection *conn, void *cbdata)
 	          "\r\n%s",
 	          strlen(response), response);
 
+	return 200;
+}
+
+/* Stats handler - returns server statistics */
+static int stats_handler(struct mg_connection *conn, void *cbdata)
+{
+	hbf_server_t *server = (hbf_server_t *)cbdata;
+	char buffer[1024];
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	struct timeval start_time, end_time;
+	double avg_time_ms;
+
+	if (!server || !server->ctx || !ri) {
+		mg_send_http_error(conn, 500, "Internal error");
+		return 500;
+	}
+
+	/* Track request start time */
+	gettimeofday(&start_time, NULL);
+
+	/* Increment request counter */
+	server->request_count++;
+
+	/* Calculate average request time */
+	avg_time_ms = server->request_count > 0
+		? (server->total_request_time * 1000.0) / (double)server->request_count
+		: 0.0;
+
+	/* Build stats HTML */
+	snprintf(buffer, sizeof(buffer),
+	         "<div>\n"
+	         "  <p><strong>Total Requests:</strong> %lu</p>\n"
+	         "  <p><strong>Avg Response Time:</strong> %.2f ms</p>\n"
+	         "  <p><strong>Thread Pool Size:</strong> 4</p>\n"
+	         "  <p><strong>Server:</strong> CivetWeb</p>\n"
+	         "  <p><strong>Mode:</strong> Phase 0 (Hypermedia)</p>\n"
+	         "</div>\n",
+	         server->request_count, avg_time_ms);
+
+	mg_printf(conn,
+	          "HTTP/1.1 200 OK\r\n"
+	          "Content-Type: text/html\r\n"
+	          "Content-Length: %zu\r\n"
+	          "Cache-Control: no-cache\r\n"
+	          "Connection: close\r\n"
+	          "\r\n%s",
+	          strlen(buffer), buffer);
+
+	/* Track request end time and update total */
+	gettimeofday(&end_time, NULL);
+	double elapsed = (double)(end_time.tv_sec - start_time.tv_sec) +
+	                 (double)(end_time.tv_usec - start_time.tv_usec) / 1000000.0;
+	server->total_request_time += elapsed;
+
+	return 200;
+}
+
+/* Homepage handler - hypermedia Phase 0 */
+static int homepage_handler(struct mg_connection *conn, void *cbdata)
+{
+	const char *html =
+		"<!DOCTYPE html>\n"
+		"<html>\n"
+		"<head>\n"
+		"  <meta charset=\"utf-8\">\n"
+		"  <title>HBF Hypermedia</title>\n"
+		"  <script src=\"https://unpkg.com/htmx.org@1.9.10\"></script>\n"
+		"  <style>\n"
+		"    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }\n"
+		"    .stats { background: #f5f5f5; padding: 1em; border-radius: 4px; margin: 1em 0; }\n"
+		"    .stats h2 { margin-top: 0; }\n"
+		"    .stats p { margin: 0.5em 0; }\n"
+		"  </style>\n"
+		"</head>\n"
+		"<body>\n"
+		"  <h1>HBF Hypermedia System</h1>\n"
+		"  <div class=\"stats\">\n"
+		"    <h2>Server Stats</h2>\n"
+		"    <div id=\"stats\" hx-get=\"/stats\" hx-trigger=\"load, every 2s\"></div>\n"
+		"  </div>\n"
+		"  <div id=\"link-list\" hx-get=\"/links\" hx-trigger=\"load\"></div>\n"
+		"</body>\n"
+		"</html>\n";
+
+	(void)cbdata;
+
+	mg_printf(conn,
+	          "HTTP/1.1 200 OK\r\n"
+	          "Content-Type: text/html\r\n"
+	          "Content-Length: %zu\r\n"
+	          "Connection: close\r\n"
+	          "\r\n%s",
+	          strlen(html), html);
+
+	hbf_log_debug("Served hypermedia homepage");
+	return 200;
+}
+
+/* Links handler - stub returning simple HTML list */
+static int links_handler(struct mg_connection *conn, void *cbdata)
+{
+	const char *html =
+		"<ul>\n"
+		"  <li>Phase 0: Minimal hypermedia core</li>\n"
+		"  <li>Database: WAL mode enabled</li>\n"
+		"  <li>Server: CivetWeb running</li>\n"
+		"</ul>\n";
+
+	(void)cbdata;
+
+	mg_printf(conn,
+	          "HTTP/1.1 200 OK\r\n"
+	          "Content-Type: text/html\r\n"
+	          "Content-Length: %zu\r\n"
+	          "Connection: close\r\n"
+	          "\r\n%s",
+	          strlen(html), html);
+
+	hbf_log_debug("Served links list");
+	return 200;
+}
+
+/* Fragment GET handler - stub for Phase 0 */
+static int fragment_get_handler(struct mg_connection *conn, void *cbdata)
+{
+	const struct mg_request_info *ri = mg_get_request_info(conn);
+	const char *uri;
+
+	(void)cbdata;
+
+	if (!ri) {
+		mg_send_http_error(conn, 500, "Internal error");
+		return 500;
+	}
+
+	uri = ri->local_uri;
+
+	mg_printf(conn,
+	          "HTTP/1.1 200 OK\r\n"
+	          "Content-Type: text/html\r\n"
+	          "Connection: close\r\n"
+	          "\r\n");
+
+	mg_printf(conn,
+	          "<div>\n"
+	          "  <p>Fragment GET handler stub (Phase 0)</p>\n"
+	          "  <p>Requested URI: %s</p>\n"
+	          "</div>\n",
+	          uri);
+
+	hbf_log_debug("Fragment GET stub: %s", uri);
+	return 200;
+}
+
+/* Fragment POST handler - stub for Phase 0 */
+static int fragment_post_handler(struct mg_connection *conn, void *cbdata)
+{
+	const char *response = "{\"status\":\"stub\",\"message\":\"Fragment POST handler (Phase 0)\"}";
+
+	(void)cbdata;
+
+	mg_printf(conn,
+	          "HTTP/1.1 200 OK\r\n"
+	          "Content-Type: application/json\r\n"
+	          "Content-Length: %zu\r\n"
+	          "Connection: close\r\n"
+	          "\r\n%s",
+	          strlen(response), response);
+
+	hbf_log_debug("Fragment POST stub");
 	return 200;
 }
 
@@ -153,6 +217,8 @@ hbf_server_t *hbf_server_create(int port, sqlite3 *db)
 	server->port = port;
 	server->db = db;
 	server->ctx = NULL;
+	server->request_count = 0;
+	server->total_request_time = 0.0;
 
 	return server;
 }
@@ -182,10 +248,13 @@ int hbf_server_start(hbf_server_t *server)
 		return -1;
 	}
 
-	/* Register handlers */
+	/* Register handlers - order matters! */
 	mg_set_request_handler(server->ctx, "/health", health_handler, server);
-	mg_set_request_handler(server->ctx, "/static/**", static_handler, server);
-	mg_set_request_handler(server->ctx, "**", hbf_qjs_request_handler, server);
+	mg_set_request_handler(server->ctx, "/stats", stats_handler, server);
+	mg_set_request_handler(server->ctx, "/", homepage_handler, server);
+	mg_set_request_handler(server->ctx, "/links", links_handler, server);
+	mg_set_request_handler(server->ctx, "/fragment/*", fragment_get_handler, server);
+	mg_set_request_handler(server->ctx, "/fragment", fragment_post_handler, server);
 
 	hbf_log_info("HTTP server listening at http://localhost:%d/", server->port);
 	return 0;

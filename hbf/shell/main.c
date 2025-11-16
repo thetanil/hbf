@@ -3,15 +3,11 @@
 #include "log.h"
 #include "hbf/db/db.h"
 #include "hbf/http/server.h"
-#include "hbf/qjs/engine.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#define HBF_QJS_MEMORY_LIMIT_MB 64
-#define HBF_QJS_TIMEOUT_MS 5000
 
 static volatile sig_atomic_t running = 1;
 
@@ -47,19 +43,10 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* Initialize QuickJS engine */
-	ret = hbf_qjs_init(HBF_QJS_MEMORY_LIMIT_MB, HBF_QJS_TIMEOUT_MS);
-	if (ret != 0) {
-		hbf_log_error("Failed to initialize QuickJS engine");
-		hbf_db_close(db);
-		return 1;
-	}
-
 	/* Create HTTP server */
 	server = hbf_server_create(config.port, db);
 	if (!server) {
 		hbf_log_error("Failed to create HTTP server");
-		hbf_qjs_shutdown();
 		hbf_db_close(db);
 		return 1;
 	}
@@ -69,7 +56,6 @@ int main(int argc, char *argv[])
 	if (ret != 0) {
 		/* Error already logged by hbf_server_start() */
 		hbf_server_destroy(server);
-		hbf_qjs_shutdown();
 		hbf_db_close(db);
 		return 1;
 	}
@@ -92,7 +78,6 @@ int main(int argc, char *argv[])
 	/* Cleanup */
 	hbf_log_info("Shutting down");
 	hbf_server_destroy(server);
-	hbf_qjs_shutdown();
 	hbf_db_close(db);
 
 	return 0;
